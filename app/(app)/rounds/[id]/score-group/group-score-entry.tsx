@@ -79,7 +79,7 @@ export function GroupScoreEntry({
         <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">Group scoring</span>
       </header>
 
-      <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} />
+      <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
 
       <div>
         <p className="h-eyebrow text-gold-400">Live round</p>

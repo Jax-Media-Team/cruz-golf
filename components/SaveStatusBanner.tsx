@@ -2,25 +2,55 @@
 import { useState } from "react";
 import type { SaverState } from "@/lib/useScoreSaver";
 
+type Diagnosis = {
+  ok: boolean;
+  reason: string;
+  explain: string;
+  facts?: Record<string, unknown>;
+};
+
 /**
  * Strip surfacing score-save state at the top of entry pages.
  * - Hidden when nothing's pending and nothing's failed.
  * - Yellow "Saving N…" while in flight.
- * - Red banner on failure with the actual error text and three escapes:
- *     Retry  — drain the queue again
- *     Details — show the full per-item error list (good for diagnosing RLS)
- *     Discard — clear stuck items (e.g. queue items targeting a deleted round)
+ * - Red banner on failure with the actual error text and four escapes:
+ *     Retry    — drain the queue again
+ *     Diagnose — for RLS errors, hits /api/diagnose/round-access for a
+ *                plain-English reason (commissioner role missing,
+ *                wagers not acked, etc.)
+ *     Details  — full per-item error list
+ *     Discard  — clear stuck items
  */
 export function SaveStatusBanner({
   state,
   onRetry,
-  onDiscard
+  onDiscard,
+  roundId
 }: {
   state: SaverState;
   onRetry: () => void;
   onDiscard?: () => void;
+  roundId?: string;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [diag, setDiag] = useState<Diagnosis | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
+
+  async function diagnose() {
+    if (!roundId) return;
+    setDiagBusy(true);
+    try {
+      const res = await fetch(`/api/diagnose/round-access?round_id=${encodeURIComponent(roundId)}`, {
+        cache: "no-store"
+      });
+      const json = (await res.json()) as Diagnosis;
+      setDiag(json);
+    } catch (e: any) {
+      setDiag({ ok: false, reason: "fetch_failed", explain: e?.message ?? "Network error" });
+    } finally {
+      setDiagBusy(false);
+    }
+  }
   const failedCount = Object.values(state.status).filter((s) => s === "failed").length;
   const savingCount = Object.values(state.status).filter((s) => s === "saving").length;
 
@@ -50,13 +80,22 @@ export function SaveStatusBanner({
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
             <button
               onClick={onRetry}
               className="pill bg-red-200 text-red-900 text-xs font-medium px-3 py-1.5"
             >
               Retry
             </button>
+            {isRls && roundId && (
+              <button
+                onClick={diagnose}
+                disabled={diagBusy}
+                className="pill bg-amber-200 text-amber-900 text-xs font-medium px-3 py-1.5"
+              >
+                {diagBusy ? "Checking…" : "Diagnose"}
+              </button>
+            )}
             {onDiscard && (
               <button
                 onClick={() => {
@@ -75,6 +114,20 @@ export function SaveStatusBanner({
             )}
           </div>
         </div>
+        {diag && (
+          <div
+            className={`rounded-lg p-2.5 text-[12px] leading-snug ${
+              diag.ok
+                ? "bg-emerald-500/15 text-emerald-100 border border-emerald-400/30"
+                : "bg-amber-500/15 text-amber-100 border border-amber-400/30"
+            }`}
+          >
+            <div className="font-medium uppercase tracking-wide text-[10px] mb-1">
+              Diagnosis · {diag.reason}
+            </div>
+            <div>{diag.explain}</div>
+          </div>
+        )}
         {errorEntries.length > 1 && (
           <div>
             <button

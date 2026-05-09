@@ -39,7 +39,7 @@ export function ScoreEntry({
         <Link href={`/rounds/${roundId}`} className="btn-ghost text-sm">← Back</Link>
         <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">Live round</span>
       </header>
-      <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} />
+      <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
       <ScorePad
         playerName={rp.players?.display_name ?? "Player"}
         playingHandicap={rp.playing_handicap ?? 0}
