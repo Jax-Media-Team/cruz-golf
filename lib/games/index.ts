@@ -29,6 +29,15 @@ export function settleGame(input: GameInput): GameOutput {
     case "aggregate_net":
       out = settleTeamGame(input, "aggregate", "net");
       break;
+    case "scramble_gross":
+      // Scramble settles like best ball: each team's hole score = lowest of
+      // its members. In a true scramble all players actually post the same
+      // score (since they hit from the same lie); the engine works either way.
+      out = settleTeamGame(input, "best_ball", "gross");
+      break;
+    case "scramble_net":
+      out = settleTeamGame(input, "best_ball", "net");
+      break;
     case "skins_gross":
       out = settleSkins(input, "gross");
       break;

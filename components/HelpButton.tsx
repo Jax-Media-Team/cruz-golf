@@ -124,9 +124,14 @@ export function HelpButton() {
                 <p className="h-eyebrow text-gold-400">Help</p>
                 <h2 className="font-serif text-xl text-cream-50 mt-0.5">Ask Cruz Golf</h2>
               </div>
-              <button onClick={() => setOpen(false)} className="btn-ghost text-sm" aria-label="Close help">
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <a href="/feedback" className="text-xs text-gold-400 underline">
+                  Feedback / request a feature
+                </a>
+                <button onClick={() => setOpen(false)} className="btn-ghost text-sm" aria-label="Close help">
+                  ✕
+                </button>
+              </div>
             </header>
 
             <div className="px-5 pt-3 pb-2 flex items-center gap-2 text-xs">

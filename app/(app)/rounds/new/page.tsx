@@ -7,22 +7,25 @@ import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
 import { GAME_PACKAGES } from "@/lib/presets/game-packages";
 import type { GameType } from "@/lib/types";
 
+// Games shown in the round-builder UI. Sorted alphabetically by label.
+// CTP/Long drive are intentionally hidden for now (the user found them
+// cluttering the setup; they'll come back as a separate "side bet" mode).
 const GAMES: { type: GameType; label: string; defaults?: any }[] = [
+  { type: "aggregate_gross", label: "Aggregate team (gross)" },
+  { type: "aggregate_net", label: "Aggregate team (net)" },
+  { type: "skins_canadian", label: "Canadian skins", defaults: { skin_mode: "pot", buyin_cents: 2000, escalation: "linear", ties: "carry", require_birdie: true } },
+  { type: "custom", label: "Custom side bet" },
   { type: "individual_gross", label: "Individual gross" },
   { type: "individual_net", label: "Individual net" },
-  { type: "best_ball_gross", label: "2-man best ball (gross)" },
-  { type: "best_ball_net", label: "2-man best ball (net)" },
-  { type: "aggregate_gross", label: "Team aggregate (gross)" },
-  { type: "aggregate_net", label: "Team aggregate (net)" },
-  { type: "skins_gross", label: "Skins (gross)", defaults: { skin_value_cents: 100, ties: "split" } },
-  { type: "skins_net", label: "Skins (net)", defaults: { skin_value_cents: 100, ties: "split" } },
-  { type: "skins_canadian", label: "Canadian skins", defaults: { skin_value_cents: 100, escalation: "linear", ties: "split", require_birdie: true } },
-  { type: "nassau", label: "Nassau (front/back/overall)", defaults: { match_play: true, front_stake_cents: 1000, back_stake_cents: 1000, overall_stake_cents: 1000, presses: "none" } },
   { type: "match_play", label: "Match play (overall only)" },
+  { type: "nassau", label: "Nassau (front/back/overall)", defaults: { match_play: true, front_stake_cents: 1000, back_stake_cents: 1000, overall_stake_cents: 1000, presses: "none" } },
+  { type: "scramble_gross", label: "Scramble (gross)" },
+  { type: "scramble_net", label: "Scramble (net)" },
   { type: "six_six_six", label: "6-6-6 (partner rotation, 4 players)", defaults: { match_play: true } },
-  { type: "ctp", label: "Closest to the pin" },
-  { type: "long_drive", label: "Long drive" },
-  { type: "custom", label: "Custom side bet" }
+  { type: "skins_gross", label: "Skins (gross)", defaults: { skin_mode: "pot", buyin_cents: 2000, ties: "carry", require_birdie: false } },
+  { type: "skins_net", label: "Skins (net)", defaults: { skin_mode: "pot", buyin_cents: 2000, ties: "carry", require_birdie: false } },
+  { type: "best_ball_gross", label: "Two-man best ball (gross)" },
+  { type: "best_ball_net", label: "Two-man best ball (net)" }
 ];
 
 function isSkins(t: GameType) {
@@ -55,7 +58,9 @@ export default function NewRoundPage() {
     "best_ball_gross",
     "best_ball_net",
     "aggregate_gross",
-    "aggregate_net"
+    "aggregate_net",
+    "scramble_gross",
+    "scramble_net"
   ];
   const teamGameEnabled = teamGameTypes.some((t) => games[t]?.enabled);
   const sixSixSixEnabled = !!games.six_six_six?.enabled;
@@ -88,20 +93,22 @@ export default function NewRoundPage() {
       setGroupId(gid ?? null);
       if (!gid) return;
 
-      const [coursesRes, playersRes, recentRoundsRes] = await Promise.all([
+      const [coursesRes, playersRes, recentRoundsRes, userRes] = await Promise.all([
         sb.from("courses").select("id, name").eq("group_id", gid).is("deleted_at", null),
-        sb.from("players").select("id, display_name, handicap_index").eq("group_id", gid).is("deleted_at", null),
+        sb.from("players").select("id, display_name, handicap_index, profile_id").eq("group_id", gid).is("deleted_at", null),
         sb
           .from("rounds")
           .select("id, date, courses(name), round_players(player_id)")
           .eq("group_id", gid)
           .order("date", { ascending: false })
-          .limit(20)
+          .limit(20),
+        sb.auth.getUser()
       ]);
 
       setCourses(coursesRes.data ?? []);
 
-      // Build last-played-at map from recent rounds (most recent first).
+      // Build last-played-at map (still useful for the "Re-play with last
+      // lineup" button + per-row recency caption).
       const lastSeen: Record<string, string> = {};
       for (const r of (recentRoundsRes.data as any[]) ?? []) {
         for (const rp of r.round_players ?? []) {
@@ -110,12 +117,19 @@ export default function NewRoundPage() {
       }
       setLastPlayedAt(lastSeen);
 
-      // Sort players: most-recently-played first, then alpha for the rest.
+      // Sort: logged-in user first, then alphabetical by last name.
+      const myUid = userRes.data.user?.id ?? null;
+      const lastNameKey = (name: string) => {
+        const parts = name.trim().split(/\s+/);
+        if (parts.length <= 1) return name.toLowerCase();
+        return `${parts[parts.length - 1]} ${parts.slice(0, -1).join(" ")}`.toLowerCase();
+      };
       const players = (playersRes.data ?? []).slice().sort((a: any, b: any) => {
-        const la = lastSeen[a.id] ?? "";
-        const lb = lastSeen[b.id] ?? "";
-        if (la !== lb) return lb.localeCompare(la);
-        return a.display_name.localeCompare(b.display_name);
+        const aMe = myUid && a.profile_id === myUid;
+        const bMe = myUid && b.profile_id === myUid;
+        if (aMe && !bMe) return -1;
+        if (!aMe && bMe) return 1;
+        return lastNameKey(a.display_name).localeCompare(lastNameKey(b.display_name));
       });
       setAllPlayers(players);
 
@@ -140,8 +154,7 @@ export default function NewRoundPage() {
       return;
     }
     (async () => {
-      // Order by rating desc so the harder tees come first — most groups list
-      // tees that way (Black/Blue at the top).
+      // Order by rating desc — harder tees first.
       const { data } = await sb
         .from("course_tees")
         .select("id, name, gender, rating, slope, par")
@@ -149,12 +162,21 @@ export default function NewRoundPage() {
         .order("rating", { ascending: false });
       const loaded = data ?? [];
       setTees(loaded);
-      // Backfill tee_id for any picked player who was added before tees
-      // finished loading (otherwise startRound() rejects them with an empty
-      // UUID error). New tee defaults to the first one; user can change.
-      if (loaded.length > 0) {
+      // Pick a sensible default tee — NOT the highest-rated (Black) since
+      // most players play one tee up. We pick the second-highest-rated tee
+      // when there are 2+ tees on file, or the only tee otherwise.
+      const defaultTee = loaded.length >= 2 ? loaded[1].id : loaded[0]?.id;
+      // RESET every picked player's tee_id when the course changes — stale
+      // UUIDs from a previous course were the root of the "invalid input
+      // syntax for type uuid" error on round creation.
+      if (defaultTee) {
         setPickedPlayers((arr) =>
-          arr.map((p) => (p.tee_id ? p : { ...p, tee_id: loaded[0].id }))
+          arr.map((p) => {
+            // If their current tee_id belongs to one of the new course's
+            // tees, keep it; otherwise reset to the new default.
+            const stillValid = loaded.some((t: any) => t.id === p.tee_id);
+            return stillValid ? p : { ...p, tee_id: defaultTee };
+          })
         );
       }
     })();
@@ -163,7 +185,10 @@ export default function NewRoundPage() {
   function togglePlayer(id: string) {
     setPickedPlayers((arr) => {
       if (arr.find((x) => x.id === id)) return arr.filter((x) => x.id !== id);
-      return [...arr, { id, tee_id: tees[0]?.id ?? "", team_id: null }];
+      // Default to the second-highest-rated tee (one tee up from the tips)
+      // since most players don't play the back tee.
+      const defaultTee = (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "";
+      return [...arr, { id, tee_id: defaultTee, team_id: null }];
     });
   }
 
@@ -197,7 +222,7 @@ export default function NewRoundPage() {
     );
     setPickedPlayers((arr) => [
       ...arr,
-      { id: data.id, tee_id: tees[0]?.id ?? "", team_id: null }
+      { id: data.id, tee_id: (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "", team_id: null }
     ]);
     setGuestDraft({ name: "", hi: "" });
   }
@@ -240,7 +265,7 @@ export default function NewRoundPage() {
     const teamGameEnabled = (Object.entries(games) as [GameType, any][]).some(
       ([type, v]) =>
         v.enabled &&
-        ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "six_six_six", "nassau", "match_play"].includes(type)
+        ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "scramble_gross", "scramble_net", "six_six_six", "nassau", "match_play"].includes(type)
     );
     if (teamGameEnabled && teamCount > 0 && sanitized.some((p) => p._teamIndex < 0)) {
       setBusy(false);
@@ -389,7 +414,7 @@ export default function NewRoundPage() {
             className="w-full text-left rounded-xl border border-gold-500/30 bg-brand-900/40 hover:bg-brand-900/70 p-3 transition-colors"
             onClick={() => {
               const valid = lastLineup.playerIds.filter((pid) => allPlayers.some((p) => p.id === pid));
-              setPickedPlayers(valid.map((pid) => ({ id: pid, tee_id: tees[0]?.id ?? "", team_id: null })));
+              setPickedPlayers(valid.map((pid) => ({ id: pid, tee_id: (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "", team_id: null })));
             }}
           >
             <div className="flex items-center justify-between gap-3">
@@ -857,17 +882,30 @@ function GameConfigEditor({
 }
 
 function Money({ label, cents, onChange }: { label: string; cents: number; onChange: (cents: number) => void }) {
+  // Uncontrolled input + onBlur commit. Type-as-text so users can clear and
+  // retype freely without React reformatting their cursor mid-edit.
+  // Select-on-focus makes "tap to replace" feel native on phones.
   return (
     <div>
       <label className="label text-xs">{label}</label>
-      <input
-        className="input text-sm"
-        type="number"
-        step="0.5"
-        min="0"
-        value={fromCents(cents)}
-        onChange={(e) => onChange(asCents(e.target.value))}
-      />
+      <div className="relative">
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-cream-100/55 text-sm pointer-events-none">$</span>
+        <input
+          className="input text-sm pl-5"
+          type="text"
+          inputMode="decimal"
+          defaultValue={fromCents(cents)}
+          key={cents /* re-mount when external value changes (e.g., preset applied) */}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={(e) => {
+            const next = asCents(e.target.value);
+            if (next !== cents) onChange(next);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+      </div>
     </div>
   );
 }

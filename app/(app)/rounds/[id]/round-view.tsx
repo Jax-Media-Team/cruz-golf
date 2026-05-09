@@ -211,7 +211,7 @@ function TeamPanel({
   startingHole: number;
 }) {
   const teamGames = games.filter((g) =>
-    ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "six_six_six"].includes(String(g.game_type))
+    ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "scramble_gross", "scramble_net", "six_six_six"].includes(String(g.game_type))
   );
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
   if (teamGames.length === 0)

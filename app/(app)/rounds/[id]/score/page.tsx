@@ -41,23 +41,7 @@ export default async function ScoreEntryPage({
     if (!invite) redirect(`/rounds/${id}/join`);
   }
 
-  // Wager handshake: if any game has stakes and this user hasn't acked, route them to wagers page.
-  if (!isCommissioner) {
-    const { count: stakedGames } = await sb
-      .from("round_games")
-      .select("id", { head: true, count: "exact" })
-      .eq("round_id", id)
-      .gt("stake_cents", 0);
-    if ((stakedGames ?? 0) > 0) {
-      const { data: ack } = await sb
-        .from("round_wager_acks")
-        .select("profile_id")
-        .eq("round_id", id)
-        .eq("profile_id", user.id)
-        .maybeSingle();
-      if (!ack) redirect(`/rounds/${id}/wagers`);
-    }
-  }
+  // Wager handshake removed — no longer a gate to scoring.
 
   const { data: rp } = await sb
     .from("round_players")

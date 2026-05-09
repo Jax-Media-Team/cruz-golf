@@ -35,20 +35,9 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
 
   // Wager handshake (group scorer must have ack'd if any stakes).
   if (!isCommissioner) {
-    const { count: stakedGames } = await sb
-      .from("round_games")
-      .select("id", { head: true, count: "exact" })
-      .eq("round_id", id)
-      .gt("stake_cents", 0);
-    if ((stakedGames ?? 0) > 0) {
-      const { data: ack } = await sb
-        .from("round_wager_acks")
-        .select("profile_id")
-        .eq("round_id", id)
-        .eq("profile_id", user.id)
-        .maybeSingle();
-      if (!ack) redirect(`/rounds/${id}/wagers`);
-    }
+    // Wager handshake removed per product decision — was friction more than
+    // value. The /wagers page still exists for groups that explicitly want
+    // it, but it's no longer a gate to scoring.
   }
 
   const { data: rps } = await sb

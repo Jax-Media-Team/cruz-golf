@@ -50,6 +50,8 @@ export type GameType =
   | "best_ball_net"
   | "aggregate_gross"
   | "aggregate_net"
+  | "scramble_gross"
+  | "scramble_net"
   | "skins_gross"
   | "skins_net"
   | "skins_canadian"
