@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { BrandLockup } from "@/components/BrandLockup";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function SignupPage() {
   const [name, setName] = useState("");
@@ -23,13 +24,13 @@ export default function SignupPage() {
     const { data: signup, error } = await sb.auth.signUp({ email, password });
     if (error || !signup.user) {
       setBusy(false);
-      setErr(error?.message ?? "Sign-up failed");
+      setErr(friendlyAuthError(error ?? "Sign-up failed"));
       return;
     }
     const profile = await sb.from("profiles").upsert({ id: signup.user.id, display_name: name });
     if (profile.error) {
       setBusy(false);
-      setErr(profile.error.message);
+      setErr(friendlyAuthError(profile.error));
       return;
     }
     const finalGroupName = groupName.trim() || `${name.split(" ")[0] || "My"}'s Group`;
@@ -40,7 +41,7 @@ export default function SignupPage() {
       .single();
     if (ge || !g) {
       setBusy(false);
-      setErr(ge?.message ?? "Could not create group");
+      setErr(friendlyAuthError(ge ?? "Could not create group"));
       return;
     }
     await sb

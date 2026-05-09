@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { BrandLockup } from "@/components/BrandLockup";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -21,7 +22,7 @@ export default function LoginPage() {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.push("/dashboard");

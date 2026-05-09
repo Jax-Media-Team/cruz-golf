@@ -1,7 +1,12 @@
 /**
  * Pluggable scorecard OCR. Default adapter: OpenAI gpt-4o vision.
  * If OPENAI_API_KEY is unset, returns a "blank" parse so the user can hand-type.
+ *
+ * Wraps the upstream call in `retry()` with exponential backoff so a transient
+ * 429/5xx from OpenAI never bubbles up to the user.
  */
+import { retry } from "../retry";
+
 export interface ScorecardOCR {
   parse(input: { dataUrl: string; players: string[]; holes: 9 | 18 }): Promise<{
     players: Array<{ name: string; scores: Array<number | null> }>;
@@ -43,16 +48,19 @@ export const openAIVisionOCR: ScorecardOCR = {
         }
       ]
     };
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) {
-      const text = await r.text();
-      throw new Error(`OCR upstream error: ${r.status} ${text.slice(0, 200)}`);
-    }
-    const j = await r.json();
+    const j = await retry(async () => {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        // Surface the status code in the message so retry's predicate can match 429/5xx.
+        throw new Error(`OCR upstream ${r.status}: ${text.slice(0, 200)}`);
+      }
+      return await r.json();
+    }, { attempts: 4, baseMs: 500 });
     const raw = j.choices?.[0]?.message?.content;
     let parsed: any;
     try {

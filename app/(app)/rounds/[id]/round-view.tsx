@@ -51,9 +51,26 @@ export function RoundView({
 
   const holes: CourseHole[] = useMemo(() => players[0]?.tee?.holes ?? [], [players]);
 
-  // Realtime subscription
+  // Realtime subscription with reconnect-safe refetch.
+  // The Supabase SDK auto-reconnects the socket, but events emitted while
+  // disconnected are lost — so on every (re)subscribe we refetch the round's
+  // scores from the DB to catch up. We also keep a 60s safety-net refetch.
   useEffect(() => {
     const sb = supabaseBrowser();
+    const rpIds = new Set(players.map((p) => p.id));
+    if (rpIds.size === 0) return;
+
+    let cancelled = false;
+
+    async function refetchScores() {
+      const { data } = await sb
+        .from("scores")
+        .select("round_player_id, hole_number, gross")
+        .in("round_player_id", Array.from(rpIds));
+      if (cancelled || !data) return;
+      setScores(data as Score[]);
+    }
+
     const channel = sb
       .channel(`round-${roundId}-scores`)
       .on(
@@ -62,7 +79,6 @@ export function RoundView({
         (payload: any) => {
           const row = payload.new ?? payload.old;
           if (!row) return;
-          const rpIds = new Set(players.map((p) => p.id));
           if (!rpIds.has(row.round_player_id)) return;
           setScores((prev) => {
             const idx = prev.findIndex(
@@ -77,8 +93,17 @@ export function RoundView({
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        // After a (re)subscribe, refetch to catch any events missed while disconnected.
+        if (status === "SUBSCRIBED") refetchScores();
+      });
+
+    // Safety-net refetch every 60s in case Realtime events are silently dropped.
+    const interval = setInterval(refetchScores, 60_000);
+
     return () => {
+      cancelled = true;
+      clearInterval(interval);
       sb.removeChannel(channel);
     };
   }, [roundId, players]);
