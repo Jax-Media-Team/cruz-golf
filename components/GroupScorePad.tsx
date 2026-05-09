@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CourseHole } from "@/lib/types";
 
 export type GroupPlayer = {
@@ -63,21 +63,10 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
     if (dx > 0 && hole > firstHole) setHole(hole - 1);
   }
 
-  // Auto-advance: when every player has a score on the current hole, move forward (once).
+  // The user controls hole navigation explicitly with the Next button.
+  // We only show whether the hole is "complete" (every selected player has
+  // a score) so the Next button can highlight when it's safe to advance.
   const allEntered = players.length > 0 && players.every((p) => scores[k(p.id, current.hole_number)] != null);
-  const advanceArmed = useRef(false);
-  useEffect(() => {
-    if (!allEntered) {
-      advanceArmed.current = true;
-      return;
-    }
-    if (!advanceArmed.current) return;
-    advanceArmed.current = false;
-    if (current.hole_number < lastHole) {
-      const t = setTimeout(() => setHole((h) => Math.min(lastHole, h + 1)), 600);
-      return () => clearTimeout(t);
-    }
-  }, [allEntered, current.hole_number, lastHole]);
 
   return (
     <div className="space-y-4 select-none">
@@ -231,22 +220,39 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
         })}
       </div>
 
-      {/* Footer nav */}
-      <div className="flex gap-2 pb-2">
-        <button
-          className="btn-secondary flex-1"
-          onClick={() => setHole(Math.max(firstHole, hole - 1))}
-          disabled={hole <= firstHole}
-        >
-          ← Prev
-        </button>
-        <button
-          className="btn-primary flex-1"
-          onClick={() => setHole(Math.min(lastHole, hole + 1))}
-          disabled={hole >= lastHole}
-        >
-          {allEntered ? "Next →" : "Skip →"}
-        </button>
+      {/* Footer nav — sticky so Next is always reachable while scrolling rows */}
+      <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-brand-950 via-brand-950/95 to-transparent">
+        <div className="flex gap-2">
+          <button
+            className="btn-secondary flex-1 py-3"
+            onClick={() => setHole(Math.max(firstHole, hole - 1))}
+            disabled={hole <= firstHole}
+          >
+            ← Prev
+          </button>
+          <button
+            className={`flex-[2] py-3 rounded-xl font-medium transition-colors active:scale-95 ${
+              hole >= lastHole
+                ? "bg-brand-900/60 text-cream-100/40 cursor-not-allowed"
+                : allEntered
+                ? "bg-gold-500 text-brand-900 shadow-soft"
+                : "bg-brand-800 text-cream-50 border border-cream-100/15"
+            }`}
+            onClick={() => setHole(Math.min(lastHole, hole + 1))}
+            disabled={hole >= lastHole}
+          >
+            {hole >= lastHole
+              ? "Last hole"
+              : allEntered
+              ? `Next → Hole ${hole + 1}`
+              : `Skip to Hole ${hole + 1}`}
+          </button>
+        </div>
+        {!allEntered && players.length > 0 && (
+          <p className="text-[11px] text-cream-100/55 text-center mt-2">
+            {players.filter((p) => scores[k(p.id, current.hole_number)] == null).length} player(s) still need a score on this hole.
+          </p>
+        )}
       </div>
     </div>
   );

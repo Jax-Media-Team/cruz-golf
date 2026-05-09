@@ -62,9 +62,7 @@ export function ScorePad({
   async function set(next: number) {
     if (next < 1) return;
     await onSave(current.hole_number, next);
-    if (current.hole_number < lastHole) {
-      setTimeout(() => setHole((h) => Math.min(lastHole, h + 1)), 480);
-    }
+    // No auto-advance — user controls hole navigation with Next →.
   }
 
   // Touch swipe between holes
