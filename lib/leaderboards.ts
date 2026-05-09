@@ -93,7 +93,11 @@ export type Leaderboards = {
   birdies: LeaderboardRow[];
   skins: LeaderboardRow[];
   hot: LeaderboardRow[];
+  cold: LeaderboardRow[];
   best_round: LeaderboardRow[];
+  win_rate: LeaderboardRow[];
+  money_per_round: LeaderboardRow[];
+  most_active: LeaderboardRow[];
 };
 
 /** Compute per-player stats across an entire group's history. */
@@ -291,12 +295,23 @@ export function buildLeaderboards(
       .sort((a, b) => b.value - a.value),
     hot: eligible
       .slice()
+      .filter((s) => s.hot_streak > 0)
       .sort((a, b) => b.hot_streak - a.hot_streak)
       .map((s) => ({
         player_id: s.player_id,
         display_name: s.display_name,
         value: s.hot_streak,
-        meta: s.hot_streak > 0 ? `won last ${s.hot_streak}` : s.cold_streak > 0 ? `lost last ${s.cold_streak}` : "—"
+        meta: `won last ${s.hot_streak}`
+      })),
+    cold: eligible
+      .slice()
+      .filter((s) => s.cold_streak > 0)
+      .sort((a, b) => b.cold_streak - a.cold_streak)
+      .map((s) => ({
+        player_id: s.player_id,
+        display_name: s.display_name,
+        value: s.cold_streak,
+        meta: `lost last ${s.cold_streak}`
       })),
     best_round: eligible
       .filter((s) => s.best_gross != null)
@@ -307,6 +322,43 @@ export function buildLeaderboards(
         display_name: s.display_name,
         value: s.best_gross ?? 0,
         meta: `over ${s.rounds} round${s.rounds === 1 ? "" : "s"}`
+      })),
+    win_rate: eligible
+      .filter((s) => s.rounds_won_money + s.rounds_lost_money > 0)
+      .slice()
+      .sort((a, b) => {
+        const aRate = a.rounds_won_money / Math.max(1, a.rounds_won_money + a.rounds_lost_money);
+        const bRate = b.rounds_won_money / Math.max(1, b.rounds_won_money + b.rounds_lost_money);
+        return bRate - aRate;
+      })
+      .map((s) => {
+        const decided = s.rounds_won_money + s.rounds_lost_money;
+        const pct = decided > 0 ? (s.rounds_won_money / decided) * 100 : 0;
+        return {
+          player_id: s.player_id,
+          display_name: s.display_name,
+          value: Math.round(pct),
+          meta: `${s.rounds_won_money}W / ${s.rounds_lost_money}L`
+        };
+      }),
+    money_per_round: eligible
+      .filter((s) => s.rounds > 0)
+      .slice()
+      .sort((a, b) => b.money_cents / Math.max(1, b.rounds) - a.money_cents / Math.max(1, a.rounds))
+      .map((s) => ({
+        player_id: s.player_id,
+        display_name: s.display_name,
+        value: Math.round(s.money_cents / Math.max(1, s.rounds)),
+        meta: `${s.rounds} rounds`
+      })),
+    most_active: eligible
+      .slice()
+      .sort((a, b) => b.rounds - a.rounds)
+      .map((s) => ({
+        player_id: s.player_id,
+        display_name: s.display_name,
+        value: s.rounds,
+        meta: s.last_played ? `last ${s.last_played}` : ""
       }))
   };
 }

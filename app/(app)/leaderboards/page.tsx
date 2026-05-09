@@ -143,6 +143,19 @@ export default async function LeaderboardsPage() {
             valueTone={(v) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-red-300" : "text-cream-100/65")}
           />
           <Board
+            title="📈 Money per round"
+            subtitle="Average winnings per round played"
+            rows={boards.money_per_round}
+            valueFmt={(v) => fmtMoney(v)}
+            valueTone={(v) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-red-300" : "text-cream-100/65")}
+          />
+          <Board
+            title="🎯 Win rate"
+            subtitle="Percentage of rounds where you came out ahead"
+            rows={boards.win_rate}
+            valueFmt={(v) => `${v}%`}
+          />
+          <Board
             title="🐦 Birdies"
             subtitle="Total birdies + per-round average"
             rows={boards.birdies}
@@ -150,14 +163,26 @@ export default async function LeaderboardsPage() {
           />
           <Board
             title="🔥 Hot streak"
-            subtitle="Consecutive winning rounds (recency)"
+            subtitle="Consecutive winning rounds (recent)"
             rows={boards.hot}
-            valueFmt={(v) => (v > 0 ? `${v}🔥` : "—")}
+            valueFmt={(v) => `${v}🔥`}
+          />
+          <Board
+            title="🥶 Cold streak"
+            subtitle="Consecutive losing rounds (recent) — chin up"
+            rows={boards.cold}
+            valueFmt={(v) => `${v}🧊`}
           />
           <Board
             title="🏆 Best round"
             subtitle="Lowest gross score (18-hole equivalent)"
             rows={boards.best_round}
+            valueFmt={(v) => v.toString()}
+          />
+          <Board
+            title="📅 Most active"
+            subtitle="Rounds played in this group"
+            rows={boards.most_active}
             valueFmt={(v) => v.toString()}
           />
         </div>
