@@ -31,7 +31,7 @@ export function SaveStatusBanner({
     const sample = errorEntries[0]?.[1];
     const isRls = sample?.toLowerCase().includes("row-level security") ?? false;
     return (
-      <div className="card p-3 border border-red-400/40 bg-red-500/10 space-y-2 text-sm">
+      <div className="card p-3 border border-red-400/40 bg-red-500/10 space-y-2 text-sm sticky top-2 z-20 shadow-soft">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="font-medium text-red-200">

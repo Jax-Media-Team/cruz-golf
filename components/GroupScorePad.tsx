@@ -128,8 +128,9 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
         </div>
       </div>
 
-      {/* Player rows */}
-      <div className="space-y-2">
+      {/* Player rows — bottom padding leaves room for the sticky footer
+          so the last row's +/- buttons aren't hidden under it on mobile */}
+      <div className="space-y-2 pb-32">
         {players.map((p) => {
           const s = scores[k(p.id, current.hole_number)] ?? null;
           const st = p.strokes[idx] ?? 0;

@@ -75,8 +75,12 @@ export function useScoreSaver(scope: { roundId: string }) {
     if (drainingRef.current) return;
     drainingRef.current = true;
     try {
-      while (queueRef.current.length > 0) {
-        const item = queueRef.current[0];
+      // Park items by index so a stuck head doesn't block the queue. We walk
+      // forward until we've tried every item; failed ones stay marked as
+      // "failed" but other writes continue.
+      let i = 0;
+      while (i < queueRef.current.length) {
+        const item = queueRef.current[i];
         setStatus(item.key, "saving");
         try {
           const { data: userData } = await sb.auth.getUser();
@@ -94,16 +98,17 @@ export function useScoreSaver(scope: { roundId: string }) {
             if (error) throw error;
           };
           await retry(writer, { attempts: 3, baseMs: 400 });
-          // Success — pop from queue.
-          queueRef.current = dropHead(queueRef.current);
+          // Success — remove this item. Other items shift down so we don't
+          // increment i.
+          queueRef.current = queueRef.current.filter((_, idx) => idx !== i);
           persistQueue();
           setStatus(item.key, "saved");
         } catch (e: any) {
-          // Failed after retries. Leave at head of queue so we can retry later
-          // (e.g. on next entry, on focus, or via manual button). Stop draining.
+          // Failed after retries. Leave it in the queue but skip past it so
+          // the next item can attempt to write. Surfaces as "failed" in the
+          // banner; user can Retry or Discard.
           item.attempts += 1;
           persistQueue();
-          // Log full context to DevTools so we can diagnose RLS / FK issues.
           // eslint-disable-next-line no-console
           console.error("[score-saver] save failed", {
             round_player_id: item.round_player_id,
@@ -113,7 +118,7 @@ export function useScoreSaver(scope: { roundId: string }) {
             error: e?.message ?? e
           });
           setStatus(item.key, "failed", e?.message ?? "Save failed");
-          break;
+          i += 1;
         }
       }
     } finally {
