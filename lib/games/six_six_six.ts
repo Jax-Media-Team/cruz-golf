@@ -89,7 +89,8 @@ export function settleSixSixSix(input: GameInput): GameOutput {
       for (const h of segHoles) {
         const a = sideHoleScore(team_a, h.hole_number);
         const b = sideHoleScore(team_b, h.hole_number);
-        if (a == null || b == null) break;
+        // Skip holes still missing — keep counting later complete holes.
+        if (a == null || b == null) continue;
         played++;
         if (a < b) aUp++;
         else if (b < a) aUp--;
@@ -111,7 +112,7 @@ export function settleSixSixSix(input: GameInput): GameOutput {
       for (const h of segHoles) {
         const a = sideHoleScore(team_a, h.hole_number);
         const b = sideHoleScore(team_b, h.hole_number);
-        if (a == null || b == null) break;
+        if (a == null || b == null) continue;
         played++;
         aTot += a;
         bTot += b;

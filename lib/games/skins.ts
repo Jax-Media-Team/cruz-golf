@@ -55,9 +55,11 @@ export function settleSkins(input: GameInput, mode: "gross" | "net" | "canadian"
         par: h.par
       });
     }
-    // If anyone hasn't played the hole yet, treat it as "not yet decided" — stop projection here for live skins.
+    // If anyone hasn't played the hole yet, treat it as "not yet decided" and
+    // skip — but keep evaluating later holes that ARE complete. Carry is NOT
+    // incremented for an undecided hole (it just stays where it was).
     if (entries.some((e) => (useNet ? e.net : e.gross) === null)) {
-      break;
+      continue;
     }
 
     const score = (e: Entry) => (useNet ? (e.net as number) : (e.gross as number));
@@ -152,7 +154,16 @@ export function settleSkins(input: GameInput, mode: "gross" | "net" | "canadian"
     hole: a.hole,
     label: `skin: ${shortName(input.players, a.winner)}${a.value > baseValue ? ` (×${Math.round(a.value / baseValue)})` : ""}`
   }));
-  out.status = orderedHoles.length === input.course.holes.length && carry === 0 ? "final" : "live";
+  // "final" only when every hole has been resolved (won, tied, or carried-and-resolved)
+  // AND there's no trailing carry. Otherwise the engine is still live.
+  const everyHoleScored = input.players.length > 0 && orderedHoles.every((h) =>
+    input.players.every((p) => {
+      const sheet = sheets.get(p.id)!;
+      const row = sheet.rows.find((r) => r.hole_number === h.hole_number);
+      return useNet ? row?.net != null : row?.gross != null;
+    })
+  );
+  out.status = everyHoleScored && carry === 0 ? "final" : "live";
   return out;
 }
 

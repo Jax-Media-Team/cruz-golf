@@ -161,12 +161,17 @@ function SkinsPanel({
         });
         return (
           <div key={g.id} className="rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 px-4 py-3 font-serif text-lg text-slate-900">
-              {g.name}
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
+              <span className="font-serif text-lg text-slate-900">{g.name}</span>
+              <StatusPill status={out.status} />
             </div>
             <ul className="divide-y divide-slate-100 text-sm">
               {out.highlights.length === 0 && (
-                <li className="px-4 py-3 text-slate-500">No skins awarded yet.</li>
+                <li className="px-4 py-3 text-slate-500">
+                  {out.status === "live"
+                    ? "No skins awarded yet — updates as each hole is fully scored."
+                    : "No skins awarded — every hole tied or pushed."}
+                </li>
               )}
               {out.highlights.map((h, i) => (
                 <li key={i} className="px-4 py-3 flex items-center justify-between">
@@ -214,8 +219,9 @@ function TeamPanel({
         const rows = [...out.perPlayer.entries()].sort((a, b) => b[1].delta_cents - a[1].delta_cents);
         return (
           <div key={g.id} className="rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 px-4 py-3 font-serif text-lg text-slate-900">
-              {g.name}
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
+              <span className="font-serif text-lg text-slate-900">{g.name}</span>
+              <StatusPill status={out.status} />
             </div>
             <ul className="divide-y divide-slate-100 text-sm">
               {rows.map(([pid, v]) => (
@@ -235,10 +241,31 @@ function TeamPanel({
                 </li>
               ))}
             </ul>
+            {out.status === "live" && (
+              <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">
+                Updates as remaining holes are scored.
+              </div>
+            )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: "live" | "final" }) {
+  if (status === "final") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300/50">
+        Final
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-300/50">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+      Live
+    </span>
   );
 }
 
@@ -257,6 +284,7 @@ function BetsPanel({
     return <div className="text-slate-500 text-sm py-8 text-center">No games configured.</div>;
   const totals = new Map<string, number>();
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
+  let anyLive = false;
 
   for (const g of games) {
     if (g.game_type === "ctp" || g.game_type === "long_drive" || g.game_type === "custom") continue;
@@ -266,6 +294,7 @@ function BetsPanel({
       scores,
       course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }
     });
+    if (out.status === "live") anyLive = true;
     for (const [pid, v] of out.perPlayer) {
       totals.set(pid, (totals.get(pid) ?? 0) + v.delta_cents);
     }
@@ -275,8 +304,9 @@ function BetsPanel({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-4 py-3 font-serif text-lg text-slate-900">
-        Projected payouts
+      <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
+        <span className="font-serif text-lg text-slate-900">Projected payouts</span>
+        <StatusPill status={anyLive ? "live" : "final"} />
       </div>
       <ul className="divide-y divide-slate-100 text-sm">
         {rows.map(([pid, v]) => (

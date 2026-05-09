@@ -73,7 +73,9 @@ export function settleNassau(input: GameInput): GameOutput {
       for (let i = startIdx; i < endIdx; i++) {
         const a = sideHoleScore(sideA, holes[i].hole_number);
         const b = sideHoleScore(sideB, holes[i].hole_number);
-        if (a == null || b == null) break;
+        // Skip holes not yet scored — keep counting later holes that ARE
+        // scored. Segment still only settles when played === segLen.
+        if (a == null || b == null) continue;
         played++;
         if (a < b) aUp++;
         else if (b < a) aUp--;
@@ -100,7 +102,8 @@ export function settleNassau(input: GameInput): GameOutput {
     for (let i = startIdx; i < endIdx; i++) {
       const a = sideHoleScore(sideA, holes[i].hole_number);
       const b = sideHoleScore(sideB, holes[i].hole_number);
-      if (a == null || b == null) break;
+      // Skip holes not yet scored — segment still only settles when complete.
+      if (a == null || b == null) continue;
       aTotal += a;
       bTotal += b;
       played++;
@@ -126,8 +129,14 @@ export function settleNassau(input: GameInput): GameOutput {
   }
 
   // Determine status: final if last hole has scores for both sides.
-  const lastA = sideHoleScore(sideA, holes[total - 1].hole_number);
-  const lastB = sideHoleScore(sideB, holes[total - 1].hole_number);
-  out.status = lastA != null && lastB != null ? "final" : "live";
+  // Final only when EVERY hole has scores from both sides — not just the last one.
+  let allScored = true;
+  for (let i = 0; i < total; i++) {
+    if (sideHoleScore(sideA, holes[i].hole_number) == null || sideHoleScore(sideB, holes[i].hole_number) == null) {
+      allScored = false;
+      break;
+    }
+  }
+  out.status = allScored ? "final" : "live";
   return out;
 }

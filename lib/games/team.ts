@@ -33,7 +33,7 @@ export function settleTeamGame(
 
   const orderedHoles = [...input.course.holes].sort((a, b) => a.hole_number - b.hole_number);
   const teamTotals = new Map<UUID, number>();
-  let lastPlayedHole = 0;
+  let holesScored = 0;
 
   for (const h of orderedHoles) {
     let allHaveScore = true;
@@ -54,14 +54,16 @@ export function settleTeamGame(
       const teamScore = variant === "best_ball" ? Math.min(...scores) : scores.reduce((a, b) => a + b, 0);
       teamHoleScores.set(teamId, teamScore);
     }
-    if (!allHaveScore) break;
+    // Skip incomplete holes but keep evaluating later complete ones — don't lock
+    // out subsequent fully-scored holes if a middle hole is missing.
+    if (!allHaveScore) continue;
     for (const [teamId, ts] of teamHoleScores) {
       teamTotals.set(teamId, (teamTotals.get(teamId) ?? 0) + ts);
     }
-    lastPlayedHole = h.hole_number;
+    holesScored += 1;
   }
 
-  if (teamTotals.size === 0) return out;
+  if (teamTotals.size === 0 || holesScored === 0) return out;
 
   const lowest = Math.min(...teamTotals.values());
   const winningTeams = [...teamTotals.entries()].filter(([, v]) => v === lowest).map(([k]) => k);
@@ -85,6 +87,6 @@ export function settleTeamGame(
     );
   }
 
-  out.status = lastPlayedHole === orderedHoles.length ? "final" : "live";
+  out.status = holesScored === orderedHoles.length ? "final" : "live";
   return out;
 }

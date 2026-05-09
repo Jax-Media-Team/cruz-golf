@@ -169,20 +169,50 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       )}
 
       {round.status !== "finalized" && (
-        <Link
-          href={`/rounds/${id}/score-group`}
-          className="card p-4 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors border border-gold-500/30"
-        >
-          <div>
-            <div className="font-serif text-lg text-cream-50">Score the group</div>
-            <p className="text-xs text-cream-100/65 mt-0.5">
-              One scorekeeper enters every player&apos;s scores hole by hole.
-            </p>
-          </div>
-          <span className="pill bg-gold-500 text-brand-900">Open →</span>
-        </Link>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Link
+            href={`/rounds/${id}/score-group`}
+            className="card card-hover p-3 text-center flex flex-col items-center gap-1 border border-gold-500/30 hover:bg-brand-900/80 transition-colors"
+          >
+            <span className="text-xl">📋</span>
+            <span className="font-serif text-sm text-cream-50 leading-tight">Enter scores</span>
+          </Link>
+          <a
+            href="#leaderboard"
+            className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+          >
+            <span className="text-xl">🏆</span>
+            <span className="font-serif text-sm text-cream-50 leading-tight">Leaderboard</span>
+          </a>
+          {isCommissioner && (
+            <Link
+              href={`/rounds/${id}/invites`}
+              className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+            >
+              <span className="text-xl">✉️</span>
+              <span className="font-serif text-sm text-cream-50 leading-tight">Invite players</span>
+            </Link>
+          )}
+          {hasStakes && (
+            <Link
+              href={`/rounds/${id}/wagers`}
+              className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+            >
+              <span className="text-xl">💰</span>
+              <span className="font-serif text-sm text-cream-50 leading-tight">View wagers</span>
+            </Link>
+          )}
+          <Link
+            href={`/rounds/${id}/finalize`}
+            className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+          >
+            <span className="text-xl">✅</span>
+            <span className="font-serif text-sm text-cream-50 leading-tight">Settle up</span>
+          </Link>
+        </div>
       )}
 
+      <div id="leaderboard" />
       <RoundView roundId={id} rps={rps ?? []} initialScores={scores ?? []} games={games ?? []} />
     </div>
   );

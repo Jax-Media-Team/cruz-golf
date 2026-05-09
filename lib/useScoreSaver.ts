@@ -1,0 +1,180 @@
+"use client";
+/**
+ * Hook that owns score persistence. Guarantees:
+ *  - every score the user enters either reaches the DB OR shows up as failed
+ *  - writes survive page reloads via a localStorage queue (drained on mount)
+ *  - retries on transient errors with exponential backoff
+ *  - exposes per-key status so the UI can show pending / saved / failed
+ *
+ * Why this exists: the previous save paths fired-and-forgot the upsert. If RLS,
+ * network, or auth denied the write, the local React state would still show the
+ * score and the user would think it was saved. Closing the browser would then
+ * lose every "saved" score that never actually reached Postgres.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabaseBrowser } from "./supabase/client";
+import { retry } from "./retry";
+
+type SaveKey = string; // `${round_player_id}:${hole_number}`
+type Status = "idle" | "saving" | "saved" | "failed";
+
+type PendingItem = {
+  key: SaveKey;
+  round_player_id: string;
+  hole_number: number;
+  gross: number;
+  attempts: number;
+  /** ms epoch — used to flag stale items still pending after a long time */
+  enqueuedAt: number;
+};
+
+const QUEUE_KEY = "cruz-golf:pendingScores:v1";
+
+function loadQueue(): PendingItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(items: PendingItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(QUEUE_KEY, JSON.stringify(items));
+  } catch {
+    /* localStorage full or disabled — write was already attempted; nothing else to do */
+  }
+}
+
+export type SaverState = {
+  /** Per-key status keyed by `${rpId}:${hole}` */
+  status: Record<SaveKey, Status>;
+  /** Most recent error per key (for surfacing to the user) */
+  errors: Record<SaveKey, string>;
+  /** Total items still in flight. Useful for an unsaved-changes warning. */
+  pending: number;
+};
+
+export function useScoreSaver(scope: { roundId: string }) {
+  const sb = supabaseBrowser();
+  const [state, setState] = useState<SaverState>({ status: {}, errors: {}, pending: 0 });
+  const queueRef = useRef<PendingItem[]>([]);
+  const drainingRef = useRef(false);
+
+  const setStatus = useCallback((key: SaveKey, status: Status, err?: string) => {
+    setState((s) => {
+      const nextStatus = { ...s.status, [key]: status };
+      const nextErrors = { ...s.errors };
+      if (err) nextErrors[key] = err;
+      else if (status === "saved" || status === "saving") delete nextErrors[key];
+      const pending = Object.values(nextStatus).filter((v) => v === "saving" || v === "failed").length;
+      return { status: nextStatus, errors: nextErrors, pending };
+    });
+  }, []);
+
+  const persistQueue = useCallback(() => {
+    saveQueue(queueRef.current);
+  }, []);
+
+  const drain = useCallback(async () => {
+    if (drainingRef.current) return;
+    drainingRef.current = true;
+    try {
+      while (queueRef.current.length > 0) {
+        const item = queueRef.current[0];
+        setStatus(item.key, "saving");
+        try {
+          const { data: userData } = await sb.auth.getUser();
+          const writer = async () => {
+            const { error } = await sb.from("scores").upsert(
+              {
+                round_player_id: item.round_player_id,
+                hole_number: item.hole_number,
+                gross: item.gross,
+                updated_by: userData.user?.id ?? null,
+                updated_at: new Date().toISOString()
+              },
+              { onConflict: "round_player_id,hole_number" }
+            );
+            if (error) throw error;
+          };
+          await retry(writer, { attempts: 3, baseMs: 400 });
+          // Success — pop from queue.
+          queueRef.current = queueRef.current.slice(1);
+          persistQueue();
+          setStatus(item.key, "saved");
+        } catch (e: any) {
+          // Failed after retries. Leave at head of queue so we can retry later
+          // (e.g. on next entry, on focus, or via manual button). Stop draining.
+          item.attempts += 1;
+          persistQueue();
+          setStatus(item.key, "failed", e?.message ?? "Save failed");
+          break;
+        }
+      }
+    } finally {
+      drainingRef.current = false;
+    }
+  }, [sb, setStatus, persistQueue]);
+
+  // Boot: load any queued items from a previous session and drain.
+  useEffect(() => {
+    const loaded = loadQueue();
+    if (loaded.length > 0) {
+      queueRef.current = loaded;
+      // Mark them as saving so the UI shows pending dots.
+      for (const it of loaded) setStatus(it.key, "saving");
+      void drain();
+    }
+    // Drain on tab focus / online — covers the laptop-closed-and-reopened path.
+    const onWake = () => {
+      if (queueRef.current.length > 0) void drain();
+    };
+    window.addEventListener("online", onWake);
+    window.addEventListener("focus", onWake);
+    return () => {
+      window.removeEventListener("online", onWake);
+      window.removeEventListener("focus", onWake);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = useCallback(
+    (round_player_id: string, hole_number: number, gross: number) => {
+      const key: SaveKey = `${round_player_id}:${hole_number}`;
+      // Drop any prior pending item for the same key — newest write wins.
+      queueRef.current = queueRef.current.filter((it) => it.key !== key);
+      queueRef.current.push({
+        key,
+        round_player_id,
+        hole_number,
+        gross,
+        attempts: 0,
+        enqueuedAt: Date.now()
+      });
+      persistQueue();
+      setStatus(key, "saving");
+      void drain();
+    },
+    [drain, persistQueue, setStatus]
+  );
+
+  // Warn the user if they try to leave with pending writes.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (state.pending > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [state.pending]);
+
+  return { save, state, retry: drain };
+}

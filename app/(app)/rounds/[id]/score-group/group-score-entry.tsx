@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase/client";
 import { strokesPerHole } from "@/lib/handicap";
 import { GroupScorePad, type GroupPlayer } from "@/components/GroupScorePad";
+import { useScoreSaver } from "@/lib/useScoreSaver";
+import { SaveStatusBanner } from "@/components/SaveStatusBanner";
 
 type RP = {
   id: string;
@@ -27,7 +28,7 @@ export function GroupScoreEntry({
   rps: RP[];
   existing: Existing[];
 }) {
-  const sb = supabaseBrowser();
+  const saver = useScoreSaver({ roundId });
 
   const holes = useMemo(() => {
     const fromAny = rps.find((r) => (r.course_tees?.course_holes?.length ?? 0) > 0);
@@ -66,21 +67,9 @@ export function GroupScoreEntry({
   for (const s of existing) initial[k(s.round_player_id, s.hole_number)] = s.gross;
   const [scores, setScores] = useState(initial);
 
-  async function save(rpId: string, hole: number, gross: number) {
+  function save(rpId: string, hole: number, gross: number) {
     setScores((s) => ({ ...s, [k(rpId, hole)]: gross }));
-    const { data: userData } = await sb.auth.getUser();
-    await sb
-      .from("scores")
-      .upsert(
-        {
-          round_player_id: rpId,
-          hole_number: hole,
-          gross,
-          updated_by: userData.user?.id ?? null,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: "round_player_id,hole_number" }
-      );
+    saver.save(rpId, hole, gross);
   }
 
   return (
@@ -89,6 +78,8 @@ export function GroupScoreEntry({
         <Link href={`/rounds/${roundId}`} className="btn-ghost text-sm">← Back</Link>
         <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">Group scoring</span>
       </header>
+
+      <SaveStatusBanner state={saver.state} onRetry={saver.retry} />
 
       <div>
         <p className="h-eyebrow text-gold-400">Live round</p>
