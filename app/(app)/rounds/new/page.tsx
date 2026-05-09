@@ -148,19 +148,55 @@ export default function NewRoundPage() {
     })();
   }, []);
 
+  // Course-data warnings detected on the picked course (mirrors /admin/course-audit).
+  const [courseIssues, setCourseIssues] = useState<{ errors: number; warnings: number }>({
+    errors: 0,
+    warnings: 0
+  });
+
   useEffect(() => {
     if (!courseId) {
       setTees([]);
+      setCourseIssues({ errors: 0, warnings: 0 });
       return;
     }
     (async () => {
       // Order by rating desc — harder tees first.
-      const { data } = await sb
-        .from("course_tees")
-        .select("id, name, gender, rating, slope, par")
-        .eq("course_id", courseId)
-        .order("rating", { ascending: false });
-      const loaded = data ?? [];
+      const [teesRes, holesRes] = await Promise.all([
+        sb
+          .from("course_tees")
+          .select("id, name, gender, rating, slope, par, holes")
+          .eq("course_id", courseId)
+          .order("rating", { ascending: false }),
+        sb
+          .from("course_holes")
+          .select("tee_id, hole_number, par, stroke_index")
+      ]);
+      const loaded = teesRes.data ?? [];
+      // Audit: missing rating/slope/par, duplicate stroke indexes per tee
+      const teeIds = new Set(loaded.map((t: any) => t.id));
+      const holesByTee = new Map<string, any[]>();
+      for (const h of (holesRes.data ?? []) as any[]) {
+        if (!teeIds.has(h.tee_id)) continue;
+        const arr = holesByTee.get(h.tee_id) ?? [];
+        arr.push(h);
+        holesByTee.set(h.tee_id, arr);
+      }
+      let errors = 0;
+      let warnings = 0;
+      for (const t of loaded as any[]) {
+        if (!t.rating || !t.slope || !t.par) errors += 1;
+        const hs = holesByTee.get(t.id) ?? [];
+        if (hs.length !== t.holes) errors += 1;
+        const sis = hs.map((h: any) => h.stroke_index);
+        const dup = sis.filter((v, i) => sis.indexOf(v) !== i);
+        if (dup.length > 0) errors += 1;
+        const missing = Array.from({ length: t.holes }, (_, i) => i + 1).filter(
+          (n) => !sis.includes(n)
+        );
+        if (missing.length > 0) errors += 1;
+      }
+      setCourseIssues({ errors, warnings });
       setTees(loaded);
       // Pick a sensible default tee — NOT the highest-rated (Black) since
       // most players play one tee up. We pick the second-highest-rated tee
@@ -390,6 +426,26 @@ export default function NewRoundPage() {
                   Add more tee boxes →
                 </a>
               </p>
+            )}
+            {courseId && courseIssues.errors > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs">
+                <div className="font-medium text-amber-200">
+                  ⚠ {courseIssues.errors} course data issue{courseIssues.errors === 1 ? "" : "s"} detected
+                </div>
+                <p className="text-amber-100/75 mt-0.5 leading-snug">
+                  This course has incomplete data (missing par, duplicate stroke
+                  indexes, or missing tee ratings). Net handicap math will be
+                  off until it&apos;s fixed.{" "}
+                  <a
+                    href={`/courses/${courseId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gold-400 underline font-medium"
+                  >
+                    Fix the course →
+                  </a>
+                </p>
+              </div>
             )}
             {courseId && tees.length > 1 && (
               <p className="text-[11px] text-cream-100/45 mt-1.5">
