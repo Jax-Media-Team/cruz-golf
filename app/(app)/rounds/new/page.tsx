@@ -116,7 +116,16 @@ export default function NewRoundPage() {
         .select("id, name, gender, rating, slope, par")
         .eq("course_id", courseId)
         .order("rating", { ascending: false });
-      setTees(data ?? []);
+      const loaded = data ?? [];
+      setTees(loaded);
+      // Backfill tee_id for any picked player who was added before tees
+      // finished loading (otherwise startRound() rejects them with an empty
+      // UUID error). New tee defaults to the first one; user can change.
+      if (loaded.length > 0) {
+        setPickedPlayers((arr) =>
+          arr.map((p) => (p.tee_id ? p : { ...p, tee_id: loaded[0].id }))
+        );
+      }
     })();
   }, [courseId]);
 
@@ -170,6 +179,43 @@ export default function NewRoundPage() {
       setErr("Pick a course and at least two players.");
       return;
     }
+    // Ensure every picked player has a real tee_id. If they don't (e.g. they
+    // were checked before tees loaded, or via "Re-play last lineup"), default
+    // to the first available tee. Bail with a clear message if there are no
+    // tees on the course at all (Postgres rejects empty-string UUIDs).
+    if (tees.length === 0) {
+      setBusy(false);
+      setErr("This course has no tees set up. Add at least one tee on the course page first.");
+      return;
+    }
+    const fallbackTee = tees[0].id;
+    const playersWithTees = pickedPlayers.map((p) => ({
+      ...p,
+      tee_id: p.tee_id || fallbackTee
+    }));
+    if (playersWithTees.some((p) => !p.tee_id)) {
+      setBusy(false);
+      setErr("Couldn't pick a tee for one of the players. Try refreshing the page.");
+      return;
+    }
+    // Sanity check: any team_id we have on a picked player must be a real
+    // team index. Anything blank should be null. parseInt("") returns NaN,
+    // which the original code mishandled — guard explicitly.
+    const sanitized = playersWithTees.map((p) => {
+      const idx = p.team_id == null || p.team_id === "" ? null : parseInt(p.team_id);
+      return { ...p, _teamIndex: idx != null && Number.isFinite(idx) && idx >= 0 ? idx : -1 };
+    });
+    // If any team game is enabled, require everyone to be on a team.
+    const teamGameEnabled = (Object.entries(games) as [GameType, any][]).some(
+      ([type, v]) =>
+        v.enabled &&
+        ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "six_six_six", "nassau", "match_play"].includes(type)
+    );
+    if (teamGameEnabled && teamCount > 0 && sanitized.some((p) => p._teamIndex < 0)) {
+      setBusy(false);
+      setErr("Assign every picked player to a team before starting (drag them onto a team in the Teams section).");
+      return;
+    }
 
     // 1) Create round.
     const { data: round, error } = await sb
@@ -191,14 +237,14 @@ export default function NewRoundPage() {
       teamIds = t?.map((x) => x.id) ?? [];
     }
 
-    // 3) Create round_players with computed handicaps.
-    const rpRows = pickedPlayers.map((p, i) => {
+    // 3) Create round_players with computed handicaps. We use the sanitized
+    // copy so empty tee_ids get backfilled and team indexes are real numbers.
+    const rpRows = sanitized.map((p, i) => {
       const player = allPlayers.find((x) => x.id === p.id);
       const tee = tees.find((x) => x.id === p.tee_id);
       const hi = player?.handicap_index ?? 0;
       const ch = tee ? courseHandicap(hi, tee.slope, tee.rating, tee.par, holes) : 0;
       const ph = playingHandicap(ch, 100);
-      const teamIndex = p.team_id ? parseInt(p.team_id) : -1;
       return {
         round_id: round.id,
         player_id: p.id,
@@ -206,7 +252,7 @@ export default function NewRoundPage() {
         handicap_index_used: hi,
         course_handicap: ch,
         playing_handicap: ph,
-        team_id: teamIndex >= 0 ? teamIds[teamIndex] ?? null : null,
+        team_id: p._teamIndex >= 0 ? teamIds[p._teamIndex] ?? null : null,
         display_order: i
       };
     });

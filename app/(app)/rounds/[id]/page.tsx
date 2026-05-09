@@ -13,7 +13,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, course_id, date, holes, status, spectator_token, pin, access_mode, finalized_at, settings, courses(name, city, state)")
+    .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, settings, courses(name, city, state)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -213,7 +213,14 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       )}
 
       <div id="leaderboard" />
-      <RoundView roundId={id} rps={rps ?? []} initialScores={scores ?? []} games={games ?? []} />
+      <RoundView
+        roundId={id}
+        rps={rps ?? []}
+        initialScores={scores ?? []}
+        games={games ?? []}
+        totalHoles={(round.holes as 9 | 18) ?? 18}
+        startingHole={round.starting_hole ?? 1}
+      />
     </div>
   );
 }

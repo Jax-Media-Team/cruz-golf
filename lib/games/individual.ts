@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, distributeFromLosersToWinner, emptyOutput } from "./helpers";
+import { addDelta, distributeFromLosersToWinner, emptyOutput, holesInPlay } from "./helpers";
 
 /**
  * Individual gross or net stroke play.
@@ -23,20 +23,33 @@ export function settleIndividual(input: GameInput, mode: "gross" | "net"): GameO
 
   if (stake <= 0 || input.players.length < 2) return out;
 
+  const inPlay = holesInPlay(input);
   const sheets = input.players.map((p) =>
-    buildPlayerSheet(p, input.scores, input.course.holes)
+    buildPlayerSheet(p, input.scores, inPlay)
   );
 
-  const courseHoles = input.course.holes.length;
-  const completedAll = sheets.every((s) => s.totals.thru === courseHoles);
+  // "Complete" = every hole-in-play has a score for every player. (We can't
+  // use totals.thru === courseHoles because thru is the last hole_number
+  // played, not a count — on a back-9 round thru is 18 even after one hole.)
+  const completedAll =
+    inPlay.length > 0 &&
+    inPlay.every((h) =>
+      sheets.every((s) => s.rows.find((r) => r.hole_number === h.hole_number)?.gross != null)
+    );
 
-  // Live projection only when everyone is on the same hole. This avoids the
-  // "un-scored players have totals=0 and steal the lead" trap.
-  const thrus = new Set(sheets.map((s) => s.totals.thru));
-  const sameThru = thrus.size === 1;
-  const allStarted = sheets.every((s) => s.totals.thru > 0);
+  // Count how many holes each player has scored (not the hole number, the
+  // tally) — used for the "everyone on the same hole" projection guard.
+  const playedCountByPlayer = sheets.map((s) =>
+    s.rows.reduce((n, r) => n + (r.gross != null ? 1 : 0), 0)
+  );
 
-  if (!sameThru || !allStarted) {
+  // Live projection only when everyone has played the same number of holes.
+  // (Counting played holes, not the highest played hole — handles wraparound
+  // and back-9-only rounds correctly.)
+  const sameCount = new Set(playedCountByPlayer).size === 1;
+  const allStarted = playedCountByPlayer.every((n) => n > 0);
+
+  if (!sameCount || !allStarted) {
     out.status = "live";
     return out;
   }

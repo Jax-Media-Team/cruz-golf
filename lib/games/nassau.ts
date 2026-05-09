@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput } from "./helpers";
+import { addDelta, emptyOutput, holesInPlay } from "./helpers";
 
 type NassauConfig = {
   net?: boolean;
@@ -51,7 +51,7 @@ export function settleNassau(input: GameInput): GameOutput {
   const sheets = new Map(
     input.players.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
   );
-  const holes = [...input.course.holes].sort((a, b) => a.hole_number - b.hole_number);
+  const holes = holesInPlay(input);
   const total = holes.length;
 
   const sideHoleScore = (side: UUID[], holeNumber: number): number | null => {
@@ -120,12 +120,19 @@ export function settleNassau(input: GameInput): GameOutput {
     return { settled: isComplete, aUp: bTotal - aTotal };
   }
 
-  if (total >= 9) {
-    settleSegment(0, Math.min(9, total), frontStake, "Nassau front");
-  }
-  if (total >= 18) {
-    settleSegment(9, 18, backStake, "Nassau back");
-    settleSegment(0, 18, overallStake, "Nassau overall");
+  // Segment layout depends on total holes in play:
+  //   18-hole round: front 9, back 9, overall 18
+  //   9-hole round: just one "overall 9" segment using overallStake
+  if (total === 9) {
+    settleSegment(0, 9, overallStake, "Nassau 9");
+  } else {
+    if (total >= 9) {
+      settleSegment(0, Math.min(9, total), frontStake, "Nassau front");
+    }
+    if (total >= 18) {
+      settleSegment(9, 18, backStake, "Nassau back");
+      settleSegment(0, 18, overallStake, "Nassau overall");
+    }
   }
 
   // Determine status: final if last hole has scores for both sides.

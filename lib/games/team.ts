@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput } from "./helpers";
+import { addDelta, emptyOutput, holesInPlay } from "./helpers";
 
 /**
  * Best ball: each team's hole score = lowest of its players for that hole.
@@ -31,7 +31,7 @@ export function settleTeamGame(
   );
   for (const id of input.players.map((p) => p.id)) addDelta(out.perPlayer, id, 0, "");
 
-  const orderedHoles = [...input.course.holes].sort((a, b) => a.hole_number - b.hole_number);
+  const orderedHoles = holesInPlay(input);
   const teamTotals = new Map<UUID, number>();
   let holesScored = 0;
 

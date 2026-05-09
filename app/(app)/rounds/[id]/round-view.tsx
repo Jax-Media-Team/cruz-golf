@@ -13,12 +13,16 @@ export function RoundView({
   roundId,
   rps,
   initialScores,
-  games
+  games,
+  totalHoles = 18,
+  startingHole = 1
 }: {
   roundId: string;
   rps: RP[];
   initialScores: Score[];
   games: any[];
+  totalHoles?: 9 | 18;
+  startingHole?: number;
 }) {
   const [tab, setTab] = useState<LeaderboardTab>("net");
   const [scores, setScores] = useState<Score[]>(initialScores);
@@ -124,11 +128,11 @@ export function RoundView({
       onPlayerClick={(rpId) => router.push(`/rounds/${roundId}/score?rp=${rpId}`)}
       alternateContent={
         tab === "skins" ? (
-          <SkinsPanel games={games} players={players} scores={scores} holes={holes} />
+          <SkinsPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
         ) : tab === "team" ? (
-          <TeamPanel games={games} players={players} scores={scores} holes={holes} />
+          <TeamPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
         ) : tab === "bets" ? (
-          <BetsPanel games={games} players={players} scores={scores} holes={holes} />
+          <BetsPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
         ) : null
       }
     />
@@ -139,12 +143,16 @@ function SkinsPanel({
   games,
   players,
   scores,
-  holes
+  holes,
+  totalHoles,
+  startingHole
 }: {
   games: any[];
   players: RoundPlayer[];
   scores: Score[];
   holes: CourseHole[];
+  totalHoles: 9 | 18;
+  startingHole: number;
 }) {
   const skinsGames = games.filter((g) => String(g.game_type).startsWith("skins"));
   if (skinsGames.length === 0)
@@ -157,7 +165,7 @@ function SkinsPanel({
           game: g as RoundGame,
           players,
           scores,
-          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }
+          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }, totalHoles, startingHole
         });
         return (
           <div key={g.id} className="rounded-xl border border-slate-200 bg-white">
@@ -191,12 +199,16 @@ function TeamPanel({
   games,
   players,
   scores,
-  holes
+  holes,
+  totalHoles,
+  startingHole
 }: {
   games: any[];
   players: RoundPlayer[];
   scores: Score[];
   holes: CourseHole[];
+  totalHoles: 9 | 18;
+  startingHole: number;
 }) {
   const teamGames = games.filter((g) =>
     ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "six_six_six"].includes(String(g.game_type))
@@ -214,7 +226,7 @@ function TeamPanel({
           game: g as RoundGame,
           players,
           scores,
-          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }
+          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }, totalHoles, startingHole
         });
         const rows = [...out.perPlayer.entries()].sort((a, b) => b[1].delta_cents - a[1].delta_cents);
         return (
@@ -273,12 +285,16 @@ function BetsPanel({
   games,
   players,
   scores,
-  holes
+  holes,
+  totalHoles,
+  startingHole
 }: {
   games: any[];
   players: RoundPlayer[];
   scores: Score[];
   holes: CourseHole[];
+  totalHoles: 9 | 18;
+  startingHole: number;
 }) {
   if (games.length === 0)
     return <div className="text-slate-500 text-sm py-8 text-center">No games configured.</div>;
@@ -292,7 +308,7 @@ function BetsPanel({
       game: g as RoundGame,
       players,
       scores,
-      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }
+      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }, totalHoles, startingHole
     });
     if (out.status === "live") anyLive = true;
     for (const [pid, v] of out.perPlayer) {

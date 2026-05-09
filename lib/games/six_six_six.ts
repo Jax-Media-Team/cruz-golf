@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput } from "./helpers";
+import { addDelta, emptyOutput, holesInPlay } from "./helpers";
 
 /**
  * 6-6-6: a 4-player game played in three 6-hole segments. Partners rotate so
@@ -57,8 +57,10 @@ export function settleSixSixSix(input: GameInput): GameOutput {
   const sheets = new Map(
     input.players.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
   );
-  const allHoles = [...input.course.holes].sort((a, b) => a.hole_number - b.hole_number);
-  if (allHoles.length < 18) return out;
+  const allHoles = holesInPlay(input);
+  // 6-6-6 needs exactly 18 holes (three 6-hole segments). Skip silently on
+  // a 9-hole round so the engine doesn't crash; UI should warn earlier.
+  if (allHoles.length !== 18) return out;
 
   const segments: Array<typeof allHoles> = [
     allHoles.slice(0, 6),

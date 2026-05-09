@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput } from "./helpers";
+import { addDelta, emptyOutput, holesInPlay } from "./helpers";
 
 type SkinsConfig = {
   net?: boolean;
@@ -36,7 +36,7 @@ export function settleSkins(input: GameInput, mode: "gross" | "net" | "canadian"
   const playerIds = input.players.map((p) => p.id);
   for (const id of playerIds) addDelta(out.perPlayer, id, 0, "");
 
-  const orderedHoles = [...input.course.holes].sort((a, b) => a.hole_number - b.hole_number);
+  const orderedHoles = holesInPlay(input);
   let carry = 0;
   type Award = { hole: number; winner: UUID; value: number; netSum: number };
   const awards: Award[] = [];
@@ -154,16 +154,17 @@ export function settleSkins(input: GameInput, mode: "gross" | "net" | "canadian"
     hole: a.hole,
     label: `skin: ${shortName(input.players, a.winner)}${a.value > baseValue ? ` (×${Math.round(a.value / baseValue)})` : ""}`
   }));
-  // "final" only when every hole has been resolved (won, tied, or carried-and-resolved)
-  // AND there's no trailing carry. Otherwise the engine is still live.
-  const everyHoleScored = input.players.length > 0 && orderedHoles.every((h) =>
+  // "final" once every hole-in-play has a score for every player. Trailing
+  // carry is handled by the engine's unclaimed-pot rules above (split,
+  // refund, etc.) — it doesn't keep the round in "live" forever.
+  const everyHoleScored = input.players.length > 0 && orderedHoles.length > 0 && orderedHoles.every((h) =>
     input.players.every((p) => {
       const sheet = sheets.get(p.id)!;
       const row = sheet.rows.find((r) => r.hole_number === h.hole_number);
       return useNet ? row?.net != null : row?.gross != null;
     })
   );
-  out.status = everyHoleScored && carry === 0 ? "final" : "live";
+  out.status = everyHoleScored ? "final" : "live";
   return out;
 }
 

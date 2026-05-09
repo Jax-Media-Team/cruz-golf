@@ -61,3 +61,21 @@ export function holesPlayed(totalHoles: 9 | 18, startingHole: number): number[] 
   if (startingHole === 1) return Array.from({ length: 9 }, (_, i) => i + 1);
   return Array.from({ length: 9 }, (_, i) => i + 10);
 }
+
+import type { GameInput, CourseHole } from "../types";
+
+/**
+ * Filter and order the course holes to only those actually being played in
+ * this round, in playing order (respecting startingHole on shotgun starts).
+ *
+ * Engines should iterate over this rather than the full course.holes list,
+ * so a 9-hole round doesn't sit forever waiting for holes 10-18 to be
+ * scored.
+ */
+export function holesInPlay(input: GameInput): CourseHole[] {
+  const totalHoles = (input.totalHoles ?? 18) as 9 | 18;
+  const startingHole = input.startingHole ?? 1;
+  const order = holesPlayed(totalHoles, startingHole);
+  const byNumber = new Map(input.course.holes.map((h) => [h.hole_number, h]));
+  return order.map((n) => byNumber.get(n)).filter((h): h is CourseHole => h != null);
+}
