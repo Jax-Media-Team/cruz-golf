@@ -50,6 +50,37 @@ export default function NewRoundPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Which team-format games are currently enabled?
+  const teamGameTypes: GameType[] = [
+    "best_ball_gross",
+    "best_ball_net",
+    "aggregate_gross",
+    "aggregate_net"
+  ];
+  const teamGameEnabled = teamGameTypes.some((t) => games[t]?.enabled);
+  const sixSixSixEnabled = !!games.six_six_six?.enabled;
+
+  // Auto-suggest team setup when a 2-team game is enabled. We only auto-fill
+  // when teamCount is still 0 AND no players are already assigned, so we
+  // never blow away a user's manual configuration.
+  useEffect(() => {
+    if (!teamGameEnabled) return;
+    if (teamCount > 0) return;
+    if (pickedPlayers.length < 2) return;
+    if (pickedPlayers.some((p) => p.team_id != null)) return;
+    // Default: 2 teams. Auto-shuffle players evenly.
+    const desired = 2;
+    setTeamCount(desired);
+    const order = pickedPlayers.map((p) => p.id);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const assignment = new Map<string, string>();
+    order.forEach((pid, i) => assignment.set(pid, String(i % desired)));
+    setPickedPlayers((arr) => arr.map((p) => ({ ...p, team_id: assignment.get(p.id) ?? null })));
+  }, [teamGameEnabled, teamCount, pickedPlayers]);
+
   useEffect(() => {
     (async () => {
       const { data: g } = await sb.from("groups").select("id").limit(1);
@@ -493,6 +524,19 @@ export default function NewRoundPage() {
           })}
         </div>
       </section>
+
+      {(teamGameEnabled || sixSixSixEnabled) && pickedPlayers.length > 0 && (
+        <div className="card p-3 border border-gold-500/30 bg-gold-500/5 text-sm">
+          <div className="font-medium text-cream-50">
+            Team game selected — make sure your teams are set below
+          </div>
+          <p className="text-xs text-cream-100/65 mt-0.5 leading-snug">
+            {sixSixSixEnabled
+              ? "6-6-6 needs exactly 4 picked players; partners rotate every 6 holes (no manual team assignment needed)."
+              : `2 teams have been auto-shuffled for you. Drag a player onto a different team if you want to change it.`}
+          </p>
+        </div>
+      )}
 
       <TeamsSection
         pickedPlayers={pickedPlayers}
