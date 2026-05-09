@@ -168,12 +168,37 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
 
   const presetsNotYetAdded = TEE_PRESETS.filter((p) => !tees.some((t) => t.name.toLowerCase() === p.name.toLowerCase()));
 
+  async function clone() {
+    setBusy(true);
+    setErr(null);
+    const { data, error } = await sb.rpc("fn_clone_course", { p_source_course_id: courseId });
+    setBusy(false);
+    if (error) {
+      setErr(friendlyAuthError(error));
+      return;
+    }
+    if (data) router.push(`/courses/${data}`);
+  }
+
   return (
     <>
       <section className="card p-4 space-y-3">
         <div className="flex items-end justify-between gap-3">
           <h2 className="font-serif text-xl text-cream-50">Tee boxes</h2>
-          <span className="text-xs text-cream-100/55">{tees.length} on file</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-cream-100/55">{tees.length} on file</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirm("Clone this course (with every tee + hole) into your group?")) return;
+                clone();
+              }}
+              disabled={busy}
+              className="btn-secondary text-xs"
+            >
+              Clone
+            </button>
+          </div>
         </div>
 
         {tees.length === 0 ? (
