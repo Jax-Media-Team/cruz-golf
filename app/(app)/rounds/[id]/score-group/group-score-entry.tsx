@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { strokesPerHole } from "@/lib/handicap";
 import { GroupScorePad, type GroupPlayer } from "@/components/GroupScorePad";
+import { ScoreGrid } from "@/components/ScoreGrid";
 import { useScoreSaver } from "@/lib/useScoreSaver";
 import { SaveStatusBanner } from "@/components/SaveStatusBanner";
 
@@ -29,6 +30,11 @@ export function GroupScoreEntry({
   existing: Existing[];
 }) {
   const saver = useScoreSaver({ roundId });
+  // Default to grid on wider screens (desktop / iPad), cards on phones.
+  const [entryMode, setEntryMode] = useState<"cards" | "grid">(() => {
+    if (typeof window === "undefined") return "cards";
+    return window.matchMedia("(min-width: 768px)").matches ? "grid" : "cards";
+  });
 
   const holes = useMemo(() => {
     const fromAny = rps.find((r) => (r.course_tees?.course_holes?.length ?? 0) > 0);
@@ -115,7 +121,37 @@ export function GroupScoreEntry({
       </div>
 
       {players.length > 0 && (
-        <GroupScorePad holes={holes} players={players} scores={scores} onSave={save} />
+        <>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setEntryMode("cards")}
+              className={`pill text-xs px-3 py-1.5 transition-colors ${
+                entryMode === "cards"
+                  ? "bg-gold-500 text-brand-900"
+                  : "bg-brand-900/60 border border-cream-100/15 text-cream-100/65"
+              }`}
+              aria-pressed={entryMode === "cards"}
+            >
+              Cards (mobile)
+            </button>
+            <button
+              onClick={() => setEntryMode("grid")}
+              className={`pill text-xs px-3 py-1.5 transition-colors ${
+                entryMode === "grid"
+                  ? "bg-gold-500 text-brand-900"
+                  : "bg-brand-900/60 border border-cream-100/15 text-cream-100/65"
+              }`}
+              aria-pressed={entryMode === "grid"}
+            >
+              Grid (desktop)
+            </button>
+          </div>
+          {entryMode === "cards" ? (
+            <GroupScorePad holes={holes} players={players} scores={scores} onSave={save} />
+          ) : (
+            <ScoreGrid holes={holes} players={players} scores={scores} onSave={save} />
+          )}
+        </>
       )}
     </div>
   );

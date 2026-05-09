@@ -691,38 +691,113 @@ function GameConfigEditor({
 
   if (isSkins(gameType)) {
     const cfg = value.config;
+    const skinMode: "pot" | "fixed" = cfg.skin_mode ?? "pot";
     return (
-      <div className="mt-3 pl-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Money label="Skin value $" cents={cfg.skin_value_cents ?? 100} onChange={(c) => setConfig({ skin_value_cents: c })} />
+      <div className="mt-3 pl-6 space-y-3">
+        {/* Pricing mode toggle */}
         <div>
-          <label className="label text-xs">Ties</label>
-          <select className="input text-sm" value={cfg.ties ?? "split"} onChange={(e) => setConfig({ ties: e.target.value })}>
-            <option value="split">Split (default)</option>
-            <option value="carry">Carry</option>
-            <option value="nullify">Nullify</option>
-          </select>
+          <label className="label text-xs">Pricing</label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <button
+              type="button"
+              onClick={() => setConfig({ skin_mode: "pot" })}
+              className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                skinMode === "pot"
+                  ? "border-gold-500/60 bg-gold-500/10"
+                  : "border-cream-100/15 bg-brand-900/40"
+              }`}
+            >
+              <div className="text-sm font-medium text-cream-50">Pot</div>
+              <div className="text-[11px] text-cream-100/60 mt-0.5">
+                Each player buys in. Pot is split equally among the skins won.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfig({ skin_mode: "fixed" })}
+              className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                skinMode === "fixed"
+                  ? "border-gold-500/60 bg-gold-500/10"
+                  : "border-cream-100/15 bg-brand-900/40"
+              }`}
+            >
+              <div className="text-sm font-medium text-cream-50">Fixed per skin</div>
+              <div className="text-[11px] text-cream-100/60 mt-0.5">
+                Same dollar value for every skin won. Optional carry multiplier.
+              </div>
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="label text-xs">Carry escalation</label>
-          <select className="input text-sm" value={cfg.escalation ?? "flat"} onChange={(e) => setConfig({ escalation: e.target.value })}>
-            <option value="flat">Flat</option>
-            <option value="linear">Linear (×N)</option>
-            <option value="double">Double (2^N)</option>
-          </select>
-        </div>
-        {gameType === "skins_canadian" && (
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {skinMode === "pot" ? (
+            <Money
+              label="Buy-in / player $"
+              cents={cfg.buyin_cents ?? value.stake_cents ?? 2000}
+              onChange={(c) => {
+                setConfig({ buyin_cents: c });
+                // Mirror to stake_cents so the wager-handshake gate uses the right number
+                onChange({ stake_cents: c });
+              }}
+            />
+          ) : (
+            <Money
+              label="Skin value $"
+              cents={cfg.skin_value_cents ?? 100}
+              onChange={(c) => setConfig({ skin_value_cents: c })}
+            />
+          )}
           <div>
-            <label className="label text-xs">Birdie validates</label>
-            <select className="input text-sm" value={cfg.require_birdie === false ? "off" : "on"} onChange={(e) => setConfig({ require_birdie: e.target.value === "on" })}>
-              <option value="on">Yes</option>
-              <option value="off">No</option>
+            <label className="label text-xs">Ties</label>
+            <select
+              className="input text-sm"
+              value={cfg.ties ?? (skinMode === "pot" ? "carry" : "split")}
+              onChange={(e) => setConfig({ ties: e.target.value })}
+            >
+              {skinMode === "pot" ? (
+                <>
+                  <option value="carry">Carry (no skin awarded)</option>
+                  <option value="nullify">Nullify (no skin)</option>
+                </>
+              ) : (
+                <>
+                  <option value="split">Split</option>
+                  <option value="carry">Carry</option>
+                  <option value="nullify">Nullify</option>
+                </>
+              )}
             </select>
           </div>
-        )}
-        <div className={gameType === "skins_canadian" ? "" : "sm:col-span-1"}>
-          <label className="label text-xs">Allowance %</label>
-          <input className="input text-sm" type="number" value={value.allowance_pct} onChange={(e) => onChange({ allowance_pct: parseInt(e.target.value) || 100 })} />
+          {skinMode === "fixed" && (
+            <div>
+              <label className="label text-xs">Carry escalation</label>
+              <select className="input text-sm" value={cfg.escalation ?? "flat"} onChange={(e) => setConfig({ escalation: e.target.value })}>
+                <option value="flat">Flat</option>
+                <option value="linear">Linear (×N)</option>
+                <option value="double">Double (2^N)</option>
+              </select>
+            </div>
+          )}
+          {gameType === "skins_canadian" && (
+            <div>
+              <label className="label text-xs">Birdie validates</label>
+              <select className="input text-sm" value={cfg.require_birdie === false ? "off" : "on"} onChange={(e) => setConfig({ require_birdie: e.target.value === "on" })}>
+                <option value="on">Yes</option>
+                <option value="off">No</option>
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="label text-xs">Allowance %</label>
+            <input className="input text-sm" type="number" value={value.allowance_pct} onChange={(e) => onChange({ allowance_pct: parseInt(e.target.value) || 100 })} />
+          </div>
         </div>
+
+        {skinMode === "pot" && (
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Example: ${((cfg.buyin_cents ?? value.stake_cents ?? 2000) / 100).toFixed(0)} buy-in × N players = total pot. If 4 skins are won, each is worth pot ÷ 4. If 0 skins are won, the pot returns.
+          </p>
+        )}
       </div>
     );
   }

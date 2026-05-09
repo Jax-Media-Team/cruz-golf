@@ -28,8 +28,69 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
   const sb = supabaseBrowser();
   const router = useRouter();
   const [tees, setTees] = useState<Tee[]>(initialTees);
+  const [expandedTee, setExpandedTee] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Update a tee's metadata (name/rating/slope/par/gender). Optimistic.
+  async function updateTee(teeId: string, patch: Partial<Tee>) {
+    setTees((prev) => prev.map((t) => (t.id === teeId ? { ...t, ...patch } : t)));
+    const { error } = await sb.from("course_tees").update(patch).eq("id", teeId);
+    if (error) setErr(friendlyAuthError(error));
+  }
+
+  // Update a single hole (par/stroke_index/yardage) for a tee. Optimistic
+  // local update + persisted via course_holes upsert. Stroke index is what
+  // the user really cares about — typos here corrupt every net score.
+  async function updateHole(teeId: string, holeNumber: number, patch: Partial<Hole>) {
+    setTees((prev) =>
+      prev.map((t) =>
+        t.id === teeId
+          ? {
+              ...t,
+              course_holes: t.course_holes.map((h) =>
+                h.hole_number === holeNumber ? { ...h, ...patch } : h
+              )
+            }
+          : t
+      )
+    );
+    const { error } = await sb
+      .from("course_holes")
+      .update(patch)
+      .eq("tee_id", teeId)
+      .eq("hole_number", holeNumber);
+    if (error) setErr(friendlyAuthError(error));
+  }
+
+  // Apply the same per-hole par+SI+yardage values to ALL tees on this course.
+  // Most courses share par + stroke index across tees (only yardage differs);
+  // when a commissioner fixes a typo on one tee they typically want it
+  // mirrored. Yardages are NOT mirrored.
+  async function copyParSiToAllTees(sourceTeeId: string) {
+    const source = tees.find((t) => t.id === sourceTeeId);
+    if (!source) return;
+    if (!confirm(`Copy par + stroke index from ${source.name} to every other tee on this course? Yardages are not affected.`)) return;
+    setBusy(true);
+    setErr(null);
+    for (const t of tees) {
+      if (t.id === sourceTeeId) continue;
+      for (const h of source.course_holes) {
+        const { error } = await sb
+          .from("course_holes")
+          .update({ par: h.par, stroke_index: h.stroke_index })
+          .eq("tee_id", t.id)
+          .eq("hole_number", h.hole_number);
+        if (error) {
+          setErr(friendlyAuthError(error));
+          setBusy(false);
+          return;
+        }
+      }
+    }
+    setBusy(false);
+    router.refresh();
+  }
 
   // Use the most-recently-added tee's holes as the template for a new tee
   // (par + stroke_index are typically shared across tees on the same course;
@@ -119,38 +180,115 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
           <p className="text-sm text-cream-100/65">No tees yet — add one below.</p>
         ) : (
           <ul className="space-y-2">
-            {tees.map((t) => (
-              <li
-                key={t.id}
-                className="surface rounded-xl px-4 py-3 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-block w-2.5 h-2.5 rounded-full ${swatchColor(t.name)}`}
-                      aria-hidden
-                    />
-                    <span className="font-medium text-cream-50">{t.name}</span>
-                    {t.gender && (
-                      <span className="text-[10px] uppercase tracking-wide text-cream-100/45">
-                        {t.gender}
-                      </span>
-                    )}
+            {tees.map((t) => {
+              const expanded = expandedTee === t.id;
+              return (
+                <li key={t.id} className="surface rounded-xl">
+                  {/* Compact summary row */}
+                  <div className="px-4 py-3 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTee(expanded ? null : t.id)}
+                      className="flex-1 min-w-0 text-left"
+                      aria-expanded={expanded}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-block w-2.5 h-2.5 rounded-full ${swatchColor(t.name)}`} aria-hidden />
+                        <span className="font-medium text-cream-50">{t.name}</span>
+                        {t.gender && (
+                          <span className="text-[10px] uppercase tracking-wide text-cream-100/45">{t.gender}</span>
+                        )}
+                        <span className="text-cream-100/40 text-xs ml-auto">{expanded ? "▾" : "▸"}</span>
+                      </div>
+                      <div className="text-xs text-cream-100/55 mt-0.5 tabular-nums">
+                        Rating {t.rating} · Slope {t.slope} · Par {t.par} · {t.course_holes.length} holes
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteTee(t.id)}
+                      disabled={busy}
+                      className="text-xs text-red-300 hover:text-red-200 shrink-0"
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <div className="text-xs text-cream-100/55 mt-0.5 tabular-nums">
-                    Rating {t.rating} · Slope {t.slope} · Par {t.par} · {t.holes} holes
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => deleteTee(t.id)}
-                  disabled={busy}
-                  className="text-xs text-red-300 hover:text-red-200"
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
+
+                  {expanded && (
+                    <div className="border-t border-cream-100/8 p-4 space-y-4">
+                      {/* Tee metadata (name, rating, slope, gender) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="label text-xs">Name</label>
+                          <input
+                            className="input text-sm"
+                            defaultValue={t.name}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && v !== t.name) updateTee(t.id, { name: v });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label text-xs">Rating</label>
+                          <input
+                            className="input text-sm"
+                            type="number"
+                            step="0.1"
+                            defaultValue={t.rating}
+                            onBlur={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v) && v !== t.rating) updateTee(t.id, { rating: v });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label text-xs">Slope</label>
+                          <input
+                            className="input text-sm"
+                            type="number"
+                            defaultValue={t.slope}
+                            onBlur={(e) => {
+                              const v = parseInt(e.target.value);
+                              if (!isNaN(v) && v !== t.slope) updateTee(t.id, { slope: v });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label text-xs">Gender</label>
+                          <select
+                            className="input text-sm"
+                            defaultValue={t.gender ?? "men"}
+                            onChange={(e) => updateTee(t.id, { gender: e.target.value as any })}
+                          >
+                            <option value="men">Men</option>
+                            <option value="women">Women</option>
+                            <option value="mixed">Mixed</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Hole-by-hole editor — par + stroke index + yardage */}
+                      <HoleGrid
+                        holes={t.course_holes}
+                        onUpdate={(hn, patch) => updateHole(t.id, hn, patch)}
+                      />
+
+                      {tees.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => copyParSiToAllTees(t.id)}
+                          disabled={busy}
+                          className="btn-secondary text-xs"
+                        >
+                          Copy par + stroke index to every other tee on this course
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -244,6 +382,142 @@ function CustomTeeForm({
       >
         Add custom tee
       </button>
+    </div>
+  );
+}
+
+/**
+ * Compact 9- or 18-hole editing grid. Front + back nine separated for readability.
+ * Each cell auto-saves on blur (uncontrolled + defaultValue keeps typing smooth
+ * without re-render thrash).
+ *
+ * Stroke index: a duplicate-SI warning under the grid catches the most common
+ * data-entry typo (two holes claiming SI 7).
+ */
+function HoleGrid({
+  holes,
+  onUpdate
+}: {
+  holes: Hole[];
+  onUpdate: (holeNumber: number, patch: Partial<Hole>) => void;
+}) {
+  const sorted = [...holes].sort((a, b) => a.hole_number - b.hole_number);
+  const front = sorted.slice(0, 9);
+  const back = sorted.slice(9, 18);
+
+  // Validation: every SI 1..N should appear exactly once.
+  const siCounts = new Map<number, number>();
+  for (const h of sorted) siCounts.set(h.stroke_index, (siCounts.get(h.stroke_index) ?? 0) + 1);
+  const dupSi = [...siCounts.entries()].filter(([, n]) => n > 1).map(([si]) => si);
+  const expectedSiRange = [...Array(sorted.length)].map((_, i) => i + 1);
+  const missingSi = expectedSiRange.filter((n) => !siCounts.has(n));
+
+  return (
+    <div className="space-y-3">
+      <NineGrid label="Front" holes={front} onUpdate={onUpdate} />
+      {back.length > 0 && <NineGrid label="Back" holes={back} onUpdate={onUpdate} />}
+
+      {(dupSi.length > 0 || missingSi.length > 0) && (
+        <div className="text-[11px] text-amber-300/85 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
+          {dupSi.length > 0 && (
+            <div>
+              ⚠ Stroke index {dupSi.join(", ")} appears more than once. Each SI from 1 to {sorted.length} should appear exactly once.
+            </div>
+          )}
+          {missingSi.length > 0 && <div>⚠ Missing stroke index: {missingSi.join(", ")}.</div>}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3 text-[11px] text-cream-100/55">
+        <div>Total par: <span className="text-cream-50 tabular-nums">{sorted.reduce((s, h) => s + h.par, 0)}</span></div>
+        <div>Yardage: <span className="text-cream-50 tabular-nums">{sorted.reduce((s, h) => s + (h.yardage ?? 0), 0) || "—"}</span></div>
+        <div>{sorted.length} holes</div>
+      </div>
+    </div>
+  );
+}
+
+function NineGrid({
+  label,
+  holes,
+  onUpdate
+}: {
+  label: string;
+  holes: Hole[];
+  onUpdate: (holeNumber: number, patch: Partial<Hole>) => void;
+}) {
+  return (
+    <div className="overflow-x-auto -mx-4 px-4">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-cream-100/45 mb-1">{label}</div>
+      <table className="text-xs tabular-nums w-full border-separate border-spacing-0">
+        <thead>
+          <tr className="text-cream-100/55">
+            <th className="text-left pr-2 py-1 font-medium">Hole</th>
+            {holes.map((h) => (
+              <th key={h.hole_number} className="px-1 py-1 text-center font-medium min-w-[44px]">
+                {h.hole_number}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="pr-2 py-1 text-cream-100/55">Par</td>
+            {holes.map((h) => (
+              <td key={h.hole_number} className="px-0.5 py-0.5">
+                <input
+                  className="input text-xs text-center px-1 py-1 w-full"
+                  type="number"
+                  min={3}
+                  max={6}
+                  defaultValue={h.par}
+                  onBlur={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v) && v !== h.par) onUpdate(h.hole_number, { par: v });
+                  }}
+                />
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <td className="pr-2 py-1 text-cream-100/55">SI</td>
+            {holes.map((h) => (
+              <td key={h.hole_number} className="px-0.5 py-0.5">
+                <input
+                  className="input text-xs text-center px-1 py-1 w-full"
+                  type="number"
+                  min={1}
+                  max={18}
+                  defaultValue={h.stroke_index}
+                  onBlur={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v) && v !== h.stroke_index) onUpdate(h.hole_number, { stroke_index: v });
+                  }}
+                />
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <td className="pr-2 py-1 text-cream-100/55">Yds</td>
+            {holes.map((h) => (
+              <td key={h.hole_number} className="px-0.5 py-0.5">
+                <input
+                  className="input text-xs text-center px-1 py-1 w-full"
+                  type="number"
+                  min={50}
+                  defaultValue={h.yardage ?? ""}
+                  onBlur={(e) => {
+                    const raw = e.target.value;
+                    const v = raw === "" ? null : parseInt(raw);
+                    if (v == null) onUpdate(h.hole_number, { yardage: null });
+                    else if (!isNaN(v) && v !== h.yardage) onUpdate(h.hole_number, { yardage: v });
+                  }}
+                />
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

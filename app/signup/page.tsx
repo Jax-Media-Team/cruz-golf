@@ -8,13 +8,15 @@ import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function SignupPage() {
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [confirmedEmail, setConfirmedEmail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
+  const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,7 +37,7 @@ export default function SignupPage() {
       password,
       options: {
         emailRedirectTo: redirectTo,
-        data: { full_name: name } // persisted to user_metadata; /onboarding picks this up
+        data: { full_name: fullName, first_name: firstName.trim(), last_name: lastName.trim() }
       }
     });
     if (error || !signup.user) {
@@ -54,7 +56,7 @@ export default function SignupPage() {
     }
 
     const { error: bsErr } = await sb.rpc("fn_bootstrap_account", {
-      p_display_name: name,
+      p_display_name: fullName,
       p_group_name: ""
     });
     if (bsErr) {
@@ -111,13 +113,33 @@ export default function SignupPage() {
         </div>
 
         <div className="space-y-3">
-          <div>
-            <label className="label">Your name</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Cruz" required />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">First name</label>
+              <input
+                className="input"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Patrick"
+                required
+                autoComplete="given-name"
+              />
+            </div>
+            <div>
+              <label className="label">Last name</label>
+              <input
+                className="input"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Cruz"
+                required
+                autoComplete="family-name"
+              />
+            </div>
           </div>
           <div>
             <label className="label">Email</label>
-            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoComplete="email" />
           </div>
           <div>
             <label className="label">Password</label>
