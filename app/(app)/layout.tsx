@@ -39,6 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <nav className="hidden sm:flex items-center gap-1">
             <Link href="/dashboard" className="btn-ghost text-sm">Rounds</Link>
             <Link href="/leaderboards" className="btn-ghost text-sm">Leaderboards</Link>
+            <Link href="/records" className="btn-ghost text-sm">Records</Link>
             <Link href="/players" className="btn-ghost text-sm">Players</Link>
             <Link href="/courses" className="btn-ghost text-sm">Courses</Link>
             <Link href="/ledger" className="btn-ghost text-sm">Ledger</Link>

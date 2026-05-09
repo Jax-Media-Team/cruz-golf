@@ -30,6 +30,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin/groups" className="btn-ghost">Groups</Link>
             <Link href="/admin/rounds" className="btn-ghost">Rounds</Link>
             <Link href="/admin/courses" className="btn-ghost">Courses</Link>
+            <Link href="/admin/course-audit" className="btn-ghost">Course audit</Link>
             <Link href="/admin/feedback" className="btn-ghost">Feedback</Link>
           </nav>
           <span className="ml-auto text-xs text-cream-100/55">

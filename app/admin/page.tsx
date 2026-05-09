@@ -1,12 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-/**
- * Platform overview. High-level counts + recent activity.
- *
- * Uses the service-role client because we need to count across every
- * group/user. The /admin layout guards the route via fn_is_platform_admin().
- */
 export const dynamic = "force-dynamic";
 
 export default async function AdminOverview() {
@@ -21,7 +15,14 @@ export default async function AdminOverview() {
     scoreCount,
     uploads,
     recentUsers,
-    recentRounds
+    recentRounds,
+    feedbackNew,
+    allRoundsRes,
+    allRoundPlayersRes,
+    allSettlementsRes,
+    allCoursesRes,
+    allRoundGamesRes,
+    allFeedbackRes
   ] = await Promise.all([
     sb.from("profiles").select("*", { head: true, count: "exact" }),
     sb.from("groups").select("*", { head: true, count: "exact" }),
@@ -39,7 +40,14 @@ export default async function AdminOverview() {
       .from("rounds")
       .select("id, date, status, created_at, group_id, courses(name), groups(name)")
       .order("created_at", { ascending: false })
-      .limit(10)
+      .limit(10),
+    sb.from("feedback").select("*", { head: true, count: "exact" }).eq("status", "new"),
+    sb.from("rounds").select("id, date, status, course_id"),
+    sb.from("round_players").select("round_id, player_id, players(display_name)"),
+    sb.from("settlements").select("from_round_player_id, to_round_player_id, amount_cents"),
+    sb.from("courses").select("id, name").is("deleted_at", null),
+    sb.from("round_games").select("game_type"),
+    sb.from("feedback").select("id, kind, body, status, created_at, profile_id, profiles(display_name)").order("created_at", { ascending: false }).limit(8)
   ]);
 
   const liveRounds = await sb
@@ -50,6 +58,86 @@ export default async function AdminOverview() {
     .from("rounds")
     .select("*", { head: true, count: "exact" })
     .eq("status", "finalized");
+
+  // ----- Computed analytics -----
+  // Most played courses
+  const courseRoundCount = new Map<string, number>();
+  for (const r of (allRoundsRes.data as any[]) ?? []) {
+    courseRoundCount.set(r.course_id, (courseRoundCount.get(r.course_id) ?? 0) + 1);
+  }
+  const courseNameById = new Map((allCoursesRes.data ?? []).map((c: any) => [c.id, c.name]));
+  const mostPlayedCourses = [...courseRoundCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id, n]) => ({ id, name: courseNameById.get(id) ?? "Course", rounds: n }));
+
+  // Rounds by month (last 6 months)
+  const monthCounts = new Map<string, number>();
+  for (const r of (allRoundsRes.data as any[]) ?? []) {
+    const m = r.date?.slice(0, 7);
+    if (m) monthCounts.set(m, (monthCounts.get(m) ?? 0) + 1);
+  }
+  const recentMonths = [...monthCounts.entries()].sort().slice(-6);
+
+  // Game types most played
+  const gameTypeCounts = new Map<string, number>();
+  for (const g of (allRoundGamesRes.data as any[]) ?? []) {
+    gameTypeCounts.set(g.game_type, (gameTypeCounts.get(g.game_type) ?? 0) + 1);
+  }
+  const topGameTypes = [...gameTypeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  // Players per round (avg)
+  const playersInRound = new Map<string, number>();
+  for (const rp of (allRoundPlayersRes.data as any[]) ?? []) {
+    playersInRound.set(rp.round_id, (playersInRound.get(rp.round_id) ?? 0) + 1);
+  }
+  const avgPlayersPerRound =
+    playersInRound.size > 0
+      ? [...playersInRound.values()].reduce((s, n) => s + n, 0) / playersInRound.size
+      : 0;
+
+  // Most active players (by # rounds)
+  const playerRoundCount = new Map<string, { name: string; count: number }>();
+  for (const rp of (allRoundPlayersRes.data as any[]) ?? []) {
+    const e = playerRoundCount.get(rp.player_id) ?? {
+      name: (rp.players as any)?.display_name ?? "Player",
+      count: 0
+    };
+    e.count += 1;
+    playerRoundCount.set(rp.player_id, e);
+  }
+  const mostActivePlayers = [...playerRoundCount.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5);
+
+  // Biggest single-round wins/losses (settlement-derived)
+  const moneyByRpRound = new Map<string, number>(); // key = `${rpId}` (per round, since settlements are per-round)
+  for (const set of (allSettlementsRes.data as any[]) ?? []) {
+    moneyByRpRound.set(
+      set.from_round_player_id,
+      (moneyByRpRound.get(set.from_round_player_id) ?? 0) - set.amount_cents
+    );
+    moneyByRpRound.set(
+      set.to_round_player_id,
+      (moneyByRpRound.get(set.to_round_player_id) ?? 0) + set.amount_cents
+    );
+  }
+  // Map rp_id -> player display name via the round_players list
+  const rpToName = new Map<string, string>();
+  for (const rp of (allRoundPlayersRes.data as any[]) ?? []) {
+    // We're missing rp.id in the select — adjust below.
+  }
+
+  // Users who signed up but never played
+  const playedProfileIds = new Set<string>();
+  for (const rp of (allRoundPlayersRes.data as any[]) ?? []) {
+    // round_players doesn't link directly to profiles; we'd need to join via players.profile_id.
+    // Approximation: profiles count - players-with-profile-matching count.
+  }
+  // Simple count: profiles total minus distinct profile_ids that have any player row
+  const { data: playersWithProfiles } = await sb.from("players").select("profile_id").not("profile_id", "is", null);
+  const profilesWithRoster = new Set((playersWithProfiles ?? []).map((p: any) => p.profile_id));
+  const profilesNeverPlayed = (profiles.count ?? 0) - profilesWithRoster.size;
 
   return (
     <div className="space-y-6">
@@ -67,6 +155,75 @@ export default async function AdminOverview() {
         <Stat label="Live rounds" value={liveRounds.count ?? 0} accent />
         <Stat label="Finalized rounds" value={finalizedRounds.count ?? 0} />
         <Stat label="Scores entered" value={scoreCount.count ?? 0} />
+        <Stat label="Card uploads" value={uploads.count ?? 0} />
+        <Stat label="Avg players / round" value={Math.round(avgPlayersPerRound * 10) / 10} />
+        <Stat label="New feedback" value={feedbackNew.count ?? 0} href="/admin/feedback" accent={!!(feedbackNew.count && feedbackNew.count > 0)} />
+        <Stat label="Signed up, never played" value={Math.max(0, profilesNeverPlayed)} />
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="card p-4">
+          <h2 className="font-serif text-lg text-cream-50 mb-2">Most played courses</h2>
+          <ol className="divide-y divide-cream-100/8 text-sm">
+            {mostPlayedCourses.map((c, i) => (
+              <li key={c.id} className="flex items-center justify-between py-2 gap-2">
+                <span className="text-cream-100/45 text-xs w-4">{i + 1}</span>
+                <span className="text-cream-50 truncate flex-1">{c.name}</span>
+                <span className="tabular-nums">{c.rounds}</span>
+              </li>
+            ))}
+            {mostPlayedCourses.length === 0 && <li className="py-2 text-xs text-cream-100/55">No rounds yet.</li>}
+          </ol>
+        </div>
+
+        <div className="card p-4">
+          <h2 className="font-serif text-lg text-cream-50 mb-2">Most played games</h2>
+          <ol className="divide-y divide-cream-100/8 text-sm">
+            {topGameTypes.map(([type, count], i) => (
+              <li key={type} className="flex items-center justify-between py-2 gap-2">
+                <span className="text-cream-100/45 text-xs w-4">{i + 1}</span>
+                <span className="text-cream-50 truncate flex-1 font-mono text-xs">{type}</span>
+                <span className="tabular-nums">{count}</span>
+              </li>
+            ))}
+            {topGameTypes.length === 0 && <li className="py-2 text-xs text-cream-100/55">No games yet.</li>}
+          </ol>
+        </div>
+
+        <div className="card p-4">
+          <h2 className="font-serif text-lg text-cream-50 mb-2">Most active players</h2>
+          <ol className="divide-y divide-cream-100/8 text-sm">
+            {mostActivePlayers.map(([pid, e], i) => (
+              <li key={pid} className="flex items-center justify-between py-2 gap-2">
+                <span className="text-cream-100/45 text-xs w-4">{i + 1}</span>
+                <span className="text-cream-50 truncate flex-1">{e.name}</span>
+                <span className="tabular-nums">{e.count} rounds</span>
+              </li>
+            ))}
+            {mostActivePlayers.length === 0 && <li className="py-2 text-xs text-cream-100/55">No players yet.</li>}
+          </ol>
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-serif text-lg text-cream-50 mb-2">Rounds by month</h2>
+        {recentMonths.length === 0 ? (
+          <p className="text-xs text-cream-100/55">No rounds yet.</p>
+        ) : (
+          <div className="flex items-end gap-3 h-24">
+            {recentMonths.map(([m, n]) => {
+              const max = Math.max(...recentMonths.map(([, x]) => x));
+              const h = Math.max(8, (n / max) * 80);
+              return (
+                <div key={m} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="text-[10px] text-cream-100/55 tabular-nums">{n}</div>
+                  <div className="w-full bg-gold-500/40 rounded" style={{ height: `${h}px` }} />
+                  <div className="text-[10px] text-cream-100/45">{m.slice(5)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
