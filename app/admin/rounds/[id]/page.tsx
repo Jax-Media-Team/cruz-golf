@@ -16,17 +16,16 @@ export default async function AdminRoundDetail({ params }: { params: Promise<{ i
     .maybeSingle();
   if (!r) notFound();
 
-  const [{ data: rps }, { data: games }, { data: scores }] = await Promise.all([
+  const [{ data: rps }, { data: games }] = await Promise.all([
     sb
       .from("round_players")
       .select("id, course_handicap, playing_handicap, players(display_name)")
       .eq("round_id", id)
       .order("display_order"),
-    sb.from("round_games").select("id, name, game_type, stake_cents, allowance_pct, config").eq("round_id", id),
-    sb.from("scores").select("round_player_id", { count: "exact", head: true }).in("round_player_id", []) // placeholder; we'll count below
+    sb.from("round_games").select("id, name, game_type, stake_cents, allowance_pct, config").eq("round_id", id)
   ]);
 
-  // Real score count via the round's round_player_ids
+  // Count scores via the round's round_player_ids
   const rpIds = (rps ?? []).map((rp: any) => rp.id);
   const { count: scoreCount } = await sb
     .from("scores")

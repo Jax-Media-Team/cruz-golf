@@ -62,15 +62,11 @@ export function holesPlayed(totalHoles: 9 | 18, startingHole: number): number[] 
   return Array.from({ length: 9 }, (_, i) => i + 10);
 }
 
-import type { GameInput, CourseHole } from "../types";
+import type { GameInput, CourseHole, RoundPlayer } from "../types";
 
 /**
  * Filter and order the course holes to only those actually being played in
  * this round, in playing order (respecting startingHole on shotgun starts).
- *
- * Engines should iterate over this rather than the full course.holes list,
- * so a 9-hole round doesn't sit forever waiting for holes 10-18 to be
- * scored.
  */
 export function holesInPlay(input: GameInput): CourseHole[] {
   const totalHoles = (input.totalHoles ?? 18) as 9 | 18;
@@ -78,4 +74,21 @@ export function holesInPlay(input: GameInput): CourseHole[] {
   const order = holesPlayed(totalHoles, startingHole);
   const byNumber = new Map(input.course.holes.map((h) => [h.hole_number, h]));
   return order.map((n) => byNumber.get(n)).filter((h): h is CourseHole => h != null);
+}
+
+/**
+ * Apply the game's `allowance_pct` to each player's playing handicap.
+ * USGA "playing allowance" — common values: 100% individual stroke play,
+ * 90% individual stroke against full field, 85% 4-ball, 80% best-ball.
+ *
+ * Returns a NEW player array (never mutates input). Only meaningful for
+ * net games — gross engines pass the originals through unchanged.
+ */
+export function applyAllowance(players: RoundPlayer[], allowance_pct: number | undefined): RoundPlayer[] {
+  const pct = allowance_pct ?? 100;
+  if (pct === 100) return players;
+  return players.map((p) => ({
+    ...p,
+    playing_handicap: Math.round((p.playing_handicap * pct) / 100)
+  }));
 }

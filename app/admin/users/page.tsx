@@ -17,17 +17,21 @@ export default async function AdminUsersPage({
 
   const sb = supabaseAdmin();
 
-  // Pull auth users via the admin API. Returns up to 100 by default; for now
-  // this is fine — when we hit hundreds we'll add pagination.
-  const { data: authList, error: authErr } = await sb.auth.admin.listUsers({
-    page: 1,
-    perPage: 200
-  });
-  if (authErr) {
-    return <div className="card p-4 text-red-300">Failed to load users: {authErr.message}</div>;
+  // Paginate through every auth user — past 200 we used to silently truncate
+  // and the search box (client-side) would miss accounts. Cap at 5000 to keep
+  // memory bounded.
+  const allUsers: Array<any> = [];
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) {
+      return <div className="card p-4 text-red-300">Failed to load users: {error.message}</div>;
+    }
+    if (!data?.users || data.users.length === 0) break;
+    allUsers.push(...data.users);
+    if (data.users.length < 100) break;
   }
 
-  const userIds = authList.users.map((u) => u.id);
+  const userIds = allUsers.map((u) => u.id);
 
   const [{ data: profiles }, { data: admins }, { data: memberships }, { data: rounds }] = await Promise.all([
     sb.from("profiles").select("id, display_name, created_at").in("id", userIds.length > 0 ? userIds : ["00000000-0000-0000-0000-000000000000"]),
@@ -51,7 +55,7 @@ export default async function AdminUsersPage({
     roundCountByUser.set(pid, (roundCountByUser.get(pid) ?? 0) + 1);
   }
 
-  const rows = authList.users
+  const rows = allUsers
     .map((u) => {
       const p = profileMap.get(u.id) as any;
       return {
@@ -81,7 +85,7 @@ export default async function AdminUsersPage({
         <div>
           <p className="h-eyebrow text-gold-400">Users</p>
           <h1 className="h-display text-3xl text-cream-50 mt-1">
-            {authList.users.length.toLocaleString()} accounts
+            {allUsers.length.toLocaleString()} accounts
           </h1>
         </div>
         <form className="flex items-center gap-2">

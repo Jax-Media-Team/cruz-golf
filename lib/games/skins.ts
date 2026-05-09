@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput, holesInPlay } from "./helpers";
+import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
 
 type SkinsConfig = {
   net?: boolean;
@@ -54,8 +54,11 @@ export function settleSkins(input: GameInput, mode: "gross" | "net" | "canadian"
   if (skinMode === "fixed" && baseValue <= 0) return out;
   if (skinMode === "pot" && buyinCents <= 0) return out;
 
+  // Apply playing-handicap allowance for net mode. Gross mode is unaffected
+  // since strokesPerHole isn't read.
+  const adjusted = useNet ? applyAllowance(input.players, input.game.allowance_pct) : input.players;
   const sheets = new Map(
-    input.players.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
+    adjusted.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
   );
   const playerIds = input.players.map((p) => p.id);
   for (const id of playerIds) addDelta(out.perPlayer, id, 0, "");

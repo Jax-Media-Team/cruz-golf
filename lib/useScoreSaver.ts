@@ -141,9 +141,32 @@ export function useScoreSaver(scope: { roundId: string }) {
     };
     window.addEventListener("online", onWake);
     window.addEventListener("focus", onWake);
+
+    // Also drain on auth state change — when a user signs back in after a
+    // session expiry, any items that were parked as "failed" due to 401
+    // should automatically retry with the fresh token. Without this, items
+    // sit forever even though the user can now write.
+    const { data: authSub } = sb.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        if (queueRef.current.length > 0) {
+          // Reset all "failed" items back to "saving" so they get a fresh
+          // attempt on the next drain.
+          setState((s) => {
+            const next = { ...s.status };
+            for (const k of Object.keys(next)) {
+              if (next[k] === "failed") next[k] = "saving";
+            }
+            return { ...s, status: next, errors: {} };
+          });
+          void drain();
+        }
+      }
+    });
+
     return () => {
       window.removeEventListener("online", onWake);
       window.removeEventListener("focus", onWake);
+      authSub.subscription.unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput, holesInPlay } from "./helpers";
+import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
 
 /**
  * Best ball: each team's hole score = lowest of its players for that hole.
@@ -26,8 +26,11 @@ export function settleTeamGame(
   }
   if (teams.size < 2) return out;
 
+  // Net team games (best_ball_net, aggregate_net) honor allowance_pct.
+  // Gross variants pass players through unchanged.
+  const adjusted = mode === "net" ? applyAllowance(input.players, input.game.allowance_pct) : input.players;
   const sheets = new Map(
-    input.players.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
+    adjusted.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
   );
   for (const id of input.players.map((p) => p.id)) addDelta(out.perPlayer, id, 0, "");
 

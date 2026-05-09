@@ -11,12 +11,16 @@ export function FinalizeView({
   roundId,
   rps,
   scores,
-  games
+  games,
+  totalHoles = 18,
+  startingHole = 1
 }: {
   roundId: string;
   rps: any[];
   scores: Score[];
   games: any[];
+  totalHoles?: 9 | 18;
+  startingHole?: number;
 }) {
   const router = useRouter();
   const sb = supabaseBrowser();
@@ -54,7 +58,9 @@ export function FinalizeView({
       game: g as RoundGame,
       players,
       scores,
-      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }
+      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) },
+      totalHoles,
+      startingHole
     });
     const m = new Map<string, number>();
     for (const [pid, v] of out.perPlayer) {

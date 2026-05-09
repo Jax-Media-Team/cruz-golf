@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, distributeFromLosersToWinner, emptyOutput, holesInPlay } from "./helpers";
+import { addDelta, applyAllowance, distributeFromLosersToWinner, emptyOutput, holesInPlay } from "./helpers";
 
 /**
  * Individual gross or net stroke play.
@@ -24,7 +24,8 @@ export function settleIndividual(input: GameInput, mode: "gross" | "net"): GameO
   if (stake <= 0 || input.players.length < 2) return out;
 
   const inPlay = holesInPlay(input);
-  const sheets = input.players.map((p) =>
+  const adjusted = mode === "net" ? applyAllowance(input.players, input.game.allowance_pct) : input.players;
+  const sheets = adjusted.map((p) =>
     buildPlayerSheet(p, input.scores, inPlay)
   );
 

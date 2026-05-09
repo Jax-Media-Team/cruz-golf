@@ -5,7 +5,11 @@ import { FinalizeView } from "./finalize-view";
 export default async function FinalizePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sb = await supabaseServer();
-  const { data: round } = await sb.from("rounds").select("id, status").eq("id", id).single();
+  const { data: round } = await sb
+    .from("rounds")
+    .select("id, status, holes, starting_hole")
+    .eq("id", id)
+    .single();
   if (!round) redirect("/dashboard");
 
   const { data: rps } = await sb
@@ -24,5 +28,14 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     .select("id, game_type, name, stake_cents, allowance_pct, config")
     .eq("round_id", id);
 
-  return <FinalizeView roundId={id} rps={rps ?? []} scores={scores ?? []} games={games ?? []} />;
+  return (
+    <FinalizeView
+      roundId={id}
+      rps={rps ?? []}
+      scores={scores ?? []}
+      games={games ?? []}
+      totalHoles={(round.holes as 9 | 18) ?? 18}
+      startingHole={round.starting_hole ?? 1}
+    />
+  );
 }

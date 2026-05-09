@@ -1,6 +1,6 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
-import { addDelta, emptyOutput, holesInPlay } from "./helpers";
+import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
 
 type NassauConfig = {
   net?: boolean;
@@ -48,8 +48,11 @@ export function settleNassau(input: GameInput): GameOutput {
 
   for (const id of [...sideA, ...sideB]) addDelta(out.perPlayer, id, 0, "");
 
+  // Apply playing-handicap allowance for net Nassau (default 100% — gross
+  // is unaffected since strokes don't enter the comparison).
+  const adjusted = useNet ? applyAllowance(input.players, input.game.allowance_pct) : input.players;
   const sheets = new Map(
-    input.players.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
+    adjusted.map((p) => [p.id, buildPlayerSheet(p, input.scores, input.course.holes)])
   );
   const holes = holesInPlay(input);
   const total = holes.length;
@@ -85,13 +88,9 @@ export function settleNassau(input: GameInput): GameOutput {
       const isComplete = played === segLen;
       // Money only moves when segment is final and not pushed.
       if (isComplete && aUp !== 0) {
-        if (aUp > 0) {
-          for (const id of sideB) addDelta(out.perPlayer, id, -stakeCents, label);
-          for (const id of sideA) addDelta(out.perPlayer, id, +stakeCents, label);
-        } else {
-          for (const id of sideA) addDelta(out.perPlayer, id, -stakeCents, label);
-          for (const id of sideB) addDelta(out.perPlayer, id, +stakeCents, label);
-        }
+        const winners = aUp > 0 ? sideA : sideB;
+        const losers = aUp > 0 ? sideB : sideA;
+        applySegmentPayout(winners, losers, stakeCents, label);
       }
       return { settled: isComplete, aUp };
     }
@@ -114,10 +113,27 @@ export function settleNassau(input: GameInput): GameOutput {
       const aWon = aTotal < bTotal;
       const winners = aWon ? sideA : sideB;
       const losers = aWon ? sideB : sideA;
-      for (const id of losers) addDelta(out.perPlayer, id, -stakeCents, label);
-      for (const id of winners) addDelta(out.perPlayer, id, +stakeCents, label);
+      applySegmentPayout(winners, losers, stakeCents, label);
     }
     return { settled: isComplete, aUp: bTotal - aTotal };
+  }
+
+  /**
+   * Distribute a segment's payout. Each loser pays `stakeCents`. The total
+   * pot is then split equally among winners, with any remainder cents
+   * deterministically going to the first sorted winner. This keeps Nassau
+   * zero-sum even when sides are uneven (1v3, 2v3, 4v4, etc.).
+   */
+  function applySegmentPayout(winners: UUID[], losers: UUID[], stakeCents: number, label: string) {
+    if (winners.length === 0 || losers.length === 0 || stakeCents <= 0) return;
+    const pot = stakeCents * losers.length;
+    for (const id of losers) addDelta(out.perPlayer, id, -stakeCents, label);
+    const each = Math.floor(pot / winners.length);
+    const remainder = pot - each * winners.length;
+    const sortedWinners = [...winners].sort();
+    sortedWinners.forEach((id, i) => {
+      addDelta(out.perPlayer, id, each + (i < remainder ? 1 : 0), label);
+    });
   }
 
   // Segment layout depends on total holes in play:
