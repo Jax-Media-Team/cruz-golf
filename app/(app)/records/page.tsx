@@ -127,6 +127,46 @@ export default async function RecordsPage() {
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
+  // Lowest 9-hole gross (own category — different scale than 18s)
+  const nineHole = perfs.filter((p) => {
+    const r = roundsById.get(p.round_id) as any;
+    return r?.holes === 9 && p.holesCount === 9;
+  });
+  const lowestGross9 = nineHole.slice().sort((a, b) => a.gross - b.gross).slice(0, 5);
+
+  // Course records — best (lowest) gross by course, across all 18-hole rounds.
+  // Group performances by course name; pick the lowest gross per course.
+  const bestByCourse = new Map<string, RoundPerf & { course: string }>();
+  for (const p of eighteenHole) {
+    const r = roundsById.get(p.round_id) as any;
+    const courseName = r?.courses?.name as string | undefined;
+    if (!courseName) continue;
+    const existing = bestByCourse.get(courseName);
+    if (!existing || p.gross < existing.gross) {
+      bestByCourse.set(courseName, { ...p, course: courseName });
+    }
+  }
+  const courseRecords = [...bestByCourse.values()]
+    .sort((a, b) => a.gross - b.gross)
+    .slice(0, 8);
+
+  // Best season net (sum of single-round nets across all rounds, top of leaderboard).
+  const seasonNetByPlayer = new Map<string, { name: string; net: number; rounds: number }>();
+  for (const rp of (rps ?? []) as any[]) {
+    const e = seasonNetByPlayer.get(rp.player_id) ?? {
+      name: rp.players?.display_name ?? "Player",
+      net: 0,
+      rounds: 0
+    };
+    e.net += moneyByRp.get(rp.id) ?? 0;
+    e.rounds += 1;
+    seasonNetByPlayer.set(rp.player_id, e);
+  }
+  const seasonNetTop = [...seasonNetByPlayer.values()]
+    .filter((e) => e.rounds >= 1)
+    .sort((a, b) => b.net - a.net)
+    .slice(0, 5);
+
   const fmtMoney = (c: number) => (c >= 0 ? "+" : "−") + "$" + (Math.abs(c) / 100).toFixed(2);
 
   return (
@@ -190,7 +230,58 @@ export default async function RecordsPage() {
               meta: ""
             }))}
           />
+          {lowestGross9.length > 0 && (
+            <RecordCard
+              title="🎯 Lowest gross (9 holes)"
+              rows={lowestGross9.map((p) => ({
+                name: p.display_name,
+                value: String(p.gross),
+                meta: roundLabel(roundsById.get(p.round_id) as any)
+              }))}
+            />
+          )}
+          {seasonNetTop.length > 0 && (
+            <RecordCard
+              title="👑 Season net (all rounds)"
+              rows={seasonNetTop.map((e) => ({
+                name: e.name,
+                value: fmtMoney(e.net),
+                tone: e.net > 0 ? "win" : e.net < 0 ? "loss" : undefined,
+                meta: `${e.rounds} round${e.rounds === 1 ? "" : "s"}`
+              }))}
+            />
+          )}
         </div>
+      )}
+
+      {/* Course records — one row per course played. */}
+      {courseRecords.length > 0 && (
+        <section className="space-y-2">
+          <p className="h-eyebrow text-gold-400">Course records</p>
+          <div className="card divide-y divide-cream-100/8">
+            {courseRecords.map((c, i) => {
+              const r = roundsById.get(c.round_id) as any;
+              return (
+                <div
+                  key={i}
+                  className="px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-serif text-base text-cream-50 truncate">
+                      {c.course}
+                    </div>
+                    <div className="text-[11px] text-cream-100/55 truncate">
+                      {c.display_name} · {r?.date ?? ""}
+                    </div>
+                  </div>
+                  <span className="tabular-nums font-serif text-2xl text-gold-400">
+                    {c.gross}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </div>
   );
