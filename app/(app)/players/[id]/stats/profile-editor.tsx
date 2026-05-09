@@ -11,7 +11,10 @@ type Initial = {
   handicap_index: number | null;
   venmo_handle: string | null;
   avatar_url: string | null;
+  default_tee_name?: string | null;
 };
+
+const TEE_OPTIONS = ["Black", "Blue", "White", "Gold", "Red", "Green", "Tournament", "Senior"];
 
 export function PlayerProfileEditor({ playerId, initial }: { playerId: string; initial: Initial }) {
   const router = useRouter();
@@ -33,7 +36,8 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
         ghin_number: draft.ghin_number || null,
         handicap_index: draft.handicap_index,
         venmo_handle: (draft.venmo_handle ?? "").replace(/^@/, "") || null,
-        avatar_url: draft.avatar_url || null
+        avatar_url: draft.avatar_url || null,
+        default_tee_name: draft.default_tee_name || null
       })
       .eq("id", playerId);
     setBusy(false);
@@ -91,6 +95,22 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
         <div>
           <label className="label">Phone</label>
           <input className="input" value={draft.phone ?? ""} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Default tee</label>
+          <select
+            className="input"
+            value={draft.default_tee_name ?? ""}
+            onChange={(e) => setDraft({ ...draft, default_tee_name: e.target.value || null })}
+          >
+            <option value="">— No default —</option>
+            {TEE_OPTIONS.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-cream-100/45 mt-0.5">
+            We&apos;ll auto-pick this tee on each course where it exists.
+          </p>
         </div>
         <div className="sm:col-span-2">
           <label className="label">Avatar URL <span className="text-cream-100/40 normal-case">(or sign in via Google to auto-fill)</span></label>

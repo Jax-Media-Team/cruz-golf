@@ -180,7 +180,7 @@ export default function NewRoundPage() {
 
       const [coursesRes, playersRes, recentRoundsRes, userRes] = await Promise.all([
         sb.from("courses").select("id, name").eq("group_id", gid).is("deleted_at", null),
-        sb.from("players").select("id, display_name, handicap_index, profile_id").eq("group_id", gid).is("deleted_at", null),
+        sb.from("players").select("id, display_name, handicap_index, profile_id, default_tee_name").eq("group_id", gid).is("deleted_at", null),
         sb
           .from("rounds")
           .select("id, date, courses(name), round_players(player_id)")
@@ -286,30 +286,48 @@ export default function NewRoundPage() {
       // Pick a sensible default tee — NOT the highest-rated (Black) since
       // most players play one tee up. We pick the second-highest-rated tee
       // when there are 2+ tees on file, or the only tee otherwise.
-      const defaultTee = loaded.length >= 2 ? loaded[1].id : loaded[0]?.id;
+      const fallbackTee = loaded.length >= 2 ? loaded[1].id : loaded[0]?.id;
       // RESET every picked player's tee_id when the course changes — stale
       // UUIDs from a previous course were the root of the "invalid input
-      // syntax for type uuid" error on round creation.
-      if (defaultTee) {
+      // syntax for type uuid" error. Honor each player's default_tee_name
+      // preference when the new course has a matching tee.
+      if (fallbackTee) {
         setPickedPlayers((arr) =>
           arr.map((p) => {
-            // If their current tee_id belongs to one of the new course's
-            // tees, keep it; otherwise reset to the new default.
             const stillValid = loaded.some((t: any) => t.id === p.tee_id);
-            return stillValid ? p : { ...p, tee_id: defaultTee };
+            if (stillValid) return p;
+            const player = allPlayers.find((pl) => pl.id === p.id);
+            const want = (player?.default_tee_name ?? "").trim().toLowerCase();
+            const matched = want
+              ? loaded.find((t: any) => (t.name ?? "").trim().toLowerCase() === want)
+              : null;
+            return { ...p, tee_id: matched?.id ?? fallbackTee };
           })
         );
       }
     })();
   }, [courseId]);
 
+  /**
+   * Pick the right tee for a player on the current course:
+   *   1. If the player has a default_tee_name AND the course has a tee with
+   *      that exact name (case-insensitive), use it.
+   *   2. Otherwise fall back to second-highest-rated (one tee up from tips).
+   */
+  function pickTeeForPlayer(playerId: string): string {
+    const player = allPlayers.find((p) => p.id === playerId);
+    const want = (player?.default_tee_name ?? "").trim().toLowerCase();
+    if (want) {
+      const match = tees.find((t: any) => (t.name ?? "").trim().toLowerCase() === want);
+      if (match) return match.id;
+    }
+    return (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "";
+  }
+
   function togglePlayer(id: string) {
     setPickedPlayers((arr) => {
       if (arr.find((x) => x.id === id)) return arr.filter((x) => x.id !== id);
-      // Default to the second-highest-rated tee (one tee up from the tips)
-      // since most players don't play the back tee.
-      const defaultTee = (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "";
-      return [...arr, { id, tee_id: defaultTee, team_id: null }];
+      return [...arr, { id, tee_id: pickTeeForPlayer(id), team_id: null }];
     });
   }
 
