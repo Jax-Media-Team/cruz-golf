@@ -14,38 +14,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "./supabase/client";
 import { retry } from "./retry";
+import {
+  type PendingItem,
+  type SaveKey,
+  QUEUE_STORAGE_KEY,
+  deserialize,
+  dropHead,
+  enqueueOrReplace,
+  makeKey,
+  serialize
+} from "./score-queue";
 
-type SaveKey = string; // `${round_player_id}:${hole_number}`
 type Status = "idle" | "saving" | "saved" | "failed";
-
-type PendingItem = {
-  key: SaveKey;
-  round_player_id: string;
-  hole_number: number;
-  gross: number;
-  attempts: number;
-  /** ms epoch — used to flag stale items still pending after a long time */
-  enqueuedAt: number;
-};
-
-const QUEUE_KEY = "cruz-golf:pendingScores:v1";
 
 function loadQueue(): PendingItem[] {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(QUEUE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return deserialize(window.localStorage.getItem(QUEUE_STORAGE_KEY));
 }
 
 function saveQueue(items: PendingItem[]) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(QUEUE_KEY, JSON.stringify(items));
+    window.localStorage.setItem(QUEUE_STORAGE_KEY, serialize(items));
   } catch {
     /* localStorage full or disabled — write was already attempted; nothing else to do */
   }
@@ -105,7 +95,7 @@ export function useScoreSaver(scope: { roundId: string }) {
           };
           await retry(writer, { attempts: 3, baseMs: 400 });
           // Success — pop from queue.
-          queueRef.current = queueRef.current.slice(1);
+          queueRef.current = dropHead(queueRef.current);
           persistQueue();
           setStatus(item.key, "saved");
         } catch (e: any) {
@@ -146,10 +136,8 @@ export function useScoreSaver(scope: { roundId: string }) {
 
   const save = useCallback(
     (round_player_id: string, hole_number: number, gross: number) => {
-      const key: SaveKey = `${round_player_id}:${hole_number}`;
-      // Drop any prior pending item for the same key — newest write wins.
-      queueRef.current = queueRef.current.filter((it) => it.key !== key);
-      queueRef.current.push({
+      const key: SaveKey = makeKey(round_player_id, hole_number);
+      queueRef.current = enqueueOrReplace(queueRef.current, {
         key,
         round_player_id,
         hole_number,

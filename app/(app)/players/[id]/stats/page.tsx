@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { bucketFor, BUCKET_LABELS, type ScoreBucket } from "@/lib/stats";
 import { strokesPerHole } from "@/lib/handicap";
+import { formatHi } from "@/lib/handicap-format";
 import { VenmoQR } from "@/components/VenmoQR";
 import { PlayerProfileEditor } from "./profile-editor";
 
@@ -152,7 +153,7 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
             <p className="h-eyebrow">Player</p>
             <h1 className="h-display text-4xl text-cream-50 mt-1">{player.display_name}</h1>
             <p className="text-sm text-cream-100/55">
-              HI {player.handicap_index ?? "—"}
+              HI {formatHi(player.handicap_index)}
               {player.ghin_number && ` · GHIN ${player.ghin_number}`}
             </p>
           </div>

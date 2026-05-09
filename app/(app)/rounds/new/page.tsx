@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { courseHandicap, playingHandicap } from "@/lib/handicap";
+import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
 import { GAME_PACKAGES } from "@/lib/presets/game-packages";
 import type { GameType } from "@/lib/types";
 
@@ -108,7 +109,13 @@ export default function NewRoundPage() {
       return;
     }
     (async () => {
-      const { data } = await sb.from("course_tees").select("id, name, rating, slope, par").eq("course_id", courseId);
+      // Order by rating desc so the harder tees come first — most groups list
+      // tees that way (Black/Blue at the top).
+      const { data } = await sb
+        .from("course_tees")
+        .select("id, name, gender, rating, slope, par")
+        .eq("course_id", courseId)
+        .order("rating", { ascending: false });
       setTees(data ?? []);
     })();
   }, [courseId]);
@@ -127,13 +134,13 @@ export default function NewRoundPage() {
   async function addGuest() {
     if (!groupId || !guestDraft.name.trim()) return;
     setGuestBusy(true);
-    const hi = guestDraft.hi === "" ? null : parseFloat(guestDraft.hi);
+    const hi = parseHi(guestDraft.hi);
     const { data, error } = await sb
       .from("players")
       .insert({
         group_id: groupId,
         display_name: guestDraft.name.trim(),
-        handicap_index: isNaN(hi as number) ? null : hi,
+        handicap_index: hi,
         handicap_index_source: "manual",
         handicap_updated_at: new Date().toISOString(),
         is_guest: true
@@ -254,6 +261,19 @@ export default function NewRoundPage() {
               <option value="">Pick a course…</option>
               {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            {courseId && tees.length <= 1 && (
+              <p className="text-[11px] text-cream-100/55 mt-1.5">
+                Only one tee on file.{" "}
+                <a href={`/courses/${courseId}`} className="text-gold-400 underline" target="_blank" rel="noopener noreferrer">
+                  Add more tee boxes →
+                </a>
+              </p>
+            )}
+            {courseId && tees.length > 1 && (
+              <p className="text-[11px] text-cream-100/45 mt-1.5">
+                {tees.length} tee boxes available · pick per player below
+              </p>
+            )}
           </div>
         </div>
       </section>
@@ -302,9 +322,9 @@ export default function NewRoundPage() {
             <label className="label">HI</label>
             <input
               className="input text-sm"
-              type="number"
-              step="0.1"
-              placeholder="14.0"
+              type="text"
+              inputMode="decimal"
+              placeholder="14.0 or +1.4"
               value={guestDraft.hi}
               onChange={(e) => setGuestDraft({ ...guestDraft, hi: e.target.value })}
             />
@@ -323,7 +343,7 @@ export default function NewRoundPage() {
           {allPlayers.map((p) => {
             const picked = pickedPlayers.find((x) => x.id === p.id);
             const lp = lastPlayedAt[p.id];
-            const hiValue = hiEdits[p.id] ?? (p.handicap_index != null ? String(p.handicap_index) : "");
+            const hiValue = hiEdits[p.id] ?? hiInputValue(p.handicap_index);
             return (
               <div
                 key={p.id}
@@ -338,7 +358,7 @@ export default function NewRoundPage() {
                     </div>
                   </div>
                   {!picked && (
-                    <span className="text-xs text-cream-100/55 tabular-nums">HI {p.handicap_index ?? "—"}</span>
+                    <span className="text-xs text-cream-100/55 tabular-nums">HI {formatHi(p.handicap_index)}</span>
                   )}
                 </label>
                 {picked && (
@@ -347,10 +367,10 @@ export default function NewRoundPage() {
                       <label className="label text-xs">Handicap Index</label>
                       <input
                         className="input text-sm"
-                        type="number"
-                        step="0.1"
+                        type="text"
+                        inputMode="decimal"
                         value={hiValue}
-                        placeholder="14.0"
+                        placeholder="14.0 or +1.4"
                         onChange={(e) => {
                           const v = e.target.value;
                           setHiEdits((prev) => ({ ...prev, [p.id]: v }));
@@ -358,8 +378,10 @@ export default function NewRoundPage() {
                         onBlur={async () => {
                           const raw = hiEdits[p.id];
                           if (raw == null) return;
-                          const parsed = raw === "" ? null : parseFloat(raw);
-                          if (parsed != null && isNaN(parsed)) return;
+                          const parsed = parseHi(raw);
+                          // Re-render the input as a normalized value (e.g., "+1.4" stays "+1.4",
+                          // "1.4" stays "1.4") so the user sees what was actually saved.
+                          setHiEdits((prev) => ({ ...prev, [p.id]: hiInputValue(parsed) }));
                           if (parsed === p.handicap_index) return;
                           await sb
                             .from("players")
@@ -374,6 +396,9 @@ export default function NewRoundPage() {
                           );
                         }}
                       />
+                      <p className="text-[10px] text-cream-100/45 mt-0.5">
+                        Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
+                      </p>
                     </div>
                     {tees.length > 0 && (
                       <div>
@@ -388,7 +413,9 @@ export default function NewRoundPage() {
                           }
                         >
                           {tees.map((t) => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
+                            <option key={t.id} value={t.id}>
+                              {t.name} · {t.rating}/{t.slope}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -775,7 +802,7 @@ function TeamsSection({
                         className="surface rounded-lg px-3 py-1.5 text-sm flex items-center justify-between cursor-grab active:cursor-grabbing"
                       >
                         <span className="text-cream-50 truncate">{player?.display_name ?? p.id}</span>
-                        <span className="text-xs text-cream-100/45">HI {player?.handicap_index ?? "—"}</span>
+                        <span className="text-xs text-cream-100/45">HI {formatHi(player?.handicap_index)}</span>
                       </div>
                     );
                   })}

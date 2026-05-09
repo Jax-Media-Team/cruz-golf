@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { BrandLockup } from "@/components/BrandLockup";
 import { HelpButton } from "@/components/HelpButton";
+import { UpdateToast } from "@/components/UpdateToast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -44,6 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <TabLink href="/ledger" label="Ledger" />
       </nav>
       <HelpButton />
+      <UpdateToast />
     </div>
   );
 }

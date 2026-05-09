@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
 
 type Player = {
   id: string;
@@ -81,7 +82,17 @@ export function PlayersClient({ initialPlayers, groupId }: { initialPlayers: Pla
           </div>
           <div>
             <label className="label">Handicap Index</label>
-            <input className="input" type="number" step="0.1" value={draft.handicap_index ?? ""} onChange={(e) => setDraft({ ...draft, handicap_index: e.target.value === "" ? null : parseFloat(e.target.value) })} />
+            <input
+              className="input"
+              type="text"
+              inputMode="decimal"
+              placeholder="14.0 or +1.4"
+              value={hiInputValue(draft.handicap_index)}
+              onChange={(e) => setDraft({ ...draft, handicap_index: parseHi(e.target.value) })}
+            />
+            <p className="text-[10px] text-cream-100/45 mt-0.5">
+              Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
+            </p>
           </div>
           <div>
             <label className="label">GHIN #</label>
@@ -114,16 +125,17 @@ export function PlayersClient({ initialPlayers, groupId }: { initialPlayers: Pla
                 {p.is_guest && <span className="ml-2 pill-draft text-xs">guest</span>}
               </div>
               <div className="text-sm text-cream-100/55">
-                HI {p.handicap_index ?? "—"} {p.ghin_number ? `· GHIN ${p.ghin_number}` : ""}
+                HI {formatHi(p.handicap_index)} {p.ghin_number ? `· GHIN ${p.ghin_number}` : ""}
               </div>
             </div>
             <input
               className="input w-24"
-              type="number"
-              step="0.1"
-              defaultValue={p.handicap_index ?? ""}
+              type="text"
+              inputMode="decimal"
+              placeholder="+1.4"
+              defaultValue={hiInputValue(p.handicap_index)}
               onBlur={(e) => {
-                const v = e.target.value === "" ? null : parseFloat(e.target.value);
+                const v = parseHi(e.target.value);
                 if (v !== p.handicap_index) update(p, { handicap_index: v });
               }}
               aria-label="Handicap Index"
