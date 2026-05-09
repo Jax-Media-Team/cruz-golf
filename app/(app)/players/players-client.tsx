@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
@@ -39,23 +39,50 @@ export function PlayersClient({
   const [players, setPlayers] = useState(initialPlayers);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Partial<Player>>({});
+  const [query, setQuery] = useState("");
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const sb = supabaseBrowser();
   const router = useRouter();
 
-  // Sort: logged-in user first, then alphabetical by last name.
+  // Sort: logged-in user first, then alphabetical by last name. Archived sink to bottom.
   const sorted = useMemo(() => {
     return [...players].sort((a, b) => {
       const aMe = currentUserId && a.profile_id === currentUserId;
       const bMe = currentUserId && b.profile_id === currentUserId;
       if (aMe && !bMe) return -1;
       if (!aMe && bMe) return 1;
-      // Archived to bottom
       const aArch = !!a.deleted_at;
       const bArch = !!b.deleted_at;
       if (aArch !== bArch) return aArch ? 1 : -1;
       return lastNameKey(a.display_name).localeCompare(lastNameKey(b.display_name));
     });
   }, [players, currentUserId]);
+
+  // Search filter (matches name, GHIN, email, phone — all case-insensitive).
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((p) => {
+      const haystack = [
+        p.display_name,
+        p.ghin_number,
+        p.email,
+        p.phone
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [sorted, query]);
+
+  // Close overflow menu when you click anywhere else.
+  useEffect(() => {
+    if (!openMenuFor) return;
+    const close = () => setOpenMenuFor(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [openMenuFor]);
 
   async function add() {
     if (!groupId || !draft.display_name) return;
@@ -78,7 +105,7 @@ export function PlayersClient({
       alert(error.message);
       return;
     }
-    if (data) setPlayers((p) => [...p, data].sort((a, b) => a.display_name.localeCompare(b.display_name)));
+    if (data) setPlayers((p) => [...p, data]);
     setDraft({});
     setAdding(false);
   }
@@ -126,12 +153,18 @@ export function PlayersClient({
     setPlayers((arr) => arr.filter((x) => x.id !== p.id));
   }
 
+  const totalActive = players.filter((p) => !p.deleted_at).length;
+  const totalArchived = players.filter((p) => !!p.deleted_at).length;
+
   return (
     <div className="space-y-4">
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="h-eyebrow">Roster</p>
           <h1 className="h-display text-4xl text-cream-50 mt-1">Players</h1>
+          <p className="text-xs text-cream-100/55 mt-1">
+            {showArchived ? `${totalArchived} archived · ${totalActive} active` : `${totalActive} player${totalActive === 1 ? "" : "s"}`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -146,11 +179,40 @@ export function PlayersClient({
         </div>
       </header>
 
+      {/* Search box — name / GHIN / email / phone */}
+      {sorted.length > 4 && (
+        <div className="relative">
+          <input
+            className="input pr-9"
+            type="search"
+            placeholder="Search by name, GHIN, email, or phone…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search players"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-cream-100/55 hover:text-cream-50 text-sm"
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {adding && (
         <div className="card p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
             <label className="label">Name</label>
-            <input className="input" value={draft.display_name ?? ""} onChange={(e) => setDraft({ ...draft, display_name: e.target.value })} />
+            <input
+              className="input"
+              autoFocus
+              value={draft.display_name ?? ""}
+              onChange={(e) => setDraft({ ...draft, display_name: e.target.value })}
+            />
           </div>
           <div>
             <label className="label">Handicap Index</label>
@@ -183,61 +245,184 @@ export function PlayersClient({
             Guest (no account)
           </label>
           <div className="sm:col-span-2">
-            <button className="btn-primary w-full" onClick={add}>Save</button>
+            <button className="btn-primary w-full" onClick={add} disabled={!draft.display_name}>
+              Save
+            </button>
           </div>
         </div>
       )}
 
       <div className="space-y-2">
-        {sorted.map((p) => {
+        {filtered.length === 0 && players.length > 0 && (
+          <div className="card p-6 text-center text-cream-100/55 text-sm">
+            No players match &ldquo;{query}&rdquo;.
+          </div>
+        )}
+        {players.length === 0 && (
+          <div className="card p-6 text-center text-cream-100/65 text-sm">
+            No players yet.{" "}
+            <button className="text-gold-400 underline" onClick={() => setAdding(true)}>
+              Add your first player
+            </button>
+            .
+          </div>
+        )}
+        {filtered.map((p) => {
           const isMe = !!(currentUserId && p.profile_id === currentUserId);
           const archived = !!p.deleted_at;
           return (
-            <div
+            <PlayerRow
               key={p.id}
-              className={`card p-4 flex items-center justify-between gap-3 ${archived ? "opacity-60" : ""} ${isMe ? "border border-gold-500/30" : ""}`}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-medium truncate text-cream-50">
-                  {p.display_name}
-                  {isMe && <span className="ml-2 pill bg-gold-500 text-brand-900 text-[10px] px-2 py-0.5">You</span>}
-                  {p.is_guest && <span className="ml-2 pill-draft text-xs">guest</span>}
-                  {archived && <span className="ml-2 text-xs text-cream-100/55">(archived)</span>}
-                </div>
-                <div className="text-sm text-cream-100/55">
-                  HI {formatHi(p.handicap_index)} {p.ghin_number ? `· GHIN ${p.ghin_number}` : ""}
-                </div>
-              </div>
-              <input
-                className="input w-24"
-                type="text"
-                inputMode="decimal"
-                placeholder="+1.4"
-                defaultValue={hiInputValue(p.handicap_index)}
-                onBlur={(e) => {
-                  const v = parseHi(e.target.value);
-                  if (v !== p.handicap_index) update(p, { handicap_index: v });
-                }}
-                aria-label="Handicap Index"
-              />
-              <Link href={`/players/${p.id}/stats`} className="btn-ghost text-sm">Stats</Link>
-              {archived ? (
-                <button className="btn-ghost text-sm text-emerald-300" onClick={() => unarchive(p)}>
-                  Unarchive
-                </button>
-              ) : (
-                <>
-                  <button className="btn-ghost text-sm text-cream-100/65" onClick={() => archive(p)}>
-                    Archive
-                  </button>
-                  <button className="btn-ghost text-sm text-red-300" onClick={() => hardDelete(p)}>
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
+              player={p}
+              isMe={isMe}
+              archived={archived}
+              menuOpen={openMenuFor === p.id}
+              onToggleMenu={() =>
+                setOpenMenuFor((cur) => (cur === p.id ? null : p.id))
+              }
+              onUpdate={(patch) => update(p, patch)}
+              onArchive={() => archive(p)}
+              onUnarchive={() => unarchive(p)}
+              onHardDelete={() => hardDelete(p)}
+            />
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function PlayerRow({
+  player: p,
+  isMe,
+  archived,
+  menuOpen,
+  onToggleMenu,
+  onUpdate,
+  onArchive,
+  onUnarchive,
+  onHardDelete
+}: {
+  player: Player;
+  isMe: boolean;
+  archived: boolean;
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onUpdate: (patch: Partial<Player>) => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
+  onHardDelete: () => void;
+}) {
+  const hiInputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <div
+      className={`card p-4 ${archived ? "opacity-60" : ""} ${
+        isMe ? "border border-gold-500/30" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+        {/* Identity column */}
+        <div className="flex-1 min-w-0">
+          <div className="font-medium truncate text-cream-50 flex items-center gap-2 flex-wrap">
+            <Link href={`/players/${p.id}/stats`} className="hover:underline">
+              {p.display_name}
+            </Link>
+            {isMe && (
+              <span className="pill bg-gold-500 text-brand-900 text-[10px] px-2 py-0.5">You</span>
+            )}
+            {p.is_guest && <span className="pill-draft text-[10px] px-2 py-0.5">guest</span>}
+            {archived && (
+              <span className="text-[10px] text-cream-100/55">(archived)</span>
+            )}
+          </div>
+          <div className="text-xs text-cream-100/55 mt-0.5">
+            HI {formatHi(p.handicap_index)}
+            {p.ghin_number ? ` · GHIN ${p.ghin_number}` : ""}
+            {p.email ? ` · ${p.email}` : ""}
+          </div>
+        </div>
+
+        {/* Actions row — wraps under name on tight phones, sits inline on desktop */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <input
+            ref={hiInputRef}
+            className="input w-20 text-right"
+            type="text"
+            inputMode="decimal"
+            placeholder="+1.4"
+            defaultValue={hiInputValue(p.handicap_index)}
+            onBlur={(e) => {
+              const v = parseHi(e.target.value);
+              if (v !== p.handicap_index) onUpdate({ handicap_index: v });
+            }}
+            aria-label="Handicap Index"
+            disabled={archived}
+          />
+          <Link
+            href={`/players/${p.id}/stats`}
+            className="btn-ghost text-xs hidden sm:inline-flex"
+          >
+            Stats
+          </Link>
+          <div className="relative">
+            <button
+              type="button"
+              className="btn-ghost text-sm px-2 leading-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleMenu();
+              }}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="More actions"
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 z-20 min-w-[12rem] rounded-lg border border-cream-100/15 bg-brand-950 shadow-2xl text-sm overflow-hidden"
+                role="menu"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Link
+                  href={`/players/${p.id}/stats`}
+                  className="block px-3 py-2 text-cream-50 hover:bg-brand-900 sm:hidden"
+                >
+                  View stats
+                </Link>
+                {archived ? (
+                  <button
+                    type="button"
+                    onClick={onUnarchive}
+                    className="block w-full text-left px-3 py-2 text-emerald-300 hover:bg-brand-900"
+                    role="menuitem"
+                  >
+                    Unarchive
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onArchive}
+                      className="block w-full text-left px-3 py-2 text-cream-100/85 hover:bg-brand-900"
+                      role="menuitem"
+                    >
+                      Archive
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onHardDelete}
+                      className="block w-full text-left px-3 py-2 text-red-300 hover:bg-brand-900"
+                      role="menuitem"
+                    >
+                      Delete permanently
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

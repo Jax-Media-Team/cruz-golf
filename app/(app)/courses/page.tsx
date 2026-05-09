@@ -19,19 +19,33 @@ export default async function CoursesPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-end justify-between">
+      <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="h-eyebrow">Layouts</p>
           <h1 className="h-display text-4xl text-cream-50 mt-1">Courses</h1>
         </div>
-        <Link href="/courses/new" className="btn-primary">Add course</Link>
+        <div className="flex items-center gap-2">
+          <Link href="/courses/import" className="btn-primary">📷 Import scorecard</Link>
+          <Link href="/courses/new" className="btn-ghost">Add manually</Link>
+        </div>
       </header>
 
       {!hasJgcc && groupId && <JgccQuickAdd groupId={groupId} />}
 
       {(!courses || courses.length === 0) && (
-        <div className="card p-8 text-center text-cream-100/70">
-          No courses yet. <Link className="text-cream-50 underline" href="/courses/new">Add one</Link>.
+        <div className="card p-8 text-center text-cream-100/70 space-y-2">
+          <p>No courses yet.</p>
+          <p className="text-xs text-cream-100/55">
+            Snap a photo of any scorecard with{" "}
+            <Link className="text-gold-400 underline" href="/courses/import">
+              Import scorecard
+            </Link>{" "}
+            — or{" "}
+            <Link className="text-cream-50 underline" href="/courses/new">
+              build one manually
+            </Link>
+            .
+          </p>
         </div>
       )}
       <div className="space-y-2">
