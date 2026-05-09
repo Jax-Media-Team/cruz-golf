@@ -205,6 +205,15 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
                 <span className="font-serif text-sm text-cream-50 leading-tight">Invite players</span>
               </Link>
             )}
+            {isCommissioner && (
+              <Link
+                href={`/rounds/${id}/games`}
+                className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+              >
+                <span className="text-xl">🎲</span>
+                <span className="font-serif text-sm text-cream-50 leading-tight">Edit games</span>
+              </Link>
+            )}
             {hasStakes && (
               <Link
                 href={`/rounds/${id}/wagers`}
