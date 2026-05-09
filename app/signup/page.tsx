@@ -21,32 +21,36 @@ export default function SignupPage() {
     setErr(null);
     setBusy(true);
     const sb = supabaseBrowser();
+
     const { data: signup, error } = await sb.auth.signUp({ email, password });
     if (error || !signup.user) {
       setBusy(false);
       setErr(friendlyAuthError(error ?? "Sign-up failed"));
       return;
     }
-    const profile = await sb.from("profiles").upsert({ id: signup.user.id, display_name: name });
-    if (profile.error) {
+
+    // If email confirmation is enabled in Supabase, signUp returns the user
+    // but no session. The bootstrap function requires a session, so prompt
+    // the user to verify before proceeding.
+    if (!signup.session) {
       setBusy(false);
-      setErr(friendlyAuthError(profile.error));
+      setErr(
+        "Account created. Check your inbox for a confirmation link, then come back and sign in."
+      );
       return;
     }
+
     const finalGroupName = groupName.trim() || `${name.split(" ")[0] || "My"}'s Group`;
-    const { data: g, error: ge } = await sb
-      .from("groups")
-      .insert({ name: finalGroupName, owner_id: signup.user.id })
-      .select("id")
-      .single();
-    if (ge || !g) {
+    const { error: bsErr } = await sb.rpc("fn_bootstrap_account", {
+      p_display_name: name,
+      p_group_name: finalGroupName
+    });
+    if (bsErr) {
       setBusy(false);
-      setErr(friendlyAuthError(ge ?? "Could not create group"));
+      setErr(friendlyAuthError(bsErr));
       return;
     }
-    await sb
-      .from("group_members")
-      .insert({ group_id: g.id, profile_id: signup.user.id, player_id: signup.user.id, role: "commissioner" });
+
     setBusy(false);
     router.push("/dashboard");
   }

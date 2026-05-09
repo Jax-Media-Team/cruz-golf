@@ -1,11 +1,17 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
   const sb = await supabaseServer();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) redirect("/login");
 
   // Get the user's first group (if any) so we can show context-aware onboarding state.
   const { data: groups } = await sb.from("groups").select("id, name").limit(1);
+  // No group yet -> the signup bootstrap didn't complete (likely email
+  // confirmation flow). Send to the onboarding finisher.
+  if ((groups?.length ?? 0) === 0) redirect("/onboarding");
   const groupId = groups?.[0]?.id;
   const groupName = groups?.[0]?.name;
 
