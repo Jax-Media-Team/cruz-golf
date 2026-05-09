@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { RoundsList } from "./rounds-list";
 
 export default async function DashboardPage() {
   const sb = await supabaseServer();
@@ -109,23 +110,12 @@ export default async function DashboardPage() {
       )}
 
       {hasRounds && (
-        <div className="space-y-2">
-          {rounds?.map((r: any) => (
-            <Link
-              key={r.id}
-              href={`/rounds/${r.id}`}
-              className="card card-hover p-4 flex items-center justify-between"
-            >
-              <div>
-                <div className="font-medium text-cream-50">{r.courses?.name ?? "Course"}</div>
-                <div className="text-sm text-cream-100/55">{r.date}</div>
-              </div>
-              <span className={r.status === "live" ? "pill-live" : r.status === "finalized" ? "pill-final" : "pill-draft"}>
-                {r.status}
-              </span>
-            </Link>
-          ))}
-        </div>
+        <>
+          <p className="text-[11px] text-cream-100/45">
+            Tip: swipe a round left, or tap the &ldquo;⋯&rdquo;, to delete.
+          </p>
+          <RoundsList initialRounds={(rounds as any) ?? []} />
+        </>
       )}
     </div>
   );

@@ -239,6 +239,26 @@ export default function NewRoundPage() {
 
     // 3) Create round_players with computed handicaps. We use the sanitized
     // copy so empty tee_ids get backfilled and team indexes are real numbers.
+    // Guard: every UUID-bearing field is checked for empty strings before we
+    // hand the row to Postgres (which rejects "" for type uuid).
+    const guardEmptyUuid = (label: string, v: unknown): string | null => {
+      if (typeof v !== "string" || v.length === 0) return label;
+      return null;
+    };
+    for (const [i, p] of sanitized.entries()) {
+      const rid = guardEmptyUuid("round_id", round.id);
+      const pid = guardEmptyUuid("player_id", p.id);
+      const tid = guardEmptyUuid("tee_id", p.tee_id);
+      const empties = [rid, pid, tid].filter(Boolean) as string[];
+      if (empties.length > 0) {
+        setBusy(false);
+        setErr(
+          `Couldn't start round — player #${i + 1} is missing ${empties.join(", ")}. Refresh the page and try again, or remove and re-add the player.`
+        );
+        return;
+      }
+    }
+
     const rpRows = sanitized.map((p, i) => {
       const player = allPlayers.find((x) => x.id === p.id);
       const tee = tees.find((x) => x.id === p.tee_id);
