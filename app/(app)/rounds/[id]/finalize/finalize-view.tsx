@@ -126,22 +126,73 @@ export function FinalizeView({
         </ul>
       </div>
 
-      <div className="card p-5">
-        <h2 className="font-serif text-xl text-cream-50 mb-3">Who pays whom</h2>
+      <div className="card p-5 space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-serif text-xl text-cream-50">Who pays whom</h2>
+          <span className="text-[11px] text-cream-100/55">
+            Computed by netting every game and finding the fewest transfers.
+          </span>
+        </div>
         {flows.length === 0 ? (
-          <p className="text-sm text-cream-100/55">Nothing owed.</p>
+          <p className="text-sm text-cream-100/55">Nothing owed — everyone broke even.</p>
         ) : (
-          <ul className="text-sm space-y-1.5">
-            {flows.map((f, i) => (
-              <li key={i} className="flex items-center justify-between">
-                <div>
-                  <span className="font-medium text-cream-50">{labelByPlayer.get(f.from)}</span>
-                  <span className="text-cream-100/40 mx-2">→</span>
-                  <span className="font-medium text-cream-50">{labelByPlayer.get(f.to)}</span>
-                </div>
-                <span className="tabular-nums font-serif text-lg text-cream-50">{fmt(f.amount_cents)}</span>
-              </li>
-            ))}
+          <ul className="text-sm space-y-3">
+            {flows.map((f, i) => {
+              // Build the explanation: each game's net delta for the FROM
+              // player. Negative = they owed for that game.
+              const fromDeltas = lines
+                .map((l) => ({ game: l.game, cents: l.perPlayer.get(f.from) ?? 0 }))
+                .filter((x) => x.cents !== 0);
+              const fromTotal = fromDeltas.reduce((s, x) => s + x.cents, 0);
+              return (
+                <li key={i} className="border-t border-cream-100/8 first:border-t-0 first:pt-0 pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="font-medium text-cream-50">{labelByPlayer.get(f.from)}</span>
+                      <span className="text-cream-100/40 mx-2">→</span>
+                      <span className="font-medium text-cream-50">{labelByPlayer.get(f.to)}</span>
+                    </div>
+                    <span className="tabular-nums font-serif text-lg text-cream-50">{fmt(f.amount_cents)}</span>
+                  </div>
+                  {/* Where this came from for the payer */}
+                  {fromDeltas.length > 0 && (
+                    <details className="mt-1.5 text-[11px] text-cream-100/65 leading-snug">
+                      <summary className="cursor-pointer text-cream-100/55 hover:text-cream-100">
+                        How this was calculated
+                      </summary>
+                      <div className="mt-1.5 pl-3 border-l border-cream-100/15">
+                        <p className="text-[11px] text-cream-100/60 mb-1.5">
+                          {labelByPlayer.get(f.from)}&apos;s net across every game in this round:
+                        </p>
+                        <ul className="space-y-0.5">
+                          {fromDeltas.map((x, j) => (
+                            <li key={j} className="flex justify-between gap-2 tabular-nums">
+                              <span>{x.game}</span>
+                              <span className={x.cents > 0 ? "text-emerald-300" : "text-red-300"}>
+                                {x.cents >= 0 ? "+" : "−"}{fmt(x.cents)}
+                              </span>
+                            </li>
+                          ))}
+                          <li className="flex justify-between gap-2 mt-1 pt-1 border-t border-cream-100/8 tabular-nums font-medium">
+                            <span className="text-cream-100/85">Net</span>
+                            <span className={fromTotal >= 0 ? "text-emerald-300" : "text-red-300"}>
+                              {fromTotal >= 0 ? "+" : "−"}{fmt(fromTotal)}
+                            </span>
+                          </li>
+                        </ul>
+                        {Math.abs(fromTotal) !== f.amount_cents && (
+                          <p className="text-[10px] text-cream-100/55 mt-2">
+                            This transfer is part of a chain — {labelByPlayer.get(f.from)} owes a total of{" "}
+                            {fmt(Math.abs(fromTotal))} but it&apos;s split across multiple recipients to
+                            keep the number of Venmo transfers low.
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
