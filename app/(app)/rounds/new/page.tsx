@@ -53,6 +53,74 @@ export default function NewRoundPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // User-saved Quick Start presets.
+  const [myPresets, setMyPresets] = useState<any[]>([]);
+
+  const hasAnyGameEnabled = Object.values(games).some((v) => v.enabled);
+
+  function applyPackage(pkgGames: Array<{ game_type: GameType; stake_cents: number; allowance_pct: number; config: any }>) {
+    setGames((prev) => {
+      const next: typeof prev = { ...prev };
+      for (const k of Object.keys(next) as GameType[]) next[k] = { ...next[k], enabled: false };
+      for (const g of pkgGames) {
+        next[g.game_type] = {
+          enabled: true,
+          stake_cents: g.stake_cents,
+          allowance_pct: g.allowance_pct,
+          config: g.config
+        };
+      }
+      return next;
+    });
+  }
+
+  function applyPresetGames(presetGames: any[]) {
+    applyPackage(presetGames as any);
+  }
+
+  async function savePresetFromCurrentGames() {
+    const enabled = (Object.entries(games) as [GameType, any][])
+      .filter(([, v]) => v.enabled)
+      .map(([type, v]) => ({
+        game_type: type,
+        stake_cents: v.stake_cents,
+        allowance_pct: v.allowance_pct,
+        config: v.config
+      }));
+    if (enabled.length === 0) return;
+    const name = prompt("Name this preset (e.g. 'Saturday Skins + Nassau')");
+    if (!name?.trim()) return;
+    const blurb = prompt("Optional blurb / description (leave blank to skip)") ?? "";
+    const { data: u } = await sb.auth.getUser();
+    if (!u.user) return;
+    const { data, error } = await sb
+      .from("quick_start_presets")
+      .insert({
+        profile_id: u.user.id,
+        name: name.trim(),
+        blurb: blurb.trim() || null,
+        emoji: "⭐",
+        games: enabled
+      })
+      .select("*")
+      .single();
+    if (error) {
+      alert(`Couldn't save preset: ${error.message}`);
+      return;
+    }
+    if (data) setMyPresets((prev) => [data, ...prev]);
+  }
+
+  async function deletePreset(id: string) {
+    if (!confirm("Delete this preset?")) return;
+    const { error } = await sb.from("quick_start_presets").delete().eq("id", id);
+    if (error) {
+      alert(`Couldn't delete preset: ${error.message}`);
+      return;
+    }
+    setMyPresets((prev) => prev.filter((p) => p.id !== id));
+  }
+
   // Which team-format games are currently enabled?
   const teamGameTypes: GameType[] = [
     "best_ball_gross",
@@ -85,6 +153,23 @@ export default function NewRoundPage() {
     order.forEach((pid, i) => assignment.set(pid, String(i % desired)));
     setPickedPlayers((arr) => arr.map((p) => ({ ...p, team_id: assignment.get(p.id) ?? null })));
   }, [teamGameEnabled, teamCount, pickedPlayers]);
+
+  // Load this user's saved Quick Start presets on mount.
+  useEffect(() => {
+    (async () => {
+      const { data: u } = await sb.auth.getUser();
+      if (!u.user) return;
+      const { data } = await sb
+        .from("quick_start_presets")
+        .select("*")
+        .order("last_used_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+      // RLS filters to the user's own. Tolerate the table not existing yet
+      // (migration 0016 may not have been run) — silent in that case.
+      if (data) setMyPresets(data);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -628,33 +713,60 @@ export default function NewRoundPage() {
       />
 
       <section className="card p-4 space-y-3">
-        <div className="flex items-end justify-between gap-2">
+        <div className="flex items-end justify-between gap-2 flex-wrap">
           <h2 className="font-serif text-xl text-cream-50">Quick start</h2>
-          <p className="text-xs text-cream-100/55 hidden sm:block">Pick a package or roll your own below.</p>
+          <button
+            type="button"
+            onClick={savePresetFromCurrentGames}
+            disabled={!hasAnyGameEnabled}
+            className="btn-secondary text-xs disabled:opacity-50"
+          >
+            ★ Save my current setup as a preset
+          </button>
         </div>
+
+        {myPresets.length > 0 && (
+          <>
+            <p className="text-[11px] uppercase tracking-wider text-cream-100/55">My presets</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {myPresets.map((p) => (
+                <div key={p.id} className="card card-hover p-3 group relative">
+                  <button
+                    type="button"
+                    onClick={() => applyPresetGames(p.games as any[])}
+                    className="text-left w-full"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl leading-none">{p.emoji ?? "★"}</span>
+                      <span className="font-serif text-base text-cream-50 truncate">{p.name}</span>
+                    </div>
+                    {p.blurb && <p className="text-xs text-cream-100/65 mt-1 truncate">{p.blurb}</p>}
+                    <p className="text-[10px] text-cream-100/45 mt-1">
+                      {(p.games as any[]).length} game{(p.games as any[]).length === 1 ? "" : "s"}
+                      {p.use_count > 0 ? ` · used ${p.use_count}×` : ""}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deletePreset(p.id)}
+                    className="absolute top-2 right-2 text-[10px] text-cream-100/40 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Delete preset"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="text-[11px] uppercase tracking-wider text-cream-100/55 mt-1">Suggested packages</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {GAME_PACKAGES.map((pkg) => (
             <button
               key={pkg.id}
               type="button"
-              onClick={() => {
-                setGames((prev) => {
-                  // Reset to all-disabled, then enable & populate from package.
-                  const next: typeof prev = { ...prev };
-                  for (const k of Object.keys(next) as GameType[]) {
-                    next[k] = { ...next[k], enabled: false };
-                  }
-                  for (const g of pkg.games) {
-                    next[g.game_type] = {
-                      enabled: true,
-                      stake_cents: g.stake_cents,
-                      allowance_pct: g.allowance_pct,
-                      config: g.config
-                    };
-                  }
-                  return next;
-                });
-              }}
+              onClick={() => applyPackage(pkg.games)}
               className="text-left card card-hover p-3 transition-colors"
             >
               <div className="flex items-center gap-2">
