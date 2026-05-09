@@ -73,30 +73,45 @@ export default function SignupPage() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center px-6 py-10">
         <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
-        <div className="card p-7 w-full max-w-sm space-y-4 text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/15 ring-1 ring-emerald-400/40 flex items-center justify-center text-emerald-300 text-2xl">
-            ✓
-          </div>
-          <div>
-            <p className="h-eyebrow text-emerald-300">Check your inbox</p>
+        <div className="card p-7 w-full max-w-md space-y-4">
+          <div className="text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/15 ring-1 ring-emerald-400/40 flex items-center justify-center text-emerald-300 text-2xl">
+              ✉️
+            </div>
+            <p className="h-eyebrow text-emerald-300 mt-3">Check your inbox</p>
             <h1 className="h-display text-2xl text-cream-50 mt-1">Confirm your email</h1>
           </div>
-          <p className="text-sm text-cream-100/80 leading-relaxed">
-            We sent a confirmation link to <span className="text-cream-50 font-medium">{confirmedEmail}</span>.
-            Click it and you&apos;ll come back here to finish setup.
-          </p>
-          <p className="text-xs text-cream-100/55">
-            No email after a couple minutes? Check spam/Promotions, or{" "}
+          <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/5 p-3 text-sm space-y-2">
+            <p className="text-cream-50">
+              Confirmation link sent to{" "}
+              <span className="font-medium">{confirmedEmail}</span>.
+            </p>
+            <ol className="text-cream-100/85 space-y-1 list-decimal list-inside text-[13px]">
+              <li>Open the email from <span className="text-cream-50">noreply@mail.app.supabase.io</span> (or similar).</li>
+              <li>Click <span className="text-cream-50 font-medium">Confirm your mail</span>.</li>
+              <li>You&apos;ll be returned here to finish setup.</li>
+            </ol>
+          </div>
+          <div className="rounded-lg bg-amber-500/8 border border-amber-400/25 p-3 text-[12px] text-amber-100/85 leading-snug">
+            <p className="font-medium text-amber-100">Not seeing the email?</p>
+            <ul className="mt-1 space-y-0.5">
+              <li>• Check spam / Promotions / Updates folders</li>
+              <li>• Wait up to 2 minutes (built-in mail delivery is rate-limited)</li>
+              <li>• Make sure {confirmedEmail.split("@")[1]} isn&apos;t blocking automated mail</li>
+            </ul>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Link href="/login" className="btn-secondary w-full text-center">
+              Already confirmed → Sign in
+            </Link>
             <button
               type="button"
               onClick={() => setConfirmedEmail(null)}
-              className="text-gold-400 underline"
+              className="text-xs text-cream-100/55 hover:text-cream-100 text-center"
             >
-              try a different email
+              Try a different email address
             </button>
-            .
-          </p>
-          <Link href="/login" className="btn-secondary w-full">Already confirmed → Sign in</Link>
+          </div>
         </div>
       </main>
     );
