@@ -103,6 +103,15 @@ export function useScoreSaver(scope: { roundId: string }) {
           // (e.g. on next entry, on focus, or via manual button). Stop draining.
           item.attempts += 1;
           persistQueue();
+          // Log full context to DevTools so we can diagnose RLS / FK issues.
+          // eslint-disable-next-line no-console
+          console.error("[score-saver] save failed", {
+            round_player_id: item.round_player_id,
+            hole_number: item.hole_number,
+            gross: item.gross,
+            attempts: item.attempts,
+            error: e?.message ?? e
+          });
           setStatus(item.key, "failed", e?.message ?? "Save failed");
           break;
         }
@@ -164,5 +173,24 @@ export function useScoreSaver(scope: { roundId: string }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [state.pending]);
 
-  return { save, state, retry: drain };
+  // Clear all queued items. Used when items are stuck (e.g., RLS denial on
+  // a deleted round_player_id from a prior test) and the user wants to
+  // start fresh without losing any other on-screen state.
+  const discard = useCallback(() => {
+    const ids = queueRef.current.map((it) => it.key);
+    queueRef.current = [];
+    persistQueue();
+    setState((s) => {
+      const status = { ...s.status };
+      const errors = { ...s.errors };
+      for (const id of ids) {
+        delete status[id];
+        delete errors[id];
+      }
+      const pending = Object.values(status).filter((v) => v === "saving" || v === "failed").length;
+      return { status, errors, pending };
+    });
+  }, [persistQueue]);
+
+  return { save, state, retry: drain, discard };
 }
