@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CourseHole } from "@/lib/types";
 
 export type GroupPlayer = {
@@ -49,20 +49,6 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
   const current = ordered.find((h) => h.hole_number === hole) ?? ordered[0];
   const idx = ordered.findIndex((h) => h.hole_number === current.hole_number);
 
-  // Touch swipe between holes (top hole strip / context only)
-  const startX = useRef<number | null>(null);
-  function onTouchStart(e: React.TouchEvent) {
-    startX.current = e.touches[0].clientX;
-  }
-  function onTouchEnd(e: React.TouchEvent) {
-    if (startX.current == null) return;
-    const dx = e.changedTouches[0].clientX - startX.current;
-    startX.current = null;
-    if (Math.abs(dx) < 60) return;
-    if (dx < 0 && hole < lastHole) setHole(hole + 1);
-    if (dx > 0 && hole > firstHole) setHole(hole - 1);
-  }
-
   // The user controls hole navigation explicitly with the Next button.
   // We only show whether the hole is "complete" (every selected player has
   // a score) so the Next button can highlight when it's safe to advance.
@@ -71,11 +57,7 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
   return (
     <div className="space-y-4 select-none">
       {/* Hole context */}
-      <div
-        className="card p-4 flex items-center justify-between gap-3"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
+      <div className="card p-4 flex items-center justify-between gap-3">
         <button
           className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50 w-10 h-10 text-xl active:scale-95 disabled:opacity-30"
           onClick={() => setHole(Math.max(firstHole, hole - 1))}

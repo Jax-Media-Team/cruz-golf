@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { CourseHole } from "@/lib/types";
 
 type Partner = {
@@ -65,19 +65,10 @@ export function ScorePad({
     // No auto-advance — user controls hole navigation with Next →.
   }
 
-  // Touch swipe between holes
-  const startX = useRef<number | null>(null);
-  function onTouchStart(e: React.TouchEvent) {
-    startX.current = e.touches[0].clientX;
-  }
-  function onTouchEnd(e: React.TouchEvent) {
-    if (startX.current == null) return;
-    const dx = e.changedTouches[0].clientX - startX.current;
-    startX.current = null;
-    if (Math.abs(dx) < 50) return;
-    if (dx < 0 && hole < lastHole) setHole(hole + 1);
-    if (dx > 0 && hole > firstHole) setHole(hole - 1);
-  }
+  // Swipe-to-change-hole was REMOVED. The handlers were on the same card
+  // that holds the +/- buttons; tapping a button with any finger drift
+  // > 50px (very normal on mobile) was firing setHole and jumping the
+  // user to a different hole mid-tap. Use the Prev/Next buttons instead.
 
   // Team aggregate for the current hole
   const teamForHole = (() => {
@@ -171,12 +162,8 @@ export function ScorePad({
         </div>
       </div>
 
-      {/* Score area — swipeable */}
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        className="card p-6 sm:p-8 text-center relative overflow-hidden"
-      >
+      {/* Score area */}
+      <div className="card p-6 sm:p-8 text-center relative overflow-hidden">
         <div className="flex items-center justify-center gap-5 sm:gap-8">
           <button
             className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50 w-16 h-16 sm:w-20 sm:h-20 text-3xl active:scale-95 transition-transform"
@@ -218,9 +205,6 @@ export function ScorePad({
           )}
         </div>
 
-        <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-cream-100/35 hidden sm:block">
-          Swipe ← → to change holes
-        </p>
       </div>
 
       {/* Score chip rail */}

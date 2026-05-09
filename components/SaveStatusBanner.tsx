@@ -153,11 +153,14 @@ export function SaveStatusBanner({
     );
   }
 
+  // Compact "saving" pill that floats top-right and never reflows the page.
+  // Each tap was rendering this in normal flow and pushing content down for
+  // ~150ms then back up — felt like the page was jumping mid-tap.
   return (
-    <div className="card p-2.5 border border-gold-500/30 bg-gold-500/5 flex items-center gap-2 text-xs">
-      <span className="inline-block w-2 h-2 rounded-full bg-gold-500 animate-pulse" />
-      <span className="text-cream-100/85">
-        Saving {savingCount} {savingCount === 1 ? "score" : "scores"}…
+    <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-30 px-2.5 py-1 rounded-full border border-gold-500/30 bg-gold-500/15 backdrop-blur flex items-center gap-2 text-[11px] shadow-soft">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-gold-500 animate-pulse" />
+      <span className="text-cream-100">
+        Saving{savingCount > 1 ? ` ${savingCount}` : ""}…
       </span>
     </div>
   );
