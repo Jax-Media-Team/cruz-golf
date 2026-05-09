@@ -32,11 +32,61 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Tee currently in the Quick Import modal.
+  const [importTee, setImportTee] = useState<Tee | null>(null);
+
   // Update a tee's metadata (name/rating/slope/par/gender). Optimistic.
   async function updateTee(teeId: string, patch: Partial<Tee>) {
     setTees((prev) => prev.map((t) => (t.id === teeId ? { ...t, ...patch } : t)));
     const { error } = await sb.from("course_tees").update(patch).eq("id", teeId);
     if (error) setErr(friendlyAuthError(error));
+  }
+
+  /**
+   * Bulk-import a tee's hole data by pasting rows from the scorecard.
+   * Accepts par row (required), SI row (required), and yardage row (optional)
+   * — each as 18 numbers separated by anything non-digit. Validates SI is
+   * a permutation of 1..18 before saving.
+   */
+  async function importTeeRows(
+    teeId: string,
+    rows: { pars: number[]; sis: number[]; yardages: (number | null)[] }
+  ) {
+    const updates = rows.pars.map((par, i) => ({
+      tee_id: teeId,
+      hole_number: i + 1,
+      par,
+      stroke_index: rows.sis[i],
+      yardage: rows.yardages[i] ?? null
+    }));
+    setBusy(true);
+    setErr(null);
+    // Use upsert in case some hole rows are missing.
+    const { error } = await sb
+      .from("course_holes")
+      .upsert(updates, { onConflict: "tee_id,hole_number" });
+    setBusy(false);
+    if (error) {
+      setErr(friendlyAuthError(error));
+      return;
+    }
+    setTees((prev) =>
+      prev.map((t) =>
+        t.id === teeId
+          ? {
+              ...t,
+              course_holes: updates.map((u) => ({
+                hole_number: u.hole_number,
+                par: u.par,
+                stroke_index: u.stroke_index,
+                yardage: u.yardage
+              }))
+            }
+          : t
+      )
+    );
+    setImportTee(null);
+    router.refresh();
   }
 
   // Update a single hole (par/stroke_index/yardage) for a tee. Optimistic
@@ -299,16 +349,26 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
                         onUpdate={(hn, patch) => updateHole(t.id, hn, patch)}
                       />
 
-                      {tees.length > 1 && (
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => copyParSiToAllTees(t.id)}
+                          onClick={() => setImportTee(t)}
                           disabled={busy}
                           className="btn-secondary text-xs"
                         >
-                          Copy par + stroke index to every other tee on this course
+                          📋 Quick import (paste from scorecard)
                         </button>
-                      )}
+                        {tees.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => copyParSiToAllTees(t.id)}
+                            disabled={busy}
+                            className="btn-secondary text-xs"
+                          >
+                            Copy par + SI to every other tee
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </li>
@@ -317,6 +377,15 @@ export function CourseDetail({ courseId, tees: initialTees }: { courseId: string
           </ul>
         )}
       </section>
+
+      {importTee && (
+        <QuickImportModal
+          tee={importTee}
+          onCancel={() => setImportTee(null)}
+          onImport={(rows) => importTeeRows(importTee.id, rows)}
+          busy={busy}
+        />
+      )}
 
       <section className="card p-4 space-y-3">
         <div>
@@ -543,6 +612,151 @@ function NineGrid({
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Modal: paste 18 numbers per row from a paper scorecard.
+ *
+ * Accepts any non-digit separator (comma, space, tab, newline).
+ * Validates SI is a permutation of 1..N before letting the user import.
+ */
+function QuickImportModal({
+  tee,
+  onCancel,
+  onImport,
+  busy
+}: {
+  tee: { id: string; name: string; holes: number; course_holes: Array<{ hole_number: number; par: number; stroke_index: number; yardage: number | null }> };
+  onCancel: () => void;
+  onImport: (rows: { pars: number[]; sis: number[]; yardages: (number | null)[] }) => void;
+  busy: boolean;
+}) {
+  const N = tee.holes;
+  const sortedExisting = [...tee.course_holes].sort((a, b) => a.hole_number - b.hole_number);
+  const [parInput, setParInput] = useState(sortedExisting.map((h) => h.par).join(" "));
+  const [siInput, setSiInput] = useState(sortedExisting.map((h) => h.stroke_index).join(" "));
+  const [yardageInput, setYardageInput] = useState(
+    sortedExisting.map((h) => h.yardage ?? "").join(" ")
+  );
+
+  function parseRow(raw: string): number[] {
+    return raw
+      .split(/[^0-9.\-]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => !Number.isNaN(n));
+  }
+
+  const pars = parseRow(parInput);
+  const sis = parseRow(siInput);
+  const yardages = parseRow(yardageInput);
+
+  const errors: string[] = [];
+  if (pars.length !== N) errors.push(`Need ${N} par values, got ${pars.length}.`);
+  if (sis.length !== N) errors.push(`Need ${N} stroke index values, got ${sis.length}.`);
+  if (pars.some((p) => p < 3 || p > 6)) errors.push("Par values should be 3, 4, 5, or 6.");
+  if (sis.length === N) {
+    const expectedSi = Array.from({ length: N }, (_, i) => i + 1);
+    const missing = expectedSi.filter((n) => !sis.includes(n));
+    const dup = sis.filter((v, i) => sis.indexOf(v) !== i);
+    if (missing.length > 0) errors.push(`SI missing: ${missing.join(", ")}`);
+    if (dup.length > 0) errors.push(`SI duplicated: ${[...new Set(dup)].join(", ")}`);
+  }
+  if (yardages.length > 0 && yardages.length !== N) {
+    errors.push(`Yardage row must have ${N} numbers (or be blank).`);
+  }
+
+  function submit() {
+    if (errors.length > 0) return;
+    const yardageList: (number | null)[] =
+      yardages.length === N ? yardages : new Array(N).fill(null);
+    onImport({ pars, sis, yardages: yardageList });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-brand-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="card w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[88vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="px-5 py-4 border-b border-cream-100/10 flex items-baseline justify-between gap-3">
+          <div>
+            <p className="h-eyebrow text-gold-400">Quick import</p>
+            <h2 className="font-serif text-xl text-cream-50 mt-0.5">{tee.name} tee · {N} holes</h2>
+          </div>
+          <button onClick={onCancel} className="btn-ghost text-sm">✕</button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <p className="text-xs text-cream-100/65 leading-relaxed">
+            Paste a row from the scorecard for each line. Numbers can be
+            separated by spaces, commas, tabs, or newlines — we figure it out.
+            Yardage is optional.
+          </p>
+
+          <div className="space-y-2">
+            <div>
+              <label className="label">Par row (18 numbers)</label>
+              <textarea
+                value={parInput}
+                onChange={(e) => setParInput(e.target.value)}
+                className="input min-h-[60px] font-mono text-sm"
+                placeholder="4 4 5 3 4 4 3 4 5 4 4 5 4 3 4 4 3 5"
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Detected: {pars.length} {pars.length === N ? "✓" : `(need ${N})`}
+              </p>
+            </div>
+            <div>
+              <label className="label">Stroke Index / Handicap row (18 unique 1-{N})</label>
+              <textarea
+                value={siInput}
+                onChange={(e) => setSiInput(e.target.value)}
+                className="input min-h-[60px] font-mono text-sm"
+                placeholder="7 11 3 13 5 15 9 17 1 8 12 4 14 6 16 10 18 2"
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Detected: {sis.length} {sis.length === N ? "✓" : `(need ${N})`}
+              </p>
+            </div>
+            <div>
+              <label className="label">Yardage row (optional)</label>
+              <textarea
+                value={yardageInput}
+                onChange={(e) => setYardageInput(e.target.value)}
+                className="input min-h-[60px] font-mono text-sm"
+                placeholder="389 420 510 175 410 425 165 405 510 390 410 525 400 175 415 405 165 510"
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Detected: {yardages.length}
+              </p>
+            </div>
+          </div>
+
+          {errors.length > 0 && (
+            <div className="rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-xs space-y-0.5">
+              {errors.map((e, i) => <div key={i} className="text-red-200">⚠ {e}</div>)}
+            </div>
+          )}
+        </div>
+
+        <footer className="px-5 py-3 border-t border-cream-100/10 flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="btn-ghost text-sm">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={busy || errors.length > 0}
+            className="btn-primary text-sm"
+          >
+            {busy ? "Importing…" : "Import"}
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }
