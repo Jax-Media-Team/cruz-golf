@@ -10,6 +10,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await sb.auth.getUser();
   if (!user) redirect("/login");
 
+  // Show the Admin nav item only to platform admins. Wrapped in try/catch
+  // so the layout doesn't crash if the migration hasn't run yet.
+  let isPlatformAdmin = false;
+  try {
+    const { data } = await sb.rpc("fn_is_platform_admin");
+    isPlatformAdmin = !!data;
+  } catch {
+    isPlatformAdmin = false;
+  }
+
   return (
     <div className="min-h-screen flex flex-col pb-20 sm:pb-0">
       <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10">
@@ -31,6 +41,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/players" className="btn-ghost text-sm">Players</Link>
             <Link href="/courses" className="btn-ghost text-sm">Courses</Link>
             <Link href="/ledger" className="btn-ghost text-sm">Ledger</Link>
+            {isPlatformAdmin && (
+              <Link href="/admin" className="btn-ghost text-sm text-gold-400">
+                Admin
+              </Link>
+            )}
           </nav>
           <form action="/auth/signout" method="post">
             <button className="btn-ghost text-sm">Sign out</button>
