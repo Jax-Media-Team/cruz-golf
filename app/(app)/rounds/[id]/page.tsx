@@ -169,46 +169,59 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       )}
 
       {round.status !== "finalized" && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="space-y-2">
+          {/* Primary CTA — prominent on desktop and mobile so score entry is never lost. */}
           <Link
             href={`/rounds/${id}/score-group`}
-            className="card card-hover p-3 text-center flex flex-col items-center gap-1 border border-gold-500/30 hover:bg-brand-900/80 transition-colors"
+            className="card card-hover p-5 sm:p-6 flex items-center justify-between gap-4 border border-gold-500/40 bg-brand-900/40 hover:bg-brand-900/70 transition-colors"
           >
-            <span className="text-xl">📋</span>
-            <span className="font-serif text-sm text-cream-50 leading-tight">Enter scores</span>
+            <div className="flex items-center gap-4">
+              <span className="text-3xl sm:text-4xl">📋</span>
+              <div>
+                <div className="font-serif text-xl sm:text-2xl text-cream-50">Enter scores</div>
+                <p className="text-xs sm:text-sm text-cream-100/65 mt-0.5">
+                  Tap any player on the leaderboard, or use the group scoresheet.
+                </p>
+              </div>
+            </div>
+            <span className="pill bg-gold-500 text-brand-900 hidden sm:inline-flex">Open scoresheet →</span>
           </Link>
-          <a
-            href="#leaderboard"
-            className="card card-hover p-3 text-center flex flex-col items-center gap-1"
-          >
-            <span className="text-xl">🏆</span>
-            <span className="font-serif text-sm text-cream-50 leading-tight">Leaderboard</span>
-          </a>
-          {isCommissioner && (
-            <Link
-              href={`/rounds/${id}/invites`}
+
+          {/* Secondary actions */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <a
+              href="#leaderboard"
               className="card card-hover p-3 text-center flex flex-col items-center gap-1"
             >
-              <span className="text-xl">✉️</span>
-              <span className="font-serif text-sm text-cream-50 leading-tight">Invite players</span>
-            </Link>
-          )}
-          {hasStakes && (
+              <span className="text-xl">🏆</span>
+              <span className="font-serif text-sm text-cream-50 leading-tight">Leaderboard</span>
+            </a>
+            {isCommissioner && (
+              <Link
+                href={`/rounds/${id}/invites`}
+                className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+              >
+                <span className="text-xl">✉️</span>
+                <span className="font-serif text-sm text-cream-50 leading-tight">Invite players</span>
+              </Link>
+            )}
+            {hasStakes && (
+              <Link
+                href={`/rounds/${id}/wagers`}
+                className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+              >
+                <span className="text-xl">💰</span>
+                <span className="font-serif text-sm text-cream-50 leading-tight">View wagers</span>
+              </Link>
+            )}
             <Link
-              href={`/rounds/${id}/wagers`}
+              href={`/rounds/${id}/finalize`}
               className="card card-hover p-3 text-center flex flex-col items-center gap-1"
             >
-              <span className="text-xl">💰</span>
-              <span className="font-serif text-sm text-cream-50 leading-tight">View wagers</span>
+              <span className="text-xl">✅</span>
+              <span className="font-serif text-sm text-cream-50 leading-tight">Settle up</span>
             </Link>
-          )}
-          <Link
-            href={`/rounds/${id}/finalize`}
-            className="card card-hover p-3 text-center flex flex-col items-center gap-1"
-          >
-            <span className="text-xl">✅</span>
-            <span className="font-serif text-sm text-cream-50 leading-tight">Settle up</span>
-          </Link>
+          </div>
         </div>
       )}
 

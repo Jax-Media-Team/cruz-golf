@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { BrandLockup } from "@/components/BrandLockup";
 import { HelpButton } from "@/components/HelpButton";
 import { UpdateToast } from "@/components/UpdateToast";
+import { MobileMoreMenu } from "@/components/MobileMoreMenu";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -13,6 +14,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Show the Admin nav item only to platform admins. Wrapped in try/catch
   // so the layout doesn't crash if the migration hasn't run yet.
   let isPlatformAdmin = false;
+  try {
+    // Cheap idempotent seed: promotes the hardcoded owner email if it's in
+    // auth.users but not yet in platform_admins. No-op for everyone else.
+    await sb.rpc("fn_seed_owner_admins");
+  } catch {
+    /* migration may not have shipped to this env yet — ignore */
+  }
   try {
     const { data } = await sb.rpc("fn_is_platform_admin");
     isPlatformAdmin = !!data;
@@ -55,11 +63,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">{children}</main>
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-4">
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-5 z-30">
         <TabLink href="/dashboard" label="Rounds" />
         <TabLink href="/players" label="Players" />
         <TabLink href="/courses" label="Courses" />
-        <TabLink href="/ledger" label="Ledger" />
+        <TabLink href="/leaderboards" label="Boards" />
+        <MobileMoreMenu isPlatformAdmin={isPlatformAdmin} />
       </nav>
       <HelpButton />
       <UpdateToast />

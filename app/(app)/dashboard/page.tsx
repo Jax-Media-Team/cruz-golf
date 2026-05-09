@@ -16,11 +16,29 @@ export default async function DashboardPage() {
   const groupId = groups?.[0]?.id;
   const groupName = groups?.[0]?.name;
 
-  const [{ count: courseCount }, { count: playerCount }, { data: rounds }] = await Promise.all([
+  const [
+    { count: courseCount },
+    { count: playerCount },
+    { data: rounds }
+  ] = await Promise.all([
     sb.from("courses").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
     sb.from("players").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
     sb.from("rounds").select("id, date, status, courses(name)").order("date", { ascending: false }).limit(10)
   ]);
+
+  // Platform-admin nav surface: also unlocks the Admin quick-link below.
+  let isPlatformAdmin = false;
+  try {
+    const { data } = await sb.rpc("fn_is_platform_admin");
+    isPlatformAdmin = !!data;
+  } catch {
+    isPlatformAdmin = false;
+  }
+
+  // Newest in-progress round so we can offer a one-tap "Enter scores" link.
+  const activeRound = (rounds ?? []).find((r: any) => r.status === "live" || r.status === "draft") as
+    | { id: string; date: string; status: string; courses?: { name?: string } | null }
+    | undefined;
 
   const hasCourses = (courseCount ?? 0) > 0;
   const hasPlayers = (playerCount ?? 0) > 0;
@@ -108,6 +126,65 @@ export default async function DashboardPage() {
           </p>
         </div>
       )}
+
+      {/* Active-round shortcut — one tap to score-entry from the dashboard. */}
+      {activeRound && (
+        <Link
+          href={`/rounds/${activeRound.id}/score-group`}
+          className="card card-hover p-4 sm:p-5 flex items-center justify-between gap-3 border border-gold-500/40 bg-brand-900/40 hover:bg-brand-900/70 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl sm:text-3xl">📋</span>
+            <div>
+              <p className="h-eyebrow text-gold-400">In progress</p>
+              <div className="font-serif text-lg sm:text-xl text-cream-50 mt-0.5">
+                Enter scores · {activeRound.courses?.name ?? "Round"}
+              </div>
+              <p className="text-[11px] text-cream-100/55 mt-0.5">
+                {activeRound.date} · status {activeRound.status}
+              </p>
+            </div>
+          </div>
+          <span className="pill bg-gold-500 text-brand-900 hidden sm:inline-flex">Open scoresheet →</span>
+        </Link>
+      )}
+
+      {/* Quick links — always-visible nav surface for the side rooms of the app. */}
+      <section className="space-y-2">
+        <p className="h-eyebrow text-gold-400">Quick links</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Link href="/leaderboards" className="card card-hover p-3 text-center flex flex-col items-center gap-1">
+            <span className="text-xl">📊</span>
+            <span className="font-serif text-sm text-cream-50">Leaderboards</span>
+            <span className="text-[10px] text-cream-100/55">Across all finalized rounds</span>
+          </Link>
+          <Link href="/records" className="card card-hover p-3 text-center flex flex-col items-center gap-1">
+            <span className="text-xl">🏆</span>
+            <span className="font-serif text-sm text-cream-50">Records</span>
+            <span className="text-[10px] text-cream-100/55">Best gross, biggest wins, milestones</span>
+          </Link>
+          <Link href="/courses" className="card card-hover p-3 text-center flex flex-col items-center gap-1">
+            <span className="text-xl">🗺️</span>
+            <span className="font-serif text-sm text-cream-50">Courses</span>
+            <span className="text-[10px] text-cream-100/55">Add a course or import a scorecard</span>
+          </Link>
+          <Link href="/ledger" className="card card-hover p-3 text-center flex flex-col items-center gap-1">
+            <span className="text-xl">💵</span>
+            <span className="font-serif text-sm text-cream-50">Ledger</span>
+            <span className="text-[10px] text-cream-100/55">Who owes whom</span>
+          </Link>
+          {isPlatformAdmin && (
+            <Link
+              href="/admin"
+              className="card card-hover p-3 text-center flex flex-col items-center gap-1 border border-gold-500/40 sm:col-span-1 col-span-2"
+            >
+              <span className="text-xl">🛡️</span>
+              <span className="font-serif text-sm text-gold-400">Admin</span>
+              <span className="text-[10px] text-cream-100/55">Platform-wide users, groups, audits</span>
+            </Link>
+          )}
+        </div>
+      </section>
 
       {hasRounds && (
         <>
