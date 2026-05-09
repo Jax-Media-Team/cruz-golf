@@ -38,6 +38,9 @@ export default function NewRoundPage() {
   const [tees, setTees] = useState<any[]>([]);
   const [courseId, setCourseId] = useState<string>("");
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
+  const [lastPlayedAt, setLastPlayedAt] = useState<Record<string, string>>({});
+  const [hiEdits, setHiEdits] = useState<Record<string, string>>({});
+  const [lastLineup, setLastLineup] = useState<{ playerIds: string[]; courseName: string; date: string } | null>(null);
   const [pickedPlayers, setPickedPlayers] = useState<{ id: string; tee_id: string; team_id: string | null }[]>([]);
   const [teamCount, setTeamCount] = useState(0);
   const [games, setGames] = useState<Record<GameType, { enabled: boolean; stake_cents: number; allowance_pct: number; config: any }>>(
@@ -51,11 +54,50 @@ export default function NewRoundPage() {
       const { data: g } = await sb.from("groups").select("id").limit(1);
       const gid = g?.[0]?.id;
       setGroupId(gid ?? null);
-      if (gid) {
-        const { data: c } = await sb.from("courses").select("id, name").eq("group_id", gid).is("deleted_at", null);
-        setCourses(c ?? []);
-        const { data: p } = await sb.from("players").select("id, display_name, handicap_index").eq("group_id", gid).is("deleted_at", null).order("display_name");
-        setAllPlayers(p ?? []);
+      if (!gid) return;
+
+      const [coursesRes, playersRes, recentRoundsRes] = await Promise.all([
+        sb.from("courses").select("id, name").eq("group_id", gid).is("deleted_at", null),
+        sb.from("players").select("id, display_name, handicap_index").eq("group_id", gid).is("deleted_at", null),
+        sb
+          .from("rounds")
+          .select("id, date, courses(name), round_players(player_id)")
+          .eq("group_id", gid)
+          .order("date", { ascending: false })
+          .limit(20)
+      ]);
+
+      setCourses(coursesRes.data ?? []);
+
+      // Build last-played-at map from recent rounds (most recent first).
+      const lastSeen: Record<string, string> = {};
+      for (const r of (recentRoundsRes.data as any[]) ?? []) {
+        for (const rp of r.round_players ?? []) {
+          if (!lastSeen[rp.player_id]) lastSeen[rp.player_id] = r.date;
+        }
+      }
+      setLastPlayedAt(lastSeen);
+
+      // Sort players: most-recently-played first, then alpha for the rest.
+      const players = (playersRes.data ?? []).slice().sort((a: any, b: any) => {
+        const la = lastSeen[a.id] ?? "";
+        const lb = lastSeen[b.id] ?? "";
+        if (la !== lb) return lb.localeCompare(la);
+        return a.display_name.localeCompare(b.display_name);
+      });
+      setAllPlayers(players);
+
+      // Capture last round's lineup for the quick "use last lineup" button.
+      const lastRound = (recentRoundsRes.data as any[])?.[0];
+      if (lastRound) {
+        const ids = (lastRound.round_players ?? []).map((rp: any) => rp.player_id);
+        if (ids.length > 0) {
+          setLastLineup({
+            playerIds: ids,
+            courseName: lastRound.courses?.name ?? "last round",
+            date: lastRound.date
+          });
+        }
       }
     })();
   }, []);
@@ -224,6 +266,27 @@ export default function NewRoundPage() {
           </span>
         </div>
 
+        {lastLineup && pickedPlayers.length === 0 && (
+          <button
+            type="button"
+            className="w-full text-left rounded-xl border border-gold-500/30 bg-brand-900/40 hover:bg-brand-900/70 p-3 transition-colors"
+            onClick={() => {
+              const valid = lastLineup.playerIds.filter((pid) => allPlayers.some((p) => p.id === pid));
+              setPickedPlayers(valid.map((pid) => ({ id: pid, tee_id: tees[0]?.id ?? "", team_id: null })));
+            }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-serif text-cream-50">Re-play with last round&apos;s lineup</div>
+                <p className="text-xs text-cream-100/65 mt-0.5">
+                  {lastLineup.courseName} · {lastLineup.date} · {lastLineup.playerIds.length} players
+                </p>
+              </div>
+              <span className="pill bg-gold-500 text-brand-900 text-xs">Use →</span>
+            </div>
+          </button>
+        )}
+
         {/* Inline guest creation — for ad-hoc players who aren't in the directory yet */}
         <div className="surface rounded-xl p-3 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-2 items-end">
           <div>
@@ -259,27 +322,80 @@ export default function NewRoundPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {allPlayers.map((p) => {
             const picked = pickedPlayers.find((x) => x.id === p.id);
+            const lp = lastPlayedAt[p.id];
+            const hiValue = hiEdits[p.id] ?? (p.handicap_index != null ? String(p.handicap_index) : "");
             return (
-              <label key={p.id} className={`card p-3 flex items-center gap-3 cursor-pointer transition-colors ${picked ? "ring-2 ring-gold-500/60 bg-brand-800/70" : ""}`}>
-                <input type="checkbox" checked={!!picked} onChange={() => togglePlayer(p.id)} />
-                <div className="flex-1">
-                  <div className="font-medium text-cream-50">{p.display_name}</div>
-                  <div className="text-xs text-cream-100/55">HI {p.handicap_index ?? "—"}</div>
-                </div>
-                {picked && tees.length > 0 && (
-                  <select
-                    className="input w-28 text-xs"
-                    value={picked.tee_id}
-                    onChange={(e) =>
-                      setPickedPlayers((arr) => arr.map((x) => (x.id === p.id ? { ...x, tee_id: e.target.value } : x)))
-                    }
-                  >
-                    {tees.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
+              <div
+                key={p.id}
+                className={`card p-3 transition-colors ${picked ? "ring-2 ring-gold-500/60 bg-brand-800/70" : ""}`}
+              >
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={!!picked} onChange={() => togglePlayer(p.id)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-cream-50 truncate">{p.display_name}</div>
+                    <div className="text-xs text-cream-100/55">
+                      {lp ? `Last played ${lp}` : "New to this group"}
+                    </div>
+                  </div>
+                  {!picked && (
+                    <span className="text-xs text-cream-100/55 tabular-nums">HI {p.handicap_index ?? "—"}</span>
+                  )}
+                </label>
+                {picked && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="label text-xs">Handicap Index</label>
+                      <input
+                        className="input text-sm"
+                        type="number"
+                        step="0.1"
+                        value={hiValue}
+                        placeholder="14.0"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setHiEdits((prev) => ({ ...prev, [p.id]: v }));
+                        }}
+                        onBlur={async () => {
+                          const raw = hiEdits[p.id];
+                          if (raw == null) return;
+                          const parsed = raw === "" ? null : parseFloat(raw);
+                          if (parsed != null && isNaN(parsed)) return;
+                          if (parsed === p.handicap_index) return;
+                          await sb
+                            .from("players")
+                            .update({
+                              handicap_index: parsed,
+                              handicap_index_source: "manual",
+                              handicap_updated_at: new Date().toISOString()
+                            })
+                            .eq("id", p.id);
+                          setAllPlayers((prev) =>
+                            prev.map((x) => (x.id === p.id ? { ...x, handicap_index: parsed } : x))
+                          );
+                        }}
+                      />
+                    </div>
+                    {tees.length > 0 && (
+                      <div>
+                        <label className="label text-xs">Tees</label>
+                        <select
+                          className="input text-sm"
+                          value={picked.tee_id}
+                          onChange={(e) =>
+                            setPickedPlayers((arr) =>
+                              arr.map((x) => (x.id === p.id ? { ...x, tee_id: e.target.value } : x))
+                            )
+                          }
+                        >
+                          {tees.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 )}
-              </label>
+              </div>
             );
           })}
         </div>

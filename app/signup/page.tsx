@@ -9,7 +9,6 @@ import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function SignupPage() {
   const [name, setName] = useState("");
-  const [groupName, setGroupName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -40,10 +39,9 @@ export default function SignupPage() {
       return;
     }
 
-    const finalGroupName = groupName.trim() || `${name.split(" ")[0] || "My"}'s Group`;
     const { error: bsErr } = await sb.rpc("fn_bootstrap_account", {
       p_display_name: name,
-      p_group_name: finalGroupName
+      p_group_name: ""
     });
     if (bsErr) {
       setBusy(false);
@@ -60,12 +58,11 @@ export default function SignupPage() {
       <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
       <form onSubmit={submit} className="card p-7 w-full max-w-sm space-y-5">
         <div>
-          <p className="h-eyebrow">Step 1 of 2</p>
+          <p className="h-eyebrow">Sign up</p>
           <h1 className="h-display text-3xl text-cream-50 mt-1">Create your account</h1>
-          <p className="text-xs text-cream-100/55 mt-1">Takes 30 seconds. We&apos;ll set up your first group on the next breath.</p>
+          <p className="text-xs text-cream-100/55 mt-1">Takes 30 seconds. You can name your crew when you start your first round.</p>
         </div>
 
-        {/* Account fields */}
         <div className="space-y-3">
           <div>
             <label className="label">Your name</label>
@@ -79,26 +76,6 @@ export default function SignupPage() {
             <label className="label">Password</label>
             <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} type="password" minLength={8} required />
             <p className="text-[10px] text-cream-100/40 mt-1">Minimum 8 characters.</p>
-          </div>
-        </div>
-
-        {/* Group section — same form, secondary framing */}
-        <div className="border-t border-cream-100/10 pt-4 space-y-3">
-          <div>
-            <p className="h-eyebrow">Step 2 of 2</p>
-            <h2 className="font-serif text-xl text-cream-50 mt-1">Name your first group</h2>
-            <p className="text-xs text-cream-100/55 mt-0.5">
-              The recurring set of golfers you play with. You can rename it later or add more.
-            </p>
-          </div>
-          <div>
-            <label className="label">Group name</label>
-            <input
-              className="input"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-              placeholder="Saturday Crew · Members' Day · Wednesday Skins"
-            />
           </div>
         </div>
 
