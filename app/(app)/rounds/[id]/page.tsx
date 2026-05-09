@@ -168,6 +168,21 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         <ClaimBanner roundId={id} candidates={claimCandidates} />
       )}
 
+      {round.status !== "finalized" && (
+        <Link
+          href={`/rounds/${id}/score-group`}
+          className="card p-4 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors border border-gold-500/30"
+        >
+          <div>
+            <div className="font-serif text-lg text-cream-50">Score the group</div>
+            <p className="text-xs text-cream-100/65 mt-0.5">
+              One scorekeeper enters every player&apos;s scores hole by hole.
+            </p>
+          </div>
+          <span className="pill bg-gold-500 text-brand-900">Open →</span>
+        </Link>
+      )}
+
       <RoundView roundId={id} rps={rps ?? []} initialScores={scores ?? []} games={games ?? []} />
     </div>
   );
