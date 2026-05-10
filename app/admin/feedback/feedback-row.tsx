@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatDateTime } from "@/lib/format-date";
 
 const STATUSES = ["new", "reviewing", "planned", "in_progress", "shipped", "declined"] as const;
 type Status = (typeof STATUSES)[number];
@@ -57,7 +58,7 @@ export function FeedbackRow({
             <span>·</span>
             <span>{display_name ?? email ?? "anonymous"}</span>
             <span>·</span>
-            <span className="tabular-nums">{new Date(created_at).toLocaleString()}</span>
+            <span className="tabular-nums">{formatDateTime(created_at)}</span>
           </div>
           <p className="text-cream-50 mt-1 whitespace-pre-wrap text-sm">{body}</p>
         </div>

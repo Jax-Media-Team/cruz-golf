@@ -185,7 +185,7 @@ export function PlayersClient({
           <input
             className="input pr-9"
             type="search"
-            placeholder="Search by name, GHIN, email, or phone…"
+            placeholder="Search players…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search players"
@@ -316,9 +316,13 @@ function PlayerRow({
   const hiInputRef = useRef<HTMLInputElement | null>(null);
   return (
     <div
-      className={`card p-4 ${archived ? "opacity-60" : ""} ${
-        isMe ? "border border-gold-500/30" : ""
-      }`}
+      // When the overflow menu is open, hoist this row's stacking context
+      // above its siblings so the dropdown isn't covered by the next card.
+      // Without this, sibling cards rendered later in the DOM win and the
+      // menu disappears under them on mobile.
+      className={`card p-4 relative ${menuOpen ? "z-40" : ""} ${
+        archived ? "opacity-60" : ""
+      } ${isMe ? "border border-gold-500/30" : ""}`}
     >
       <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
         {/* Identity column */}
@@ -380,7 +384,7 @@ function PlayerRow({
             </button>
             {menuOpen && (
               <div
-                className="absolute right-0 top-full mt-1 z-20 min-w-[12rem] rounded-lg border border-cream-100/15 bg-brand-950 shadow-2xl text-sm overflow-hidden"
+                className="absolute right-0 top-full mt-1 z-50 min-w-[12rem] rounded-lg border border-cream-100/15 bg-brand-950 shadow-2xl text-sm overflow-hidden"
                 role="menu"
                 onClick={(e) => e.stopPropagation()}
               >

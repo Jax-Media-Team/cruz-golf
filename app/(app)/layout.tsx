@@ -7,6 +7,7 @@ import { HelpButton } from "@/components/HelpButton";
 import { UpdateToast } from "@/components/UpdateToast";
 import { MobileMoreMenu } from "@/components/MobileMoreMenu";
 import { ActiveRoundPill } from "@/components/ActiveRoundPill";
+import { InstallPrompt } from "@/components/InstallPrompt";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -75,17 +76,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen flex flex-col pb-20 sm:pb-0">
       <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 min-h-[80px] sm:min-h-[112px]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 min-h-[120px] sm:min-h-[160px]">
           <Link
             href="/dashboard"
             className="flex items-center shrink-0"
             aria-label="Cruz Golf — home"
           >
             <span className="hidden sm:inline-flex">
-              <BrandLockup iconHeight={120} />
+              <BrandLockup iconHeight={180} />
             </span>
             <span className="sm:hidden inline-flex">
-              <BrandLockup iconHeight={72} />
+              <BrandLockup iconHeight={108} />
             </span>
           </Link>
           <nav className="hidden sm:flex items-center gap-1">
@@ -118,6 +119,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         roundId={activeRound?.id ?? null}
         courseName={activeRound?.courseName ?? null}
       />
+      <InstallPrompt />
       <HelpButton />
       <UpdateToast />
     </div>

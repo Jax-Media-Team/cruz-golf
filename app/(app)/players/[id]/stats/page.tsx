@@ -144,6 +144,43 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
   }
   const netUsd = (cents: number) => (cents > 0 ? "+" : cents < 0 ? "−" : "") + "$" + (Math.abs(cents) / 100).toFixed(2);
 
+  // Best / worst rounds (gross, normalized to 18 holes equivalent so 9-hole
+  // and 18-hole rounds compete fairly).
+  const playable = roundLines.filter((r) => r.holes_played >= 9);
+  const projectGross = (r: { gross: number; holes_played: number }) =>
+    Math.round(r.gross * (18 / r.holes_played));
+  const sortedByGross = playable.slice().sort((a, b) => projectGross(a) - projectGross(b));
+  const bestRound = sortedByGross[0] ?? null;
+  const worstRound = sortedByGross[sortedByGross.length - 1] ?? null;
+
+  // Per-course breakdown — for every course the player has finalized
+  // rounds at, show round count, average gross/18, vs-par.
+  type CourseBucket = {
+    name: string;
+    rounds: number;
+    holes: number;
+    gross: number;
+    vsParSum: number;
+  };
+  const byCourse = new Map<string, CourseBucket>();
+  for (const r of roundLines) {
+    const key = r.course;
+    const e = byCourse.get(key) ?? { name: key, rounds: 0, holes: 0, gross: 0, vsParSum: 0 };
+    e.rounds += 1;
+    e.holes += r.holes_played;
+    e.gross += r.gross;
+    e.vsParSum += r.vsPar;
+    byCourse.set(key, e);
+  }
+  const courseRows = [...byCourse.values()]
+    .map((b) => ({
+      name: b.name,
+      rounds: b.rounds,
+      avg18: b.holes ? +(b.gross * 18 / b.holes).toFixed(1) : null,
+      avgVsPar: b.rounds ? +(b.vsParSum / b.rounds).toFixed(1) : null
+    }))
+    .sort((a, b) => b.rounds - a.rounds);
+
   return (
     <div className="space-y-5 max-w-3xl">
       <header className="flex items-start justify-between gap-3 flex-wrap">
@@ -177,15 +214,83 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
             {(Object.keys(buckets) as ScoreBucket[]).map((k) => {
               const v = buckets[k];
               const pct = totals.holes_played ? Math.round((v / totals.holes_played) * 100) : 0;
+              const perRound = totals.rounds ? +(v / totals.rounds).toFixed(2) : 0;
               return (
                 <div key={k}>
                   <div className="font-serif text-2xl text-cream-50 tabular-nums">{v}</div>
                   <div className="text-xs uppercase tracking-wide text-cream-100/55">{BUCKET_LABELS[k]}</div>
-                  <div className="text-xs text-cream-100/40">{pct}%</div>
+                  <div className="text-xs text-cream-100/40">{pct}% · {perRound}/rd</div>
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Best / worst round */}
+      {(bestRound || worstRound) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {bestRound && (
+            <div className="card p-4">
+              <p className="h-eyebrow text-emerald-300">🏆 Best round</p>
+              <div className="font-serif text-3xl text-cream-50 mt-1 tabular-nums">
+                {projectGross(bestRound)}
+                {bestRound.holes_played < 18 && <span className="text-sm text-cream-100/55"> (proj.)</span>}
+              </div>
+              <p className="text-xs text-cream-100/55 mt-0.5">
+                {bestRound.course} · {bestRound.date}
+                {bestRound.vsPar !== 0 && (
+                  <> · <span className={bestRound.vsPar < 0 ? "text-emerald-300" : "text-red-300"}>
+                    {bestRound.vsPar > 0 ? "+" : ""}{bestRound.vsPar}
+                  </span></>
+                )}
+              </p>
+            </div>
+          )}
+          {worstRound && worstRound !== bestRound && (
+            <div className="card p-4">
+              <p className="h-eyebrow text-red-300">💀 Worst round</p>
+              <div className="font-serif text-3xl text-cream-50 mt-1 tabular-nums">
+                {projectGross(worstRound)}
+                {worstRound.holes_played < 18 && <span className="text-sm text-cream-100/55"> (proj.)</span>}
+              </div>
+              <p className="text-xs text-cream-100/55 mt-0.5">
+                {worstRound.course} · {worstRound.date}
+                {worstRound.vsPar !== 0 && (
+                  <> · <span className={worstRound.vsPar < 0 ? "text-emerald-300" : "text-red-300"}>
+                    {worstRound.vsPar > 0 ? "+" : ""}{worstRound.vsPar}
+                  </span></>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Per-course breakdown */}
+      {courseRows.length > 1 && (
+        <div className="card p-5">
+          <h2 className="font-serif text-xl text-cream-50 mb-3">By course</h2>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {courseRows.map((c) => (
+              <li key={c.name} className="py-2 flex items-baseline justify-between gap-3">
+                <span className="text-cream-50 truncate">{c.name}</span>
+                <div className="text-right shrink-0">
+                  <div className="text-cream-50 tabular-nums">
+                    {c.avg18 != null ? `${c.avg18} avg` : "—"}
+                  </div>
+                  <div className="text-[11px] text-cream-100/55">
+                    {c.rounds} round{c.rounds === 1 ? "" : "s"}
+                    {c.avgVsPar != null && c.avgVsPar !== 0 && (
+                      <> · <span className={c.avgVsPar < 0 ? "text-emerald-300" : "text-red-300"}>
+                        {c.avgVsPar > 0 ? "+" : ""}{c.avgVsPar}
+                      </span> vs par</>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

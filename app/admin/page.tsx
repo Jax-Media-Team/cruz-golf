@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/format-date";
 
 export const dynamic = "force-dynamic";
 
@@ -237,7 +238,7 @@ export default async function AdminOverview() {
               <li key={u.id} className="py-2 flex items-center justify-between gap-3">
                 <span className="text-cream-50 truncate">{u.display_name || "(no name)"}</span>
                 <span className="text-xs text-cream-100/45 tabular-nums shrink-0">
-                  {new Date(u.created_at).toLocaleDateString()}
+                  {formatDate(u.created_at)}
                 </span>
               </li>
             ))}

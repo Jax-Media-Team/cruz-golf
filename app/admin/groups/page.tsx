@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/format-date";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function AdminGroupsPage() {
                   <td className="px-3 py-2 text-right tabular-nums">{commCount.get(g.id) ?? 0}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{roundCount.get(g.id) ?? 0}</td>
                   <td className="px-3 py-2 text-cream-100/65 text-xs tabular-nums">
-                    {new Date(g.created_at).toLocaleDateString()}
+                    {formatDate(g.created_at)}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <Link href={`/admin/groups/${g.id}`} className="text-xs text-gold-400 underline">

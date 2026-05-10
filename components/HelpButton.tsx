@@ -81,8 +81,8 @@ export function HelpButton() {
           .slice(0, 3);
         const fallback =
           faqMatches.length > 0
-            ? `I don't have AI configured here yet, but the FAQ has these matches:\n\n${faqMatches.map((m) => `**${m.e.q}**\n${m.e.a}`).join("\n\n")}`
-            : "I don't have AI configured yet and the FAQ doesn't match. Try asking the commissioner of your group.";
+            ? `Here's what we have on that:\n\n${faqMatches.map((m) => `**${m.e.q}**\n${m.e.a}`).join("\n\n")}`
+            : "I don't have a built-in answer for that yet. Try the round commissioner, or send feedback from More → Send feedback and we'll add an FAQ entry.";
         setChat((c) => [...c, { role: "assistant", text: fallback }]);
       } else if (!res.ok) {
         const j = await res.json().catch(() => ({}));

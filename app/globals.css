@@ -64,6 +64,24 @@ html, body {
            focus:border-cream-100/40 focus:ring-2 focus:ring-cream-100/20
            focus:outline-none;
   }
+  /* iOS Safari renders <input type="date"> with native styling that doesn't
+     respect our padding and centers the date string outside the visible
+     border. Force the field to behave like any other input. */
+  input[type="date"].input,
+  input[type="time"].input,
+  input[type="datetime-local"].input {
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: left;
+    font-family: inherit;
+    min-height: 44px;
+    line-height: 1.25;
+  }
+  /* Mobile Safari ignores `text-align: left` on the calendar picker icon —
+     keep it on the right instead of overlapping the value. */
+  input[type="date"].input::-webkit-date-and-time-value {
+    text-align: left;
+  }
   .label { @apply block text-xs font-medium text-cream-100/70 mb-1.5 uppercase tracking-wide; }
 
   /* Pills */

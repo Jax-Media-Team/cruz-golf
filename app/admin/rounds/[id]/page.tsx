@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/format-date";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,7 @@ export default async function AdminRoundDetail({ params }: { params: Promise<{ i
         <Stat label="Scores entered" value={scoreCount ?? 0} />
         <Stat label="Access mode" value={r.access_mode} />
         <Stat label="PIN" value={r.pin ?? "—"} />
-        <Stat label="Created" value={new Date(r.created_at).toLocaleDateString()} />
+        <Stat label="Created" value={formatDate(r.created_at)} />
       </section>
     </div>
   );

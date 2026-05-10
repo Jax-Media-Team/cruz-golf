@@ -1,0 +1,31 @@
+{
+  "name": "Cruz Golf",
+  "short_name": "Cruz Golf",
+  "description": "Live golf scoring, side games, and Venmo settlements for your regular foursome.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1f1a",
+  "theme_color": "#0a1f1a",
+  "icons": [
+    {
+      "src": "/cruz-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/cruz-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/cruz-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

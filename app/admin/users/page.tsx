@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/format-date";
 
 /**
  * Platform Users table. Joins auth.users (for email + last sign-in) with
@@ -132,10 +133,10 @@ export default async function AdminUsersPage({
                     {r.round_count}
                   </td>
                   <td className="px-3 py-2 text-cream-100/65 text-xs tabular-nums">
-                    {r.last_sign_in_at ? new Date(r.last_sign_in_at).toLocaleDateString() : "never"}
+                    {r.last_sign_in_at ? formatDate(r.last_sign_in_at) : "never"}
                   </td>
                   <td className="px-3 py-2 text-cream-100/65 text-xs tabular-nums">
-                    {new Date(r.created_at).toLocaleDateString()}
+                    {formatDate(r.created_at)}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {r.is_admin && (

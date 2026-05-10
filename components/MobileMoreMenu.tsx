@@ -56,7 +56,12 @@ export function MobileMoreMenu({ isPlatformAdmin }: { isPlatformAdmin: boolean }
             className="flex-1 bg-black/60 backdrop-blur-sm"
             onClick={() => setOpen(false)}
           />
-          <div className="bg-brand-950 border-t border-cream-100/15 rounded-t-2xl p-4 pb-8 shadow-2xl">
+          <div
+            className="bg-brand-950 border-t border-cream-100/15 rounded-t-2xl p-4 shadow-2xl max-h-[85vh] overflow-y-auto"
+            style={{
+              paddingBottom: "calc(2rem + env(safe-area-inset-bottom, 0px))"
+            }}
+          >
             <div className="flex items-center justify-between mb-3">
               <p className="h-eyebrow text-gold-400">Menu</p>
               <button
@@ -73,11 +78,11 @@ export function MobileMoreMenu({ isPlatformAdmin }: { isPlatformAdmin: boolean }
                   key={it.href}
                   href={it.href}
                   onClick={() => setOpen(false)}
-                  className={`card p-4 flex flex-col items-start gap-1 hover:bg-brand-900/80 transition-colors ${
+                  className={`card p-4 flex flex-col items-start gap-1 hover:bg-brand-900/80 active:bg-brand-900 transition-colors ${
                     it.tone === "gold" ? "border border-gold-500/40" : ""
                   }`}
                 >
-                  <span className="text-xl">{it.emoji}</span>
+                  <span className="text-2xl">{it.emoji}</span>
                   <span
                     className={`font-serif text-sm ${
                       it.tone === "gold" ? "text-gold-400" : "text-cream-50"
@@ -91,9 +96,10 @@ export function MobileMoreMenu({ isPlatformAdmin }: { isPlatformAdmin: boolean }
             <form action="/auth/signout" method="post" className="mt-3">
               <button
                 type="submit"
-                className="btn-ghost w-full text-sm text-cream-100/70"
+                className="card w-full p-3 text-sm text-cream-100/85 hover:bg-brand-900/80 active:bg-brand-900 transition-colors flex items-center justify-center gap-2"
               >
-                Sign out
+                <span className="text-base">🚪</span>
+                <span>Sign out</span>
               </button>
             </form>
           </div>

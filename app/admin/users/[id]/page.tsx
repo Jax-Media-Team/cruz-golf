@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 import { UserActions } from "./user-actions";
 
 export const dynamic = "force-dynamic";
@@ -52,8 +53,8 @@ export default async function AdminUserDetail({
             <Row label="Email confirmed" value={u.email_confirmed_at ? "yes" : "no"} />
             <Row label="Phone" value={u.phone ?? "—"} />
             <Row label="Provider" value={u.app_metadata?.provider ?? "email"} />
-            <Row label="Joined" value={new Date(u.created_at).toLocaleString()} />
-            <Row label="Last sign-in" value={u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : "never"} />
+            <Row label="Joined" value={formatDateTime(u.created_at)} />
+            <Row label="Last sign-in" value={u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "never"} />
             <Row label="Banned until" value={(u as any).banned_until ?? "—"} />
           </dl>
         </div>
@@ -69,7 +70,7 @@ export default async function AdminUserDetail({
           </p>
           {admin && (
             <p className="text-xs text-cream-100/55">
-              Granted {new Date(admin.granted_at).toLocaleDateString()}
+              Granted {formatDate(admin.granted_at)}
               {admin.notes ? ` · ${admin.notes}` : ""}
             </p>
           )}

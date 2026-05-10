@@ -734,14 +734,26 @@ export default function NewRoundPage() {
 
       <section className="card p-4 space-y-3">
         <div className="flex items-end justify-between gap-2 flex-wrap">
-          <h2 className="font-serif text-xl text-cream-50">Quick start</h2>
+          <div>
+            <h2 className="font-serif text-xl text-cream-50">Quick start</h2>
+            <p className="text-[11px] text-cream-100/55 mt-0.5">
+              Pick a starting setup, or load one of your saved presets below.
+            </p>
+          </div>
           <button
             type="button"
             onClick={savePresetFromCurrentGames}
             disabled={!hasAnyGameEnabled}
-            className="btn-secondary text-xs disabled:opacity-50"
+            title={
+              hasAnyGameEnabled
+                ? "Save current games + stakes as a reusable preset"
+                : "Enable at least one game first, then save it as a preset."
+            }
+            className={`btn-secondary text-xs ${
+              !hasAnyGameEnabled ? "opacity-40 cursor-not-allowed" : ""
+            }`}
           >
-            ★ Save my current setup as a preset
+            ★ Save current setup
           </button>
         </div>
 
@@ -750,11 +762,11 @@ export default function NewRoundPage() {
             <p className="text-[11px] uppercase tracking-wider text-cream-100/55">My presets</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {myPresets.map((p) => (
-                <div key={p.id} className="card card-hover p-3 group relative">
+                <div key={p.id} className="card card-hover p-3 relative">
                   <button
                     type="button"
                     onClick={() => applyPresetGames(p.games as any[])}
-                    className="text-left w-full"
+                    className="text-left w-full pr-7"
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-xl leading-none">{p.emoji ?? "★"}</span>
@@ -766,11 +778,15 @@ export default function NewRoundPage() {
                       {p.use_count > 0 ? ` · used ${p.use_count}×` : ""}
                     </p>
                   </button>
+                  {/* Delete is now always visible (no hover needed) so it
+                      works on mobile. Same color as ghost text so it doesn't
+                      feel destructive at a glance. */}
                   <button
                     type="button"
                     onClick={() => deletePreset(p.id)}
-                    className="absolute top-2 right-2 text-[10px] text-cream-100/40 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label="Delete preset"
+                    className="absolute top-2 right-2 text-cream-100/40 hover:text-red-300 active:text-red-300 text-sm leading-none px-1"
+                    aria-label={`Delete preset ${p.name}`}
+                    title="Delete this preset"
                   >
                     ✕
                   </button>
@@ -827,6 +843,21 @@ export default function NewRoundPage() {
             </div>
           );
         })}
+        {/* Second-chance Save Preset button so the user sees it after
+            they've actually configured the games, not just at the top
+            of Quick Start. */}
+        {hasAnyGameEnabled && (
+          <div className="flex justify-end pt-2 border-t border-cream-100/8">
+            <button
+              type="button"
+              onClick={savePresetFromCurrentGames}
+              className="btn-secondary text-xs"
+              title="Save current games + stakes as a reusable preset"
+            >
+              ★ Save these games as a preset
+            </button>
+          </div>
+        )}
       </section>
 
       {err && <p className="text-red-300 text-sm">{err}</p>}
