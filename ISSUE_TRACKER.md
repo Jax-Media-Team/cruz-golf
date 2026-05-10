@@ -413,10 +413,12 @@ In rough priority order. Each gets its own QA sweep + regression tests.
    - ✅ /leaderboards · /records · /records/me · /ledger empty
      states rewritten with previews + Start-a-round / Set-up-your-
      group / Claim-your-name CTAs
-   - ⏳ /players empty state (already has CTA but could preview
-     what links/stats unlock)
-   - ⏳ /courses empty state (already has CTA — could be more
-     group-flavored)
+   - ✅ /players empty state — group-flavored copy that previews
+     what links/stats unlock (rivalries, partner records, career
+     money, hole mastery, per-player pages). "Your roster lives here."
+   - ✅ /courses empty state — "Your home tracks live here" with
+     Import / Manual / "scroll for library" hint. Less "configure
+     software" energy.
 4. **Living-clubhouse activity on /dashboard** — group-centric only
    (NOT public/algorithmic feed). Patrick's framing: "private golf
    crew · 'our golf history lives here'", not "public golf influencer

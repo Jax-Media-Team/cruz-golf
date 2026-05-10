@@ -354,12 +354,28 @@ export function PlayersClient({
           </div>
         )}
         {players.length === 0 && (
-          <div className="card p-6 text-center text-cream-100/65 text-sm">
-            No players yet.{" "}
-            <button className="text-gold-400 underline" onClick={() => setAdding(true)}>
-              Add your first player
-            </button>
-            .
+          <div className="card p-6 sm:p-8 text-center text-cream-100/75 space-y-3">
+            <p className="font-serif text-lg text-cream-50">
+              Your roster lives here.
+            </p>
+            <p className="text-xs text-cream-100/65 leading-relaxed max-w-md mx-auto">
+              Players unlock the rest of the app — rivalries, partner records,
+              career money, hole mastery, per-player stat pages. Add your
+              regulars once and they show up on every round invite, every
+              leaderboard, every record book.
+            </p>
+            <div className="pt-1">
+              <button
+                className="btn-primary text-sm"
+                onClick={() => setAdding(true)}
+              >
+                Add your first player →
+              </button>
+            </div>
+            <p className="text-[11px] text-cream-100/45 leading-snug">
+              Tip: add players as guests now; they can claim their account
+              later and inherit every round you scored for them.
+            </p>
           </div>
         )}
         {filtered.map((p) => {

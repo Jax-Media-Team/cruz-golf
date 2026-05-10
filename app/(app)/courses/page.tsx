@@ -136,18 +136,26 @@ export default async function CoursesPage({
 
       {/* Empty state — shown only when there's truly nothing to show. */}
       {aliveGroupCourses.length === 0 && !hasJgccInGroup && (
-        <div className="card p-8 text-center text-cream-100/70 space-y-2">
-          <p>No courses yet.</p>
-          <p className="text-xs text-cream-100/55">
-            Snap a photo of any scorecard with{" "}
-            <Link className="text-gold-400 underline" href="/courses/import">
-              Import scorecard
-            </Link>{" "}
-            — or{" "}
-            <Link className="text-cream-50 underline" href="/courses/new">
-              build one manually
+        <div className="card p-6 sm:p-8 text-center text-cream-100/75 space-y-3">
+          <p className="font-serif text-lg text-cream-50">
+            Your home tracks live here.
+          </p>
+          <p className="text-xs text-cream-100/65 leading-relaxed max-w-md mx-auto">
+            Once a course is added, it&apos;s one tap on every new round —
+            tees, ratings, slope, stroke index already wired in. Course
+            mastery and per-hole records unlock as the group plays it.
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center pt-1">
+            <Link className="btn-primary text-sm" href="/courses/import">
+              📷 Import scorecard
             </Link>
-            .
+            <Link className="btn-ghost text-sm" href="/courses/new">
+              Build manually
+            </Link>
+          </div>
+          <p className="text-[11px] text-cream-100/45 leading-snug">
+            Or scroll down to the Course library and clone a verified
+            template — JGCC, PVIC, TPC Sawgrass, and more.
           </p>
         </div>
       )}
