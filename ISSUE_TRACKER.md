@@ -497,11 +497,21 @@ In rough priority order. Each gets its own QA sweep + regression tests.
 (Cleared each session; lives here so the running narrative stays
 near the next-up work.)
 
-- 0022 + 0023 + 0024 applied; RLS recursion fix shipped; smart-dedupe ran
-  for Patrick (canonical JGCC restored, 3 empty dupes archived)
-- Course detail page has Archive/Restore button (commissioner-only)
-- `prefetch={false}` on course Links to dodge stale Next.js prefetches
-- Issue tracker reorganized with operating principles + next focus areas
-- DUAL-JGCC-RENDER fix shipped (commit 4eb3549): killed the duplicate
-  hero tile, extracted dedup rules to `lib/courses-page.ts`, 18
-  regression tests; full suite at 160/160
+- Migrations 0035 (manual presses) + 0036 (press hardening) +
+  0037 (Timuquana / Deerwood ratings) all applied — Patrick confirmed
+  pushed. Post-apply: realtime added to PressControls (commit d81a1ea)
+  so opener/acceptor/commissioner all see press state changes without
+  manual reload, mirroring the score-channel pattern.
+- Three integration tests added covering overlapping manual presses,
+  auto-press + manual press composition, and malformed-side defensive
+  guard (commit d81a1ea).
+- Hole-mastery signal (`buildHoleMasterySignals`) had been shipped but
+  with zero direct tests — added 8 cases covering minPlays threshold,
+  null-gross handling, status filtering, vs_par computation, hardest-
+  first sorting, and per-(course, hole) scoping (commit c0f5450).
+- Three more shipped engine builders (`buildBiggestPotSignal`,
+  `buildCareerMoney`, `buildLastRoundSignal`) had no direct regression
+  coverage. Added 16 cases including zero-sum invariant on career
+  money, status filtering on all three, and foreign-rp settlement
+  exclusion on last-round signal (commit b48589c).
+- Test suite: 245 → 272. Typecheck: clean. All commits pushed to main.
