@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { PhotoPicker } from "@/components/PhotoPicker";
 
 type Card = {
   id: string;
@@ -227,17 +228,33 @@ export function UploadView({
       </header>
 
       <div className="card p-4 space-y-3">
-        <label className="block">
-          <span className="block label text-xs">Add photo(s)</span>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            capture="environment"
-            onChange={(e) => e.target.files && onFiles(e.target.files)}
-            className="block mt-1 text-sm"
-          />
-        </label>
+        <div>
+          <p className="label text-xs">Add photo(s)</p>
+          <p className="text-[11px] text-cream-100/55 mt-0.5 mb-2">
+            Take a fresh photo or choose a saved scorecard from your library
+            — screenshots and texted images work too.
+          </p>
+          <PhotoPicker onFiles={onFiles}>
+            {({ openCamera, openLibrary }) => (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={openCamera}
+                  className="btn-secondary text-sm"
+                >
+                  📸 Take photo
+                </button>
+                <button
+                  type="button"
+                  onClick={openLibrary}
+                  className="btn-ghost text-sm"
+                >
+                  🖼 Choose from library
+                </button>
+              </div>
+            )}
+          </PhotoPicker>
+        </div>
 
         {cards.length > 0 && (
           <ul className="text-xs space-y-1.5">

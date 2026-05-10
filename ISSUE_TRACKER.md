@@ -119,6 +119,7 @@ wagers) are queued in the engine-work table.
 | SPECTATOR-CONFUSING-COPY | "That tab is only available inside the round dashboard for invitees" sounded broken | ✅ rewritten as intentional "Spectator view · gross + net only · Skins, teams, and wagers stay inside the group" |
 | ALLOWANCE-WORDING | "Allowance %" was unclear to non-WHS golfers | ✅ renamed to "Hcp Allowance %" everywhere user-facing + helper text "% of full handicap players get. 100 = full strokes, 85 = standard match-play scaling." |
 | CLUBHOUSE-TONE-DOWN | Initial ClubhouseStrip read too gamified ("🔥 Patrick on a 3-round heater") | ✅ rewritten as understated stat lines ("Patrick has won 3 rounds in a row · $15 taken across the streak"), no fire emoji, statements not exclamations |
+| PHOTO-UPLOAD-CAMERA-ONLY | Every photo-upload surface used `<input capture="environment">` which forces the camera and silently denies users their saved screenshots, AirDropped scorecards, and texted images | ✅ shipped `<PhotoPicker>` in `components/PhotoPicker.tsx` with explicit "📸 Take photo" + "🖼 Choose from library" buttons; wired into scorecard-import + round upload flows. iOS / Android / desktop all show the right OS sheet. |
 | DESKTOP-COURSE-404 | Course cards 404'd on desktop click (worked on mobile) | ✅ added `prefetch={false}` + friendly not-found page |
 | ROUND-DELETE-FK | "Linked record is missing" on round delete | ✅ fixed in 0019 + 0021 + frontend RPC switch |
 | FINISH-STEPS-NOOP | Get Started "Finish steps above" button did nothing | ✅ now disabled span with tooltip |
@@ -248,6 +249,41 @@ read-only path; the admin banner is the only difference.
 | RATE-LIMIT-OCR | OpenAI API hits could be abused; needs per-user quota | ⏳ open |
 | TEST-COVERAGE | 142/142 tests pass; engine has 1000-round property tests; UI has very little | ⏳ open — Playwright suite is the gap |
 
+## 🪪 Handicap providers (architecture for future GHIN integration)
+
+Patrick (2026-05-10): "GHIN integration is probably the single biggest
+infrastructure/trust unlock for the app long-term... however I do NOT
+want to build fragile or non-compliant scraping systems." Plan: Phase 1
+ships the seam, Phase 2 lights up real GHIN once an official
+partnership exists.
+
+`lib/handicap-provider.ts` (shipped) defines:
+  - `HandicapValue` envelope (index + provider + trust + fetched_at)
+  - `HandicapProviderLookup` interface (id, label, trust, lookup())
+  - `manualProvider` (default — wraps hand-entered numbers)
+  - `ghinProvider` (placeholder — returns null until official integration)
+  - `resolveEffectiveHandicap()` enforcing the **local-overrides-always-win**
+    safety rule so an official refresh can't silently change a
+    commissioner's negotiated handicap
+
+Phase 2 schema (queued, NOT yet shipped):
+  - `players.handicap_provider` (text, default 'manual')
+  - `players.handicap_external_id` (GHIN number)
+  - `players.handicap_official_index` (last fetched snapshot)
+  - `players.handicap_official_fetched` (timestamptz)
+  - `players.handicap_local_overrides` (boolean)
+
+Existing `handicap_index` + `ghin_number` columns stay; new columns
+layer in additively. RLS doesn't change.
+
+Tone discipline carries: when GHIN data is shown, the badge reads
+"Official" or "Hand-entered" — not "VERIFIED!!!" or trust-score icons.
+
+Tests: 13 regression cases in `tests/handicap-provider.test.ts`
+including the override-always-wins safety property.
+
+---
+
 ## 🔮 Future / experimental
 
 | # | Item | Why interesting |
@@ -288,8 +324,8 @@ read-only path; the admin banner is the only difference.
 | 0022 | applied | RLS recursion fix (platform_admins / feedback / courses-templates-admin-write) |
 | 0023 | applied | guest-to-account linking RPCs |
 | 0024 | applied | course archive + JGCC dedupe RPCs |
-| 0025 | **awaiting your apply** | round lifecycle: 'pending_finalization' status + fn_mark_round_pending + fn_resume_round |
-| 0026 | **awaiting your apply** | course library v2: verification_status + submitted_by + admin RPCs + 13 NE FL priority course shells (placeholder status) + JGCC template stub |
+| 0025 | **awaiting your apply** | round lifecycle: 'pending_finalization' status + fn_mark_round_pending + fn_resume_round. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
+| 0026 | **awaiting your apply** | course library v2: verification_status + submitted_by + admin RPCs + 13 NE FL priority course shells (placeholder status) + JGCC template stub. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
 
 ---
 

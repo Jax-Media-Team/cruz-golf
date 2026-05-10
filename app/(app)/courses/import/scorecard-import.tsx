@@ -2,6 +2,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { PhotoPicker } from "@/components/PhotoPicker";
 import {
   validateCourseImport,
   type CourseImportResult,
@@ -96,7 +97,6 @@ export function ScorecardImportClient({ groupId }: { groupId: string | null }) {
             setPreviews((p) => p.filter((_, idx) => idx !== i))
           }
           onRunOCR={runOCR}
-          fileRef={fileInput}
         />
       )}
 
@@ -119,8 +119,7 @@ function CaptureStep({
   err,
   onAddFiles,
   onRemove,
-  onRunOCR,
-  fileRef
+  onRunOCR
 }: {
   previews: string[];
   busy: boolean;
@@ -128,7 +127,7 @@ function CaptureStep({
   onAddFiles: (f: FileList | null) => void;
   onRemove: (i: number) => void;
   onRunOCR: () => void;
-  fileRef: React.MutableRefObject<HTMLInputElement | null>;
+  fileRef?: React.MutableRefObject<HTMLInputElement | null>; // legacy — unused
 }) {
   return (
     <section className="space-y-3">
@@ -153,38 +152,49 @@ function CaptureStep({
             </div>
           ))}
           {previews.length < 3 && (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
+            <PhotoPicker
+              onFiles={onAddFiles}
+              remaining={3 - previews.length}
               disabled={busy}
-              className="aspect-[4/3] rounded-lg border-2 border-dashed border-cream-100/25 hover:border-gold-500 hover:bg-brand-900/40 transition-colors flex flex-col items-center justify-center gap-1 text-cream-100/65 disabled:opacity-50 disabled:hover:border-cream-100/25 disabled:hover:bg-transparent"
             >
-              <span className="text-3xl">📷</span>
-              <span className="text-sm">
-                {previews.length === 0 ? "Add photo" : "Add another angle"}
-              </span>
-              <span className="text-[10px] text-cream-100/45">
-                {previews.length}/3
-              </span>
-            </button>
+              {({ openCamera, openLibrary, disabled }) => (
+                <div
+                  className="aspect-[4/3] rounded-lg border-2 border-dashed border-cream-100/25 hover:border-gold-500 transition-colors flex flex-col items-center justify-center gap-2 text-cream-100/65 p-3"
+                >
+                  <span className="text-3xl" aria-hidden="true">📷</span>
+                  <span className="text-xs text-cream-100/55">
+                    {previews.length === 0 ? "Add a scorecard photo" : "Add another angle"}
+                    {" · "}
+                    {previews.length}/3
+                  </span>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={openCamera}
+                      disabled={disabled}
+                      className="btn-secondary text-xs"
+                    >
+                      📸 Take photo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openLibrary}
+                      disabled={disabled}
+                      className="btn-ghost text-xs"
+                    >
+                      🖼 Choose from library
+                    </button>
+                  </div>
+                </div>
+              )}
+            </PhotoPicker>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            onAddFiles(e.target.files);
-            e.currentTarget.value = "";
-          }}
-        />
         <p className="text-xs text-cream-100/55 mt-3">
           Tip: a flat, well-lit photo with the whole card in frame works best.
           Multiple photos help when one shot can&apos;t fit everything (front
-          9, back 9, tee block).
+          9, back 9, tee block). Saved screenshots and photos texted to you
+          work too — use &ldquo;Choose from library.&rdquo;
         </p>
       </div>
 
@@ -199,13 +209,9 @@ function CaptureStep({
         >
           {busy ? "Reading scorecard…" : "Read scorecard →"}
         </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => fileRef.current?.click()}
-        >
-          {previews.length === 0 ? "Choose photo" : "Add another"}
-        </button>
+        {/* The dashed-area picker above is the canonical entry point —
+            no need for a duplicate "Choose photo" button down here per
+            the no-duplicate-UI principle. */}
       </div>
     </section>
   );
