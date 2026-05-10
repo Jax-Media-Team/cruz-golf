@@ -75,6 +75,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     /* ignore — pill is non-critical */
   }
 
+  // Press-pending count for the viewer on the active round. Surfaced as
+  // an amber alert on the floating pill so the user sees an open press
+  // even from /dashboard or /leaderboards. Realtime client-side updates
+  // live in ActiveRoundPill — this is just the initial server fetch.
+  // Defensive try/catch: round_presses ships in 0035; pre-migration
+  // envs fall through quietly and the pill stays in its calm green state.
+  let pressPendingForMe = 0;
+  let myRpIdInActiveRound: string | null = null;
+  if (activeRound) {
+    try {
+      const { data: myRp } = await sb
+        .from("round_players")
+        .select("id, players!inner(profile_id)")
+        .eq("round_id", activeRound.id)
+        .eq("players.profile_id", user.id)
+        .maybeSingle();
+      myRpIdInActiveRound = (myRp as any)?.id ?? null;
+      if (myRpIdInActiveRound) {
+        // Pending presses where I'm on side B (the side that needs to
+        // accept). Filter via contains on the rp-id array.
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { count } = await sb
+          .from("round_presses")
+          .select("id", { count: "exact", head: true })
+          .eq("round_id", activeRound.id)
+          .eq("status", "pending")
+          .gte("opened_at", cutoff)
+          .contains("side_b_rp_ids", [myRpIdInActiveRound]);
+        pressPendingForMe = count ?? 0;
+      }
+    } catch {
+      /* pre-0035 env or rls quirk — pill stays calm */
+    }
+  }
+
   return (
     // pb scales to clear the fixed bottom nav (5rem) + iOS home-indicator
     // safe area when the app is installed as a PWA. sm:pb-0 because the
@@ -141,6 +176,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ActiveRoundPill
         roundId={activeRound?.id ?? null}
         courseName={activeRound?.courseName ?? null}
+        myRpId={myRpIdInActiveRound}
+        initialPendingPressCount={pressPendingForMe}
       />
       <InstallPrompt />
       <HelpButton />
