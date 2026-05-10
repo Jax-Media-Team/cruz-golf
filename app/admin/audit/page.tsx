@@ -76,6 +76,36 @@ export default async function AdminAuditPage({
     }
   }
 
+  // Press events store `round_id` in the detail jsonb. Resolve so the
+  // target column can deep-link back to the round, instead of just
+  // showing the press UUID with no context. Matters for disputes —
+  // a commissioner reading the log should be one tap from the source.
+  const pressRows = rows.filter((r) => r.target_table === "round_presses");
+  const pressRoundIdByPressId = new Map<string, string>();
+  for (const r of pressRows) {
+    const rid = r.detail?.round_id;
+    if (typeof rid === "string") pressRoundIdByPressId.set(r.target_id, rid);
+  }
+  // For press.accept / press.decline / press.withdraw the round_id
+  // isn't always written into detail (only press.open writes it). Look
+  // up the missing ones in one batched query from round_presses itself.
+  const missingPressIds = pressRows
+    .filter((r) => !pressRoundIdByPressId.has(r.target_id))
+    .map((r) => r.target_id);
+  if (missingPressIds.length > 0) {
+    try {
+      const { data: pressJoin } = await sb
+        .from("round_presses")
+        .select("id, round_id")
+        .in("id", missingPressIds);
+      for (const p of (pressJoin as any[]) ?? []) {
+        pressRoundIdByPressId.set(p.id, p.round_id);
+      }
+    } catch {
+      /* pre-0035 — leave unresolved entries as plain UUIDs */
+    }
+  }
+
   // Bucket the distinct kinds + tables seen so we can render filter chips.
   const kindCounts = new Map<string, number>();
   const tableCounts = new Map<string, number>();
@@ -186,11 +216,19 @@ export default async function AdminAuditPage({
                             .map((k) => `${k}=${formatDetailValue(r.detail[k])}`)
                             .join(" · ")
                         : "—";
+                    // Press events: link back to the round they happened on
+                    // (resolved via detail.round_id or a round_presses lookup).
+                    const pressRoundId =
+                      r.target_table === "round_presses"
+                        ? pressRoundIdByPressId.get(r.target_id) ?? null
+                        : null;
                     const targetHref =
                       r.target_table === "rounds"
                         ? `/admin/rounds/${r.target_id}`
                         : r.target_table === "courses"
                         ? `/admin/course-audit?course=${r.target_id}`
+                        : pressRoundId
+                        ? `/admin/rounds/${pressRoundId}`
                         : null;
                     return (
                       <tr
@@ -211,9 +249,15 @@ export default async function AdminAuditPage({
                             <Link
                               href={targetHref}
                               className="hover:underline"
-                              title={r.target_id}
+                              title={
+                                pressRoundId
+                                  ? `Press ${r.target_id} on round ${pressRoundId}`
+                                  : r.target_id
+                              }
                             >
-                              {r.target_table}/{r.target_id.slice(0, 8)}
+                              {pressRoundId
+                                ? `press @ rounds/${pressRoundId.slice(0, 8)}`
+                                : `${r.target_table}/${r.target_id.slice(0, 8)}`}
                             </Link>
                           ) : (
                             <span title={r.target_id}>
