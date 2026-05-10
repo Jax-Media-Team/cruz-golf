@@ -327,6 +327,7 @@ including the override-always-wins safety property.
 | 0025 | **awaiting your apply** | round lifecycle: 'pending_finalization' status + fn_mark_round_pending + fn_resume_round. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
 | 0026 | **awaiting your apply** | course library v2: verification_status + submitted_by + admin RPCs + 13 NE FL priority course shells (placeholder status) + JGCC template stub. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
 | 0027 | **awaiting your apply** | destructive_audit_log table + fn_log_destructive helper + augmented lifecycle RPCs (archive/restore round + course, mark/resume pending, verify, template flag) write audit rows. Append-only by RLS — no UPDATE/DELETE policies. Read access platform-admin-only. |
+| 0028 | **awaiting your apply** | JGCC template promotion: populates the placeholder template course with 5 tees + 90 holes from the JGCC preset and bumps verification_status to 'verified'. Idempotent — skips if tees already present. After this migration, ANY user can clone JGCC into their group with one tap. |
 
 ---
 

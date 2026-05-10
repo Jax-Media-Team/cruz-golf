@@ -3,8 +3,10 @@ import {
   fmtGroupSpan,
   fmtMoneyCents,
   fmtRelativeToPar,
+  type BiggestPotSignal,
   type ClubhouseBundle,
   type CourseMasterySignal,
+  type HoleMasterySignal,
   type MilestoneSignal,
   type PartnerSignal,
   type RivalrySignal
@@ -163,6 +165,23 @@ function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
   const mastery = bundle.course_mastery[0];
   if (mastery && cards.length < 4) {
     cards.push(<StatCard key="mastery" {...courseMasteryCopy(mastery)} />);
+  }
+
+  // Hole mastery: who owns the hardest single hole. Only surface when
+  // the hole's leader is averaging > par by ≥ 0.3 — that's the
+  // narratively interesting "even the leader struggles here" case.
+  // Otherwise it's just a routine birdie hole.
+  const hardestHole = bundle.hole_mastery.find(
+    (h) => h.leader.vs_par >= 0.3 && h.leader.hole_count >= 4
+  );
+  if (hardestHole && cards.length < 4) {
+    cards.push(<StatCard key="hole-mastery" {...holeMasteryCopy(hardestHole)} />);
+  }
+
+  // Biggest pot: only when meaningfully large AND not within current
+  // 30-day window (would duplicate the activity card otherwise).
+  if (bundle.biggest_pot && cards.length < 4) {
+    cards.push(<StatCard key="biggest-pot" {...biggestPotCopy(bundle.biggest_pot)} />);
   }
 
   // 30-day activity.
@@ -385,6 +404,40 @@ function milestoneCopy(m: MilestoneSignal): {
         secondary: `${prettyDate(m.date)}${where}`
       };
   }
+}
+
+function holeMasteryCopy(h: HoleMasterySignal): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  const vsPar = h.leader.vs_par;
+  const vsParText =
+    vsPar === 0 ? "par" : vsPar > 0 ? `+${vsPar} avg` : `${vsPar} avg`;
+  return {
+    primary: (
+      <>
+        <span className="font-medium">{h.leader.display_name}</span> owns hole{" "}
+        {h.hole_number} at {h.course_name}
+      </>
+    ),
+    secondary: `${h.leader.avg_score} avg · ${vsParText} · ${h.leader.hole_count} plays`
+  };
+}
+
+function biggestPotCopy(b: BiggestPotSignal): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  return {
+    primary: (
+      <>
+        Biggest pot to date · {fmtMoneyCents(b.total_cents_moved)}
+      </>
+    ),
+    secondary: `${b.course_name ?? "Round"} · ${prettyDate(b.date)} · ${b.edges} settlement${
+      b.edges === 1 ? "" : "s"
+    }`
+  };
 }
 
 function prettyDate(iso: string): string {

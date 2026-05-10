@@ -315,7 +315,12 @@ export default async function AdminOverview() {
 
       {recentAuditLog.length > 0 && (
         <section className="card p-4 space-y-2">
-          <h2 className="font-serif text-lg text-cream-50">Recent admin activity</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-lg text-cream-50">Recent admin activity</h2>
+            <Link href="/admin/audit" className="text-xs text-gold-400 underline">
+              View all →
+            </Link>
+          </div>
           <p className="text-[11px] text-cream-100/55">
             Append-only audit trail of destructive ops (archive, restore,
             finalize, verify, lifecycle transitions). Read-only.

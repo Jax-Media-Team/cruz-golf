@@ -32,6 +32,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin/courses" className="btn-ghost">Courses</Link>
             <Link href="/admin/course-library" className="btn-ghost">Library</Link>
             <Link href="/admin/course-audit" className="btn-ghost">Course audit</Link>
+            <Link href="/admin/audit" className="btn-ghost">Audit log</Link>
             <Link href="/admin/feedback" className="btn-ghost">Feedback</Link>
           </nav>
           <span className="ml-auto text-xs text-cream-100/55">
