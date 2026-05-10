@@ -97,8 +97,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/courses" className="btn-ghost text-sm">Courses</Link>
             <Link href="/ledger" className="btn-ghost text-sm">Ledger</Link>
             {isPlatformAdmin && (
-              <Link href="/admin" className="btn-ghost text-sm text-gold-400">
-                Admin
+              <Link
+                href="/admin"
+                className="ml-1 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium bg-gold-500/15 text-gold-400 border border-gold-500/40 hover:bg-gold-500 hover:text-brand-900 transition-colors"
+                aria-label="Platform admin panel"
+              >
+                🛡 Admin
               </Link>
             )}
           </nav>

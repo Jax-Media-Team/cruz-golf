@@ -161,7 +161,7 @@ export default function DemoTour() {
             </button>
           ) : (
             <Link className="btn-primary flex-1 text-center" href="/signup">
-              Create your group →
+              Get started — sign up free →
             </Link>
           )}
         </div>
@@ -547,7 +547,7 @@ function CtaStage() {
         Free to set up. No app to install — works in any phone browser. PWA-installable for one-tap launch on the cart.
       </p>
       <div className="mt-6 flex flex-wrap gap-3 justify-center">
-        <Link href="/signup" className="btn-primary">Create your group</Link>
+        <Link href="/signup" className="btn-primary">Get started — free sign up →</Link>
         <Link href="/demo/round" className="btn-secondary">Keep poking around</Link>
       </div>
     </div>

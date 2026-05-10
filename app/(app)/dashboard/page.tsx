@@ -73,9 +73,18 @@ export default async function DashboardPage() {
   const hasRounds = (rounds?.length ?? 0) > 0;
   const showChecklist = !hasRounds; // Onboarding checklist only when there are no rounds yet.
 
-  const steps = [
+  type Step = {
+    done: boolean;
+    blocked: boolean;
+    title: string;
+    body: string;
+    href: string;
+    cta: string;
+  };
+  const steps: Step[] = [
     {
       done: hasCourses,
+      blocked: false,
       title: "Add a course",
       body: "We'll quick-add Jacksonville Golf & Country Club for you, or set up your own with rating, slope, and stroke index.",
       href: "/courses",
@@ -83,6 +92,7 @@ export default async function DashboardPage() {
     },
     {
       done: hasPlayers,
+      blocked: false,
       title: "Add your players",
       body: "Drop your regular crew in. Names and Handicap Indexes are enough — accounts and Venmo handles can come later.",
       href: "/players",
@@ -90,10 +100,13 @@ export default async function DashboardPage() {
     },
     {
       done: hasRounds,
+      // Blocked when prerequisites aren't met. The button is replaced by a
+      // disabled label rather than a no-op Link.
+      blocked: !(hasCourses && hasPlayers),
       title: "Start your first round",
       body: "Pick the course, the players, and the games. Each player joins on their phone with a 4-digit PIN.",
-      href: hasCourses && hasPlayers ? "/rounds/new" : "#",
-      cta: hasCourses && hasPlayers ? "Start a round" : "Finish steps above"
+      href: "/rounds/new",
+      cta: "Start a round"
     }
   ];
 
@@ -150,18 +163,39 @@ export default async function DashboardPage() {
                   <div className="font-serif text-lg text-cream-50">{step.title}</div>
                   <p className="text-xs text-cream-100/65 mt-0.5 leading-relaxed">{step.body}</p>
                 </div>
-                <Link
-                  href={step.href}
-                  className={`btn text-xs shrink-0 ${
-                    step.done
-                      ? "bg-brand-800/70 border border-cream-100/15 text-cream-100/85"
-                      : i === steps.findIndex((s) => !s.done)
-                      ? "bg-cream-100 text-brand-900"
-                      : "bg-brand-800/70 border border-cream-100/15 text-cream-100/85"
-                  }`}
-                >
-                  {step.cta} →
-                </Link>
+                {step.blocked ? (
+                  <span
+                    className="btn text-xs shrink-0 bg-brand-800/40 border border-cream-100/10 text-cream-100/45 cursor-not-allowed"
+                    title={
+                      !hasCourses && !hasPlayers
+                        ? "Add a course and players above first"
+                        : !hasCourses
+                        ? "Add a course above first"
+                        : "Add players above first"
+                    }
+                  >
+                    Add{" "}
+                    {!hasCourses && !hasPlayers
+                      ? "a course + players"
+                      : !hasCourses
+                      ? "a course"
+                      : "players"}{" "}
+                    first
+                  </span>
+                ) : (
+                  <Link
+                    href={step.href}
+                    className={`btn text-xs shrink-0 ${
+                      step.done
+                        ? "bg-brand-800/70 border border-cream-100/15 text-cream-100/85"
+                        : i === steps.findIndex((s) => !s.done && !s.blocked)
+                        ? "bg-cream-100 text-brand-900"
+                        : "bg-brand-800/70 border border-cream-100/15 text-cream-100/85"
+                    }`}
+                  >
+                    {step.cta} →
+                  </Link>
+                )}
               </li>
             ))}
           </ol>

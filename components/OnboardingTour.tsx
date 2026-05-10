@@ -126,7 +126,7 @@ const SCENES: Scene[] = [
     title: "Score with one thumb.",
     caption:
       "Tap +/− or pick a number. The scorepad starts at par for everyone — strokes only affect your net total, not the gross input. Yellow dots show whose handicap kicks in on which holes.",
-    hint: "Try the chip rail below",
+    hint: "Preview — scores fill in as the scene plays. The real Next button is at the bottom.",
     render: ({ firstName, tick }) => {
       const reveal = (n: number) => tick > n / 5;
       return (
@@ -161,17 +161,19 @@ const SCENES: Scene[] = [
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <button className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50 w-9 h-9">
+              {/* Decorative score-pad — disabled so users don't try to
+                  tap and confuse it with the bottom Next button. */}
+              <div className="flex items-center gap-2 opacity-70 pointer-events-none">
+                <span className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50/60 w-9 h-9 inline-flex items-center justify-center">
                   −
-                </button>
+                </span>
                 <div
                   className="font-serif tabular-nums text-cream-50 text-center"
                   style={{ fontSize: 30, lineHeight: 1, width: 40 }}
                 >
                   {p.score ?? <span className="text-cream-100/30">·</span>}
                 </div>
-                <button className="btn bg-gold-500 text-brand-900 w-9 h-9">+</button>
+                <span className="btn bg-gold-500/40 text-brand-900/60 w-9 h-9 inline-flex items-center justify-center">+</span>
               </div>
             </div>
           ))}
@@ -322,7 +324,7 @@ const SCENES: Scene[] = [
   }
 ];
 
-const PER_SCENE_MS = 7500;
+const PER_SCENE_MS = 13000;
 
 export function OnboardingTour({
   displayName,

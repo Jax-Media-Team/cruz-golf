@@ -25,24 +25,66 @@ function lastNameKey(name: string): string {
   return `${last} ${parts.slice(0, -1).join(" ")}`.toLowerCase();
 }
 
+type LinkCandidate = {
+  player_id: string;
+  player_name: string;
+  player_email: string;
+  candidate_user_id: string;
+  candidate_user_email: string;
+};
+
 export function PlayersClient({
   initialPlayers,
   groupId,
   currentUserId,
-  showArchived
+  showArchived,
+  linkCandidates = []
 }: {
   initialPlayers: Player[];
   groupId: string | null;
   currentUserId: string | null;
   showArchived: boolean;
+  linkCandidates?: LinkCandidate[];
 }) {
   const [players, setPlayers] = useState(initialPlayers);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Partial<Player>>({});
   const [query, setQuery] = useState("");
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState<string | null>(null);
+  const [linkErr, setLinkErr] = useState<{ id: string; msg: string } | null>(null);
   const sb = supabaseBrowser();
   const router = useRouter();
+
+  // Map player_id -> candidate (first one wins; multiple matches are rare).
+  const candidateByPlayer = useMemo(() => {
+    const m = new Map<string, LinkCandidate>();
+    for (const c of linkCandidates) if (!m.has(c.player_id)) m.set(c.player_id, c);
+    return m;
+  }, [linkCandidates]);
+
+  async function linkPlayerToProfile(p: Player, c: LinkCandidate) {
+    if (!confirm(
+      `Link ${p.display_name} to the account ${c.candidate_user_email}? This stops them being a guest and connects their round history to that account.`
+    )) return;
+    setLinkBusy(p.id);
+    setLinkErr(null);
+    const { error } = await sb.rpc("fn_link_guest_to_profile", {
+      p_guest_player_id: p.id,
+      p_profile_id: c.candidate_user_id
+    });
+    setLinkBusy(null);
+    if (error) {
+      setLinkErr({ id: p.id, msg: error.message });
+      return;
+    }
+    setPlayers((arr) =>
+      arr.map((x) =>
+        x.id === p.id ? { ...x, is_guest: false, profile_id: c.candidate_user_id } : x
+      )
+    );
+    router.refresh();
+  }
 
   // Sort: logged-in user first, then alphabetical by last name. Archived sink to bottom.
   const sorted = useMemo(() => {
@@ -204,49 +246,102 @@ export function PlayersClient({
       )}
 
       {adding && (
-        <div className="card p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2">
-            <label className="label">Name</label>
-            <input
-              className="input"
-              autoFocus
-              value={draft.display_name ?? ""}
-              onChange={(e) => setDraft({ ...draft, display_name: e.target.value })}
-            />
+        <div className="card p-4 space-y-3">
+          <p className="text-[11px] text-cream-100/55">
+            <span className="text-cream-50">Required:</span> Full name + Handicap Index. Everything else is optional and never auto-sends invites or messages.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="label">
+                Full name <span className="text-red-300 normal-case">*required</span>
+              </label>
+              <input
+                className="input"
+                autoFocus
+                placeholder="e.g. Jeff Marshall"
+                value={draft.display_name ?? ""}
+                onChange={(e) => setDraft({ ...draft, display_name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">
+                Handicap Index <span className="text-red-300 normal-case">*required</span>
+              </label>
+              <input
+                className="input"
+                type="text"
+                inputMode="decimal"
+                placeholder="14.0 or +1.4"
+                value={hiInputValue(draft.handicap_index)}
+                onChange={(e) => setDraft({ ...draft, handicap_index: parseHi(e.target.value) })}
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
+              </p>
+            </div>
+            <div>
+              <label className="label">
+                GHIN # <span className="text-cream-100/45 normal-case">optional</span>
+              </label>
+              <input className="input" placeholder="optional" value={draft.ghin_number ?? ""} onChange={(e) => setDraft({ ...draft, ghin_number: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">
+                Email <span className="text-cream-100/45 normal-case">optional</span>
+              </label>
+              <input
+                className="input"
+                type="email"
+                placeholder="optional"
+                value={draft.email ?? ""}
+                onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                We won&apos;t email anyone. Used to auto-link this player to their
+                account if they sign up later.
+              </p>
+            </div>
+            <div>
+              <label className="label">
+                Phone <span className="text-cream-100/45 normal-case">optional</span>
+              </label>
+              <input
+                className="input"
+                type="tel"
+                placeholder="optional"
+                value={draft.phone ?? ""}
+                onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                We won&apos;t text. Just for your reference.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 sm:col-span-2 text-sm">
+              <input type="checkbox" checked={!!draft.is_guest} onChange={(e) => setDraft({ ...draft, is_guest: e.target.checked })} />
+              <span>
+                Guest (no account, no invite)
+                <span className="block text-[10px] text-cream-100/55">
+                  Default for someone who&apos;s playing in your group but won&apos;t score on their own phone. They can &ldquo;claim&rdquo; the player later by signing up with the same email.
+                </span>
+              </span>
+            </label>
           </div>
-          <div>
-            <label className="label">Handicap Index</label>
-            <input
-              className="input"
-              type="text"
-              inputMode="decimal"
-              placeholder="14.0 or +1.4"
-              value={hiInputValue(draft.handicap_index)}
-              onChange={(e) => setDraft({ ...draft, handicap_index: parseHi(e.target.value) })}
-            />
-            <p className="text-[10px] text-cream-100/45 mt-0.5">
-              Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
-            </p>
-          </div>
-          <div>
-            <label className="label">GHIN #</label>
-            <input className="input" value={draft.ghin_number ?? ""} onChange={(e) => setDraft({ ...draft, ghin_number: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Email</label>
-            <input className="input" value={draft.email ?? ""} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Phone</label>
-            <input className="input" value={draft.phone ?? ""} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
-          </div>
-          <label className="flex items-center gap-2 sm:col-span-2 text-sm">
-            <input type="checkbox" checked={!!draft.is_guest} onChange={(e) => setDraft({ ...draft, is_guest: e.target.checked })} />
-            Guest (no account)
-          </label>
-          <div className="sm:col-span-2">
-            <button className="btn-primary w-full" onClick={add} disabled={!draft.display_name}>
-              Save
+          <div className="flex gap-2">
+            <button
+              className="btn-primary flex-1"
+              onClick={add}
+              disabled={!draft.display_name || draft.handicap_index == null}
+            >
+              Save player
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                setDraft({});
+                setAdding(false);
+              }}
+            >
+              Cancel
             </button>
           </div>
         </div>
@@ -270,21 +365,49 @@ export function PlayersClient({
         {filtered.map((p) => {
           const isMe = !!(currentUserId && p.profile_id === currentUserId);
           const archived = !!p.deleted_at;
+          const candidate = candidateByPlayer.get(p.id) ?? null;
+          const rowLinkBusy = linkBusy === p.id;
+          const rowLinkErr = linkErr?.id === p.id ? linkErr.msg : null;
           return (
-            <PlayerRow
-              key={p.id}
-              player={p}
-              isMe={isMe}
-              archived={archived}
-              menuOpen={openMenuFor === p.id}
-              onToggleMenu={() =>
-                setOpenMenuFor((cur) => (cur === p.id ? null : p.id))
-              }
-              onUpdate={(patch) => update(p, patch)}
-              onArchive={() => archive(p)}
-              onUnarchive={() => unarchive(p)}
-              onHardDelete={() => hardDelete(p)}
-            />
+            <div key={p.id}>
+              <PlayerRow
+                player={p}
+                isMe={isMe}
+                archived={archived}
+                menuOpen={openMenuFor === p.id}
+                onToggleMenu={() =>
+                  setOpenMenuFor((cur) => (cur === p.id ? null : p.id))
+                }
+                onUpdate={(patch) => update(p, patch)}
+                onArchive={() => archive(p)}
+                onUnarchive={() => unarchive(p)}
+                onHardDelete={() => hardDelete(p)}
+              />
+              {/* Suggest linking when this guest's email matches a real user. */}
+              {candidate && !archived && (
+                <div className="card mt-1 p-3 border border-emerald-400/30 bg-emerald-500/5 flex items-center justify-between gap-3">
+                  <div className="text-xs text-cream-100/80">
+                    <span className="text-cream-50 font-medium">{p.display_name}</span>{" "}
+                    looks like the same person as account{" "}
+                    <span className="text-cream-50">{candidate.candidate_user_email}</span>
+                    . Linking preserves their round history.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs whitespace-nowrap disabled:opacity-50"
+                    disabled={rowLinkBusy}
+                    onClick={() => linkPlayerToProfile(p, candidate)}
+                  >
+                    {rowLinkBusy ? "Linking…" : "🔗 Link to account"}
+                  </button>
+                </div>
+              )}
+              {rowLinkErr && (
+                <div className="card mt-1 p-2 border border-red-400/40 bg-red-500/10 text-xs text-red-200">
+                  {rowLinkErr}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
