@@ -329,6 +329,7 @@ including the override-always-wins safety property.
 | 0027 | applied | destructive_audit_log table + fn_log_destructive helper + augmented lifecycle RPCs (archive/restore round + course, mark/resume pending, verify, template flag) write audit rows. Append-only by RLS — no UPDATE/DELETE policies. Read access platform-admin-only. |
 | 0028 | applied | JGCC template promotion: populates the placeholder template course with 5 tees + 90 holes from the JGCC preset and bumps verification_status to 'verified'. |
 | 0029 | **awaiting your apply** | audit hooks for the remaining destructive RPCs: fn_delete_round, fn_dedupe_jgcc_in_group, fn_link_guest_to_profile, fn_unlink_player. Same pattern as 0027 — appends a `fn_log_destructive` call to each function. Re-creates each in full; safe to re-run. |
+| 0030 | **awaiting your apply** | Ponte Vedra Inn & Club Ocean (par 71, 9 tees) + Lagoon (par 70, 7 tees) populated from the official PVIC scorecard PDF. Verification status bumped to verified — both fully cloneable. Combo tees (Blue/White, White/Green, Green/Red) NOT modeled (mixed front/back yardages); single-color tees only. |
 
 ---
 
