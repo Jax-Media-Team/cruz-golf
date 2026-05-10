@@ -166,6 +166,11 @@ function GameCard({
   const preset = getPreset(game.game_type);
   const isSkins = game.game_type.startsWith("skins");
   const isNassau = game.game_type === "nassau";
+  const isTeamGame =
+    game.game_type === "best_ball_gross" ||
+    game.game_type === "best_ball_net" ||
+    game.game_type === "aggregate_gross" ||
+    game.game_type === "aggregate_net";
 
   return (
     <div className="card p-4 space-y-3">
@@ -251,6 +256,7 @@ function GameCard({
       </div>
 
       {isNassau && <NassauConfig game={game} disabled={disabled} onPatch={onPatch} />}
+      {isTeamGame && <TeamMatchPlayConfig game={game} disabled={disabled} onPatch={onPatch} />}
 
       <div className="flex justify-end">
         <button
@@ -491,6 +497,73 @@ function NassauConfig({
         />
         Allow presses
       </label>
+    </div>
+  );
+}
+
+/**
+ * Match-play + presses config block for Best Ball / Aggregate.
+ *
+ * Default is stroke play (cumulative team total wins). Toggling to
+ * match-play enables hole-by-hole settlement and unlocks the auto-
+ * press option (settles via the same press primitive Nassau uses).
+ *
+ * Engine: lib/games/team.ts respects cfg.match_play + cfg.presses.
+ */
+function TeamMatchPlayConfig({
+  game,
+  disabled,
+  onPatch
+}: {
+  game: Game;
+  disabled: boolean;
+  onPatch: (patch: Partial<Game>) => void;
+}) {
+  const c = (game.config ?? {}) as Record<string, unknown>;
+  const matchPlay = c.match_play === true;
+  const presses = (c.presses as string) ?? "none";
+
+  return (
+    <div className="rounded-lg border border-cream-100/10 p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="label">Format</label>
+          <select
+            className="input"
+            value={matchPlay ? "match" : "stroke"}
+            disabled={disabled}
+            onChange={(e) =>
+              onPatch({
+                config: { ...c, match_play: e.target.value === "match" }
+              })
+            }
+          >
+            <option value="stroke">Stroke (lowest total wins)</option>
+            <option value="match">Match (hole by hole)</option>
+          </select>
+        </div>
+        {matchPlay && (
+          <div>
+            <label className="label">Presses</label>
+            <select
+              className="input"
+              value={presses}
+              disabled={disabled}
+              onChange={(e) => onPatch({ config: { ...c, presses: e.target.value } })}
+            >
+              <option value="none">None</option>
+              <option value="auto_2_down">Auto-press at 2 down</option>
+            </select>
+          </div>
+        )}
+      </div>
+      {matchPlay && (
+        <p className="text-[11px] text-cream-100/55 leading-snug">
+          Match play settles hole by hole. Presses (when on) open
+          automatically when one team is 2 down with 3+ holes left.
+          Capped at 4 presses per match.
+        </p>
+      )}
     </div>
   );
 }

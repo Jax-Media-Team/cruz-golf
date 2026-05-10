@@ -1333,6 +1333,84 @@ function GameConfigEditor({
     );
   }
 
+  // Best Ball / Aggregate — same engine supports both stroke (default)
+  // and match-play + auto-presses (engine ships in lib/games/team.ts).
+  if (
+    gameType === "best_ball_gross" ||
+    gameType === "best_ball_net" ||
+    gameType === "aggregate_gross" ||
+    gameType === "aggregate_net"
+  ) {
+    const cfg = value.config ?? {};
+    const matchPlay = cfg.match_play === true;
+    return (
+      <div className="mt-3 pl-6 space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Money
+            label="Stake $"
+            cents={value.stake_cents}
+            onChange={(c) => onChange({ stake_cents: c })}
+          />
+          <div>
+            <label
+              className="label text-xs"
+              title="What % of full handicap players play off. 100% = full strokes. 85% = standard for most member-member formats."
+            >
+              Hcp Allowance %
+            </label>
+            <input
+              className="input text-sm"
+              type="text"
+              inputMode="numeric"
+              defaultValue={value.allowance_pct}
+              key={value.allowance_pct}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => {
+                const v = parseInt(e.currentTarget.value, 10);
+                onChange({ allowance_pct: Number.isFinite(v) ? v : 100 });
+              }}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="label text-xs">Format</label>
+            <select
+              className="input text-sm"
+              value={matchPlay ? "match" : "stroke"}
+              onChange={(e) =>
+                setConfig({ match_play: e.target.value === "match" })
+              }
+            >
+              <option value="stroke">Stroke (lowest team total wins)</option>
+              <option value="match">Match (hole-by-hole)</option>
+            </select>
+          </div>
+          {matchPlay && (
+            <div>
+              <label className="label text-xs">Presses</label>
+              <select
+                className="input text-sm"
+                value={cfg.presses ?? "none"}
+                onChange={(e) => setConfig({ presses: e.target.value })}
+              >
+                <option value="none">None</option>
+                <option value="auto_2_down">Auto-press at 2 down</option>
+              </select>
+            </div>
+          )}
+        </div>
+        {matchPlay && (
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Match play settles by hole-by-hole wins. Presses (when on)
+            open automatically when one team is 2 down with 3+ holes
+            left, capped at 4 presses.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if (gameType === "ctp" || gameType === "long_drive") {
     return (
       <div className="mt-3 pl-6 grid grid-cols-2 gap-2">
