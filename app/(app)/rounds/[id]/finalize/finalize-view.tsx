@@ -140,12 +140,8 @@ export function FinalizeView({
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <Link
-        href={`/rounds/${roundId}#leaderboard`}
-        className="btn-ghost text-xs"
-      >
-        ← Back to leaderboard
-      </Link>
+      {/* Breadcrumb is now provided by the parent page (RoundBreadcrumb).
+          This view focuses on the settlement work itself. */}
       <header>
         <p className="h-eyebrow">Settlement</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">Finalize round</h1>

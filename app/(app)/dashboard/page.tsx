@@ -6,6 +6,14 @@ import {
   OnboardingTour,
   ReplayTourButton
 } from "@/components/OnboardingTour";
+import { ClubhouseStrip } from "@/components/ClubhouseStrip";
+import {
+  buildClubhouse,
+  type ClubhouseRound,
+  type ClubhouseRoundPlayer,
+  type ClubhouseScore,
+  type ClubhouseSettlement
+} from "@/lib/clubhouse";
 
 export default async function DashboardPage() {
   const sb = await supabaseServer();
@@ -72,6 +80,127 @@ export default async function DashboardPage() {
   const hasPlayers = (playerCount ?? 0) > 0;
   const hasRounds = (rounds?.length ?? 0) > 0;
   const showChecklist = !hasRounds; // Onboarding checklist only when there are no rounds yet.
+
+  // Living-clubhouse signals — only fetched when the user is past
+  // first-round onboarding (otherwise there's nothing to show and we'd
+  // be paying query latency for an empty card).
+  let clubhouse:
+    | ReturnType<typeof buildClubhouse>
+    | null = null;
+  if (hasRounds && groupId) {
+    // Pull a 60-day window: enough for monthly activity rollup + recent-
+    // round streak detection without dragging the full history. Live and
+    // draft rounds are included regardless of date.
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - 60);
+    const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+    const [{ data: chRounds }, { data: chRps }, { data: chSettles }] = await Promise.all([
+      sb
+        .from("rounds")
+        .select("id, date, status, holes, spectator_token, course_id, courses(name)")
+        .eq("group_id", groupId)
+        .is("deleted_at", null)
+        .or(`date.gte.${cutoffIso},status.eq.live,status.eq.draft`)
+        .order("date", { ascending: false })
+        .limit(60),
+      sb
+        .from("round_players")
+        .select("id, round_id, player_id, players(display_name)")
+        .order("round_id"),
+      sb
+        .from("settlements")
+        .select("round_id, from_round_player_id, to_round_player_id, amount_cents")
+    ]);
+
+    const roundsForBundle: ClubhouseRound[] = ((chRounds as any[]) ?? []).map((r) => ({
+      id: r.id,
+      date: r.date,
+      status: r.status,
+      course_name: r.courses?.name ?? null,
+      course_id: r.course_id ?? null,
+      spectator_token: r.spectator_token ?? null,
+      holes: r.holes ?? 18
+    }));
+    const roundIds = new Set(roundsForBundle.map((r) => r.id));
+
+    const rpsForBundle: ClubhouseRoundPlayer[] = ((chRps as any[]) ?? [])
+      .filter((rp) => roundIds.has(rp.round_id))
+      .map((rp) => ({
+        round_player_id: rp.id,
+        round_id: rp.round_id,
+        player_id: rp.player_id,
+        display_name: rp.players?.display_name ?? "Player"
+      }));
+
+    const settlesForBundle: ClubhouseSettlement[] = ((chSettles as any[]) ?? [])
+      .filter((s) => roundIds.has(s.round_id))
+      .map((s) => {
+        const round = roundsForBundle.find((r) => r.id === s.round_id);
+        return {
+          round_id: s.round_id,
+          round_date: round?.date ?? "",
+          from_round_player_id: s.from_round_player_id,
+          to_round_player_id: s.to_round_player_id,
+          amount_cents: s.amount_cents
+        };
+      });
+
+    // Live-round leader requires per-hole scores + per-hole pars. Only
+    // pull scores for live rounds — finalized data isn't needed for any
+    // current signal and would balloon the query.
+    const liveRoundIds = roundsForBundle.filter((r) => r.status === "live").map((r) => r.id);
+    let chScores: ClubhouseScore[] = [];
+    if (liveRoundIds.length > 0) {
+      const liveRpIds = rpsForBundle
+        .filter((rp) => liveRoundIds.includes(rp.round_id))
+        .map((rp) => rp.round_player_id);
+      if (liveRpIds.length > 0) {
+        const { data: scoreRows } = await sb
+          .from("scores")
+          .select("round_player_id, hole_number, gross")
+          .in("round_player_id", liveRpIds);
+        // Per-hole par lives on course_holes via course_tees. Pull it
+        // through the round_players → tee → course_holes chain in one
+        // shot. Each rp is on one tee, and tees share par across the
+        // round, so any tee per round_id works for par lookup.
+        const { data: parRows } = await sb
+          .from("round_players")
+          .select(
+            "id, round_id, course_tees(course_holes(hole_number, par))"
+          )
+          .in("round_id", liveRoundIds);
+        const parByRoundHole = new Map<string, number>();
+        for (const rp of (parRows as any[]) ?? []) {
+          const holes = rp.course_tees?.course_holes ?? [];
+          for (const h of holes) {
+            parByRoundHole.set(`${rp.round_id}:${h.hole_number}`, h.par);
+          }
+        }
+        const rpToRound = new Map(
+          rpsForBundle.map((rp) => [rp.round_player_id, rp.round_id])
+        );
+        chScores = ((scoreRows as any[]) ?? []).map((s) => ({
+          round_player_id: s.round_player_id,
+          hole_number: s.hole_number,
+          par:
+            parByRoundHole.get(
+              `${rpToRound.get(s.round_player_id) ?? ""}:${s.hole_number}`
+            ) ?? 4,
+          gross: s.gross
+        }));
+      }
+    }
+
+    clubhouse = buildClubhouse({
+      group_name: groupName ?? "your group",
+      rounds: roundsForBundle,
+      rps: rpsForBundle,
+      scores: chScores,
+      settlements: settlesForBundle,
+      windowDays: 30
+    });
+  }
 
   type Step = {
     done: boolean;
@@ -204,6 +333,12 @@ export default async function DashboardPage() {
           </p>
         </div>
       )}
+
+      {/* Living-clubhouse strip — group-centric activity above the rounds
+          list. Renders nothing if there's no live activity, no streaks,
+          and no recent rounds. NEVER shows during onboarding (clubhouse
+          variable is null until first round exists). */}
+      {clubhouse && <ClubhouseStrip bundle={clubhouse} />}
 
       {/* Active-round shortcut — one tap to score-entry from the dashboard. */}
       {activeRound && (

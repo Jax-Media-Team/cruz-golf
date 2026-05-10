@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GroupScoreEntry } from "./group-score-entry";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 
 export default async function GroupScorePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -10,7 +11,7 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, access_mode, status, courses(name)")
+    .select("id, group_id, access_mode, status, date, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -61,11 +62,20 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
   const courseName = (round as any).courses?.name ?? "Round";
 
   return (
-    <GroupScoreEntry
-      roundId={id}
-      courseName={courseName}
-      rps={(rps as any) ?? []}
-      existing={existing ?? []}
-    />
+    <div className="space-y-3">
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={courseName}
+        date={(round as any).date}
+        status={round.status as any}
+        page="Group scoresheet"
+      />
+      <GroupScoreEntry
+        roundId={id}
+        courseName={courseName}
+        rps={(rps as any) ?? []}
+        existing={existing ?? []}
+      />
+    </div>
   );
 }

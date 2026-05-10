@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { FinalizeView } from "./finalize-view";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 
 export default async function FinalizePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sb = await supabaseServer();
   const { data: round } = await sb
     .from("rounds")
-    .select("id, status, holes, starting_hole")
+    .select("id, status, holes, starting_hole, date, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -29,13 +30,22 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     .eq("round_id", id);
 
   return (
-    <FinalizeView
-      roundId={id}
-      rps={rps ?? []}
-      scores={scores ?? []}
-      games={games ?? []}
-      totalHoles={(round.holes as 9 | 18) ?? 18}
-      startingHole={round.starting_hole ?? 1}
-    />
+    <div className="space-y-3">
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={(round as any).courses?.name ?? null}
+        date={round.date}
+        status={round.status as any}
+        page="Settle up"
+      />
+      <FinalizeView
+        roundId={id}
+        rps={rps ?? []}
+        scores={scores ?? []}
+        games={games ?? []}
+        totalHoles={(round.holes as 9 | 18) ?? 18}
+        startingHole={round.starting_hole ?? 1}
+      />
+    </div>
   );
 }

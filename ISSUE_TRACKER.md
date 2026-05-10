@@ -262,10 +262,14 @@ In rough priority order. Each gets its own QA sweep + regression tests.
    - ✅ Floating "Live · [course]" pill already shows on every
      non-/dashboard, non-/round, non-/admin page
    - ✅ /dashboard active-round hero card with one-tap to score-group
-   - ⏳ "what to do next" affordance on every round sub-page
-     (score, score-group, leaderboard, finalize, wagers, invites)
-   - ⏳ Persistent breadcrumb on round sub-pages (round name + back
-     to round)
+   - ✅ `<RoundBreadcrumb>` component shipped — persistent
+     "← Course · date · status" header on /finalize, /score,
+     /score-group, /invites
+   - ⏳ Wire RoundBreadcrumb into /games (currently uses generic
+     Breadcrumbs), /wagers, /upload, /join for full consistency
+   - ⏳ "what to do next" affordance on each sub-page (e.g.
+     /score-group last-hole "Done? → Finalize" already exists; audit
+     the others)
 3. **Reduce dead-ends / empty-state CTAs**
    - ✅ /leaderboards · /records · /records/me · /ledger empty
      states rewritten with previews + Start-a-round / Set-up-your-
@@ -274,9 +278,20 @@ In rough priority order. Each gets its own QA sweep + regression tests.
      what links/stats unlock)
    - ⏳ /courses empty state (already has CTA — could be more
      group-flavored)
-4. **Live-activity / social proof on /dashboard** — "🟢 Tom is on
-   hole 7", "This week: 3 rounds, $145 changed hands", "Hot streak:
-   you've won 3 in a row", "🏆 New course record yesterday"
+4. **Living-clubhouse activity on /dashboard** — group-centric only
+   (NOT public/algorithmic feed). Patrick's framing: "private golf
+   crew · 'our group lives here'", not "public golf influencer feed."
+   - ✅ `<ClubhouseStrip>` shipped — "🟢 Patrick -2 thru 7 · JGCC",
+     "🔥 Patrick on a 3-round heater", "📅 5 rounds · $215 moved · last
+     30 days at JGCC". Pure functions in `lib/clubhouse.ts` with 18
+     regression tests. Renders nothing if no live/streak/activity to
+     show.
+   - ⏳ Recent finalized "moments" (e.g. "Ben finally beat Kyle in
+     skins") — needs moment-detection logic
+   - ⏳ Realtime live-position updates (currently snapshot at page
+     load; could subscribe to scores realtime)
+   - ⏳ Rivalries: "Patrick vs Jeff: 14W-12L lifetime"
+   - ⏳ Partner chemistry: "Tom + Patrick: hottest scramble pairing"
 5. **Player linking / claiming** — guest → real account flow needs to
    be one tap, undoable, with visible audit trail
 6. **Personal stats pages** — depth without configurability creep

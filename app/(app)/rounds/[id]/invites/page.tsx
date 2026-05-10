@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { InvitesClient } from "./invites-client";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 
 export default async function InvitesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,7 +11,7 @@ export default async function InvitesPage({ params }: { params: Promise<{ id: st
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, pin, courses(name)")
+    .select("id, group_id, pin, status, date, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -38,12 +38,16 @@ export default async function InvitesPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <header className="flex items-end justify-between gap-3">
-        <div>
-          <p className="h-eyebrow">Round invites</p>
-          <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>
-        </div>
-        <Link href={`/rounds/${id}`} className="btn-ghost text-sm">← Round</Link>
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={(round as any).courses?.name ?? null}
+        date={(round as any).date}
+        status={(round as any).status}
+        page="Invites"
+      />
+      <header>
+        <p className="h-eyebrow">Round invites</p>
+        <h1 className="h-display text-3xl text-cream-50 mt-1">Invite your crew</h1>
       </header>
       <p className="text-sm text-cream-100/70">
         Each invite is a one-time link tied to the person you name. Once they

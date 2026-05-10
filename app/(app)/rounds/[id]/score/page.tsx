@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ScoreEntry } from "./score-entry";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 
 export default async function ScoreEntryPage({
   params,
@@ -17,7 +18,7 @@ export default async function ScoreEntryPage({
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, access_mode, status")
+    .select("id, group_id, access_mode, status, date, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -59,5 +60,16 @@ export default async function ScoreEntryPage({
     .select("hole_number, gross")
     .eq("round_player_id", sp.rp);
 
-  return <ScoreEntry roundId={id} rp={rp as any} existing={existing ?? []} />;
+  return (
+    <div className="space-y-3">
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={(round as any).courses?.name ?? null}
+        date={(round as any).date}
+        status={round.status as any}
+        page={`Score · ${(rp as any).players?.display_name ?? "Player"}`}
+      />
+      <ScoreEntry roundId={id} rp={rp as any} existing={existing ?? []} />
+    </div>
+  );
 }
