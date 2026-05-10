@@ -1,6 +1,7 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
 import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
+import { detectAutoPresses, pressPotsBySide, type HoleResult } from "./press";
 
 type NassauConfig = {
   net?: boolean;
@@ -148,6 +149,80 @@ export function settleNassau(input: GameInput): GameOutput {
     if (total >= 18) {
       settleSegment(9, 18, backStake, "Nassau back");
       settleSegment(0, 18, overallStake, "Nassau overall");
+    }
+  }
+
+  // Press settlement — only when matchPlay AND presses=auto_2_down.
+  // Builds a HoleResult[] from the per-side scoring sheets, runs each
+  // segment through detectAutoPresses, and applies the pots.
+  if (matchPlay && cfg.presses === "auto_2_down") {
+    const segmentHoleResults: HoleResult[] = holes.map((h) => {
+      const a = sideHoleScore(sideA, h.hole_number);
+      const b = sideHoleScore(sideB, h.hole_number);
+      if (a == null || b == null) {
+        return {
+          hole_number: h.hole_number,
+          a_won: false,
+          b_won: false,
+          push: false,
+          incomplete: true
+        };
+      }
+      return {
+        hole_number: h.hole_number,
+        a_won: a < b,
+        b_won: b < a,
+        push: a === b,
+        incomplete: false
+      };
+    });
+
+    const segments: Array<{
+      start: number;
+      end: number;
+      stake: number;
+      label: string;
+    }> =
+      total === 9
+        ? [{ start: 0, end: 9, stake: overallStake, label: "Nassau 9" }]
+        : total >= 18
+        ? [
+            { start: 0, end: 9, stake: frontStake, label: "Nassau front" },
+            { start: 9, end: 18, stake: backStake, label: "Nassau back" },
+            { start: 0, end: 18, stake: overallStake, label: "Nassau overall" }
+          ]
+        : [
+            {
+              start: 0,
+              end: Math.min(9, total),
+              stake: frontStake,
+              label: "Nassau front"
+            }
+          ];
+
+    for (const seg of segments) {
+      const presses = detectAutoPresses(segmentHoleResults, {
+        triggerDown: 2,
+        minRemainingHoles: 3,
+        maxPresses: 4,
+        stakeCents: seg.stake,
+        segmentLabel: seg.label,
+        segmentStart: seg.start,
+        segmentEnd: seg.end
+      });
+      if (presses.length === 0) continue;
+      const pots = pressPotsBySide(presses, sideA, sideB);
+      for (const [pid, delta] of pots.entries()) {
+        if (delta !== 0) {
+          // Use the press's label for traceability — multiple presses
+          // share the segment label but have a "press 1 / 2 / 3" suffix.
+          const pressLabels = presses
+            .filter((p) => p.result_delta != null && p.result_delta !== 0)
+            .map((p) => p.label)
+            .join(" + ");
+          addDelta(out.perPlayer, pid, delta, pressLabels || `${seg.label} presses`);
+        }
+      }
     }
   }
 
