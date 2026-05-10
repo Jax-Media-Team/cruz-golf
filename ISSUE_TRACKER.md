@@ -503,21 +503,40 @@ In rough priority order. Each gets its own QA sweep + regression tests.
 (Cleared each session; lives here so the running narrative stays
 near the next-up work.)
 
-- Migrations 0035 (manual presses) + 0036 (press hardening) +
-  0037 (Timuquana / Deerwood ratings) all applied — Patrick confirmed
-  pushed. Post-apply: realtime added to PressControls (commit d81a1ea)
-  so opener/acceptor/commissioner all see press state changes without
-  manual reload, mirroring the score-channel pattern.
-- Three integration tests added covering overlapping manual presses,
-  auto-press + manual press composition, and malformed-side defensive
-  guard (commit d81a1ea).
-- Hole-mastery signal (`buildHoleMasterySignals`) had been shipped but
-  with zero direct tests — added 8 cases covering minPlays threshold,
-  null-gross handling, status filtering, vs_par computation, hardest-
-  first sorting, and per-(course, hole) scoping (commit c0f5450).
-- Three more shipped engine builders (`buildBiggestPotSignal`,
-  `buildCareerMoney`, `buildLastRoundSignal`) had no direct regression
-  coverage. Added 16 cases including zero-sum invariant on career
-  money, status filtering on all three, and foreign-rp settlement
-  exclusion on last-round signal (commit b48589c).
-- Test suite: 245 → 272. Typecheck: clean. All commits pushed to main.
+**Migrations applied this session**
+- 0035 (manual presses) / 0036 (press hardening) / 0037 (Timuquana +
+  Deerwood ratings) — Patrick confirmed "pushed all 3".
+- 0038 (The Plantation at Ponte Vedra Beach data) — applied. NE FL
+  priority list now 7 of 13 populated + verified.
+
+**Features shipped (12 commits, d81a1ea → 41d3ddd)**
+- Manual press realtime in `<PressControls>` + `<ActiveRoundPill>`.
+  Opener / acceptor / commissioner / any non-round-page viewer all
+  see state changes within seconds without manual reload. Pill flips
+  amber + "Press pending · [course]" when the viewer is on side B
+  of a pending press. 60s safety-net refresh on both surfaces.
+- Loading skeletons: `components/Skeleton.tsx` primitives + three
+  loading.tsx files (generic + /dashboard + /rounds/[id]) so slow
+  golf-course networks see a layout-matching skeleton instead of a
+  blank page.
+- Help knowledge gained 5 manual-press Q&A entries.
+- Empty states for /players and /courses upgraded to preview-the-
+  value pattern (group-flavored copy + dual CTAs + footer hint).
+- /onboarding finisher copy refreshed — "Welcome / What should we
+  call you? / Take me to the clubhouse →" instead of "Finish setup
+  / One more step / Tell us your name."
+- /admin/audit deep-links press events back to their round (resolved
+  via detail.round_id or a batched round_presses lookup).
+- The Plantation at Ponte Vedra Beach populated with all 6 men's
+  tees (rating, slope, yardage, par, SI verified from official card),
+  verification_status=verified.
+
+**Tests added (27 net new)**
+- press.test.ts: 3 integration scenarios (overlapping manual presses
+  zero-sum, auto-press + manual press composition, defensive empty-
+  side guard).
+- clubhouse.test.ts: 24 new cases covering 4 previously-untested
+  engine builders (`buildHoleMasterySignals`, `buildBiggestPotSignal`,
+  `buildCareerMoney`, `buildLastRoundSignal`).
+
+**Suite: 245 → 272. Typecheck: clean throughout. All commits on main.**
