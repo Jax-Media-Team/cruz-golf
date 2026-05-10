@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildBiggestPotSignal,
   buildCareerMoney,
   buildClubhouse,
   buildCourseMasterySignals,
@@ -1315,5 +1316,253 @@ describe("buildHoleMasterySignals", () => {
     const pvic = out.find((s) => s.course_name === "PVIC Ocean");
     expect(jgcc?.leader.avg_score).toBe(3);
     expect(pvic?.leader.avg_score).toBe(5);
+  });
+});
+
+// --- Biggest pot ------------------------------------------------------
+
+describe("buildBiggestPotSignal", () => {
+  it("returns null when no finalized rounds exist", () => {
+    const rounds = [r("r-live", "2026-05-10", "live")];
+    const settles = [settle("r-live", "2026-05-10", "rp-x", "rp-y", 9999)];
+    expect(buildBiggestPotSignal(rounds, settles)).toBeNull();
+  });
+
+  it("returns null when nothing crosses minCents (default $50)", () => {
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const settles = [settle("r1", "2026-04-01", "rp-a", "rp-b", 4000)]; // $40
+    expect(buildBiggestPotSignal(rounds, settles)).toBeNull();
+  });
+
+  it("picks the single largest pot across finalized rounds", () => {
+    const rounds = [
+      r("r-small", "2026-03-01", "finalized"),
+      r("r-mid", "2026-04-01", "finalized"),
+      r("r-big", "2026-04-15", "finalized")
+    ];
+    const settles = [
+      settle("r-small", "2026-03-01", "rp-a", "rp-b", 5000),
+      settle("r-mid", "2026-04-01", "rp-a", "rp-b", 7500),
+      settle("r-big", "2026-04-15", "rp-a", "rp-b", 8000),
+      settle("r-big", "2026-04-15", "rp-c", "rp-d", 4500)
+    ];
+    const out = buildBiggestPotSignal(rounds, settles);
+    expect(out).not.toBeNull();
+    expect(out!.round_id).toBe("r-big");
+    expect(out!.total_cents_moved).toBe(12500);
+    expect(out!.edges).toBe(2);
+  });
+
+  it("ignores settlements on non-finalized rounds", () => {
+    const rounds = [
+      r("r-fin", "2026-04-01", "finalized"),
+      r("r-pen", "2026-04-15", "pending_finalization")
+    ];
+    const settles = [
+      settle("r-fin", "2026-04-01", "rp-a", "rp-b", 5500),
+      settle("r-pen", "2026-04-15", "rp-c", "rp-d", 99999) // ignored
+    ];
+    const out = buildBiggestPotSignal(rounds, settles);
+    expect(out!.round_id).toBe("r-fin");
+    expect(out!.total_cents_moved).toBe(5500);
+  });
+
+  it("respects minCents override", () => {
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const settles = [settle("r1", "2026-04-01", "rp-a", "rp-b", 2500)];
+    expect(buildBiggestPotSignal(rounds, settles, { minCents: 5000 })).toBeNull();
+    const lowered = buildBiggestPotSignal(rounds, settles, { minCents: 1000 });
+    expect(lowered!.total_cents_moved).toBe(2500);
+  });
+});
+
+// --- Career money -----------------------------------------------------
+
+describe("buildCareerMoney", () => {
+  it("returns empty when no finalized rounds exist", () => {
+    const rounds = [r("r-live", "2026-05-10", "live")];
+    const rps = [rp("rp1", "r-live", "p-pat", "Patrick")];
+    expect(buildCareerMoney(rps, [], rounds)).toEqual([]);
+  });
+
+  it("includes players who only ever pushed (net=$0) so the round count is honest", () => {
+    // Patrick + Ben played 3 finalized rounds, all pushes. Both should
+    // show up at 0 cents with rounds=3 — better than vanishing.
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-08", "finalized"),
+      r("r3", "2026-04-15", "finalized")
+    ];
+    const rps = [
+      rp("rp-p1", "r1", "p-pat", "Patrick"),
+      rp("rp-b1", "r1", "p-ben", "Ben"),
+      rp("rp-p2", "r2", "p-pat", "Patrick"),
+      rp("rp-b2", "r2", "p-ben", "Ben"),
+      rp("rp-p3", "r3", "p-pat", "Patrick"),
+      rp("rp-b3", "r3", "p-ben", "Ben")
+    ];
+    const out = buildCareerMoney(rps, [], rounds);
+    expect(out).toHaveLength(2);
+    expect(out.every((e) => e.net_cents === 0)).toBe(true);
+    expect(out.every((e) => e.rounds === 3)).toBe(true);
+  });
+
+  it("nets settlements correctly across multiple rounds and players", () => {
+    // Patrick wins $20 from Ben in r1, loses $10 to Kyle in r2.
+    // Net: Patrick +$10, Ben -$20, Kyle +$10.
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-08", "finalized")
+    ];
+    const rps = [
+      rp("rp-p1", "r1", "p-pat", "Patrick"),
+      rp("rp-b1", "r1", "p-ben", "Ben"),
+      rp("rp-p2", "r2", "p-pat", "Patrick"),
+      rp("rp-k2", "r2", "p-kyle", "Kyle")
+    ];
+    const settles = [
+      settle("r1", "2026-04-01", "rp-b1", "rp-p1", 2000), // Ben → Patrick $20
+      settle("r2", "2026-04-08", "rp-p2", "rp-k2", 1000) // Patrick → Kyle $10
+    ];
+    const out = buildCareerMoney(rps, settles, rounds);
+    const pat = out.find((e) => e.player_id === "p-pat");
+    const ben = out.find((e) => e.player_id === "p-ben");
+    const kyle = out.find((e) => e.player_id === "p-kyle");
+    expect(pat!.net_cents).toBe(1000);
+    expect(pat!.rounds).toBe(2);
+    expect(ben!.net_cents).toBe(-2000);
+    expect(ben!.rounds).toBe(1);
+    expect(kyle!.net_cents).toBe(1000);
+    expect(kyle!.rounds).toBe(1);
+  });
+
+  it("sorts net desc, then rounds desc, then name asc", () => {
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-08", "finalized")
+    ];
+    const rps = [
+      rp("rp-a1", "r1", "p-a", "Aaron"),
+      rp("rp-z1", "r1", "p-z", "Zoe"),
+      rp("rp-a2", "r2", "p-a", "Aaron")
+    ];
+    // Both Aaron and Zoe at 0 net; Aaron has 2 rounds, Zoe has 1 → Aaron first.
+    const out = buildCareerMoney(rps, [], rounds);
+    expect(out[0].display_name).toBe("Aaron");
+    expect(out[1].display_name).toBe("Zoe");
+  });
+
+  it("zero-sum invariant: sum of all net_cents across players equals 0", () => {
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const rps = [
+      rp("rp-a", "r1", "p-a", "Aaron"),
+      rp("rp-b", "r1", "p-b", "Ben"),
+      rp("rp-c", "r1", "p-c", "Cory")
+    ];
+    const settles = [
+      settle("r1", "2026-04-01", "rp-b", "rp-a", 1500),
+      settle("r1", "2026-04-01", "rp-c", "rp-a", 500)
+    ];
+    const out = buildCareerMoney(rps, settles, rounds);
+    expect(out.reduce((s, e) => s + e.net_cents, 0)).toBe(0);
+  });
+
+  it("ignores settlements on non-finalized rounds", () => {
+    const rounds = [
+      r("r-fin", "2026-04-01", "finalized"),
+      r("r-pen", "2026-04-15", "pending_finalization")
+    ];
+    const rps = [
+      rp("rp-fin-a", "r-fin", "p-a", "Aaron"),
+      rp("rp-fin-b", "r-fin", "p-b", "Ben"),
+      rp("rp-pen-a", "r-pen", "p-a", "Aaron"),
+      rp("rp-pen-b", "r-pen", "p-b", "Ben")
+    ];
+    const settles = [
+      settle("r-fin", "2026-04-01", "rp-fin-b", "rp-fin-a", 1000),
+      settle("r-pen", "2026-04-15", "rp-pen-b", "rp-pen-a", 99999) // ignored
+    ];
+    const out = buildCareerMoney(rps, settles, rounds);
+    const aaron = out.find((e) => e.player_id === "p-a");
+    expect(aaron!.net_cents).toBe(1000); // not 100999
+    expect(aaron!.rounds).toBe(1); // not 2
+  });
+});
+
+// --- Last round signal ------------------------------------------------
+
+describe("buildLastRoundSignal", () => {
+  it("returns null when no finalized rounds exist", () => {
+    const rounds = [r("r-live", "2026-05-10", "live")];
+    expect(buildLastRoundSignal(rounds, [], [], [])).toBeNull();
+  });
+
+  it("picks the most recent finalized round and computes leader by gross-vs-par", () => {
+    // Two finalized rounds; pick the one on 2026-05-08.
+    const rounds = [
+      r("r-old", "2024-08-12", "finalized"),
+      r("r-new", "2026-05-08", "finalized")
+    ];
+    const rps = [
+      rp("rp-old-a", "r-old", "p-a", "Aaron"),
+      rp("rp-new-a", "r-new", "p-a", "Aaron"),
+      rp("rp-new-b", "r-new", "p-b", "Ben")
+    ];
+    // Aaron shoots even par 72; Ben shoots +5.
+    const scores: ClubhouseScore[] = [];
+    for (let h = 1; h <= 18; h++) {
+      scores.push(score("rp-new-a", h, 4, 4));
+      scores.push(score("rp-new-b", h, 4, h <= 5 ? 5 : 4));
+    }
+    const out = buildLastRoundSignal(rounds, rps, scores, []);
+    expect(out).not.toBeNull();
+    expect(out!.round_id).toBe("r-new");
+    expect(out!.leader!.player_id).toBe("p-a");
+    expect(out!.leader!.relative_to_par).toBe(0);
+    expect(out!.leader!.gross).toBe(72);
+  });
+
+  it("computes biggest winner / biggest loser from settlement edges", () => {
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const rps = [
+      rp("rp-a", "r1", "p-a", "Aaron"),
+      rp("rp-b", "r1", "p-b", "Ben"),
+      rp("rp-c", "r1", "p-c", "Cory")
+    ];
+    const settles = [
+      settle("r1", "2026-04-01", "rp-b", "rp-a", 2000), // Ben → Aaron $20
+      settle("r1", "2026-04-01", "rp-c", "rp-a", 1000) // Cory → Aaron $10
+    ];
+    const out = buildLastRoundSignal(rounds, rps, [], settles);
+    expect(out!.biggest_winner!.player_id).toBe("p-a");
+    expect(out!.biggest_winner!.net_cents).toBe(3000);
+    expect(out!.biggest_loser!.player_id).toBe("p-b");
+    expect(out!.biggest_loser!.net_cents).toBe(-2000);
+    expect(out!.total_cents_moved).toBe(3000);
+    expect(out!.edges).toBe(2);
+  });
+
+  it("returns leader=null when no scores have been entered", () => {
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const rps = [rp("rp-a", "r1", "p-a", "Aaron")];
+    const out = buildLastRoundSignal(rounds, rps, [], []);
+    expect(out!.leader).toBeNull();
+  });
+
+  it("ignores settlements that reference players outside this round", () => {
+    // Stale settlement from another round shouldn't leak into this round's
+    // biggest_winner computation.
+    const rounds = [r("r1", "2026-04-01", "finalized")];
+    const rps = [
+      rp("rp-a", "r1", "p-a", "Aaron"),
+      rp("rp-b", "r1", "p-b", "Ben")
+    ];
+    const settles = [
+      settle("r1", "2026-04-01", "rp-b", "rp-a", 1500),
+      settle("r1", "2026-04-01", "rp-foreign", "rp-other", 9999) // not in this round
+    ];
+    const out = buildLastRoundSignal(rounds, rps, [], settles);
+    expect(out!.total_cents_moved).toBe(1500); // not 11499
+    expect(out!.edges).toBe(1);
   });
 });
