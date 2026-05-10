@@ -73,6 +73,33 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["6-6-6", "six six six", "rotating partners", "round robin"]
   },
 
+  // ── Presses ──
+  {
+    q: "How do I open a manual press?",
+    a: "On the live round page, tap \"+ Press.\" Pick which game it attaches to, the stake (defaults to the parent stake), and the hole range (must cover at least 3 holes). Sides default to your team vs everyone else — adjust if you want a different matchup. The other side gets a \"Press requested\" banner and 24 hours to accept.",
+    keywords: ["press", "open press", "manual press", "side bet", "double or nothing", "extra wager"]
+  },
+  {
+    q: "Who can accept a press?",
+    a: "Any player on the side being pressed (side B) can tap Accept or Decline. Commissioners can also act on behalf of either side. Once accepted, the press is locked in and settles at finalize alongside the parent game.",
+    keywords: ["accept press", "decline press", "press response", "press lock"]
+  },
+  {
+    q: "Can I withdraw a press I opened?",
+    a: "Yes — until the other side accepts. Tap Withdraw on the pending press row. Once accepted it's binding through finalize; if you really need to cancel after that, the commissioner can unfinalize the round and edit. Every open / accept / decline / withdraw writes to the audit log so disputes have a paper trail.",
+    keywords: ["withdraw press", "cancel press", "undo press", "press expired"]
+  },
+  {
+    q: "What's the difference between an auto-press and a manual press?",
+    a: "Auto-press fires when one side is 2 down (or whatever trigger you set) with 3+ holes left — no taps needed, configured per game. Manual press is opened explicitly mid-round by tapping \"+ Press\" — full control over hole range, stake, and sides. Both settle the same way at finalize.",
+    keywords: ["auto press", "auto-press", "manual press", "press trigger", "automatic"]
+  },
+  {
+    q: "Where does the press notification show up?",
+    a: "Three places: (1) the round page itself shows the \"Press requested\" banner with Accept / Decline buttons, (2) the floating round pill in the bottom-right of every other page flips amber and reads \"Press pending\" so you see it from /dashboard or /leaderboards, (3) it's all live — opener / acceptor / commissioner all see state changes in real time without reloading.",
+    keywords: ["press notification", "press alert", "press pending", "press realtime"]
+  },
+
   // ── Handicaps ──
   {
     q: "How are handicaps calculated?",
