@@ -144,6 +144,57 @@ export type GroupLifetimeSignal = {
   days_active: number;
 };
 
+export type CourseMasterySignal = {
+  course_id: string;
+  course_name: string;
+  /** Player with the lowest 18-hole-equivalent average gross at this
+   *  course among players who have ≥minRounds finalized rounds there. */
+  leader: {
+    player_id: string;
+    display_name: string;
+    /** Average gross normalized to 18 holes (so 9-hole rounds are
+     *  scaled up). */
+    avg_gross_18: number;
+    /** Lowest single-round gross at the course. */
+    best_gross: number;
+    /** How many finalized rounds the player has at this course. */
+    rounds_at_course: number;
+  };
+  /** Optional second place — included so the UI can render
+   *  "Patrick averages 78.4 over 6 rounds at JGCC; Mitch is next at
+   *  79.2." */
+  runner_up?: {
+    player_id: string;
+    display_name: string;
+    avg_gross_18: number;
+    rounds_at_course: number;
+  };
+};
+
+export type MilestoneSignal = {
+  player_id: string;
+  display_name: string;
+  /** Short, distinct-per-event kind. The same player can have multiple
+   *  milestones across different kinds, but only ONE per (player, kind)
+   *  ever — these are first-time events. */
+  kind:
+    | "broke_80"
+    | "broke_90"
+    | "broke_100"
+    | "personal_best"
+    | "first_eagle";
+  date: string;
+  round_id: string;
+  course_name: string | null;
+  /** Numeric value tied to the milestone (the gross score for breaks,
+   *  the new best for PR, hole number for eagle). UI decides whether
+   *  and how to render it. */
+  value: number;
+  /** Optional secondary context for milestone UI ("first time across N
+   *  rounds at this course," etc.). */
+  context?: string;
+};
+
 export type ClubhouseBundle = {
   group_name: string;
   live_rounds: LiveRoundSignal[];
@@ -152,6 +203,11 @@ export type ClubhouseBundle = {
   rivalries: RivalrySignal[];
   partners: PartnerSignal[];
   lifetime: GroupLifetimeSignal;
+  course_mastery: CourseMasterySignal[];
+  /** Milestones from finalized rounds in the last `windowDays` only —
+   *  surfacing yesterday's first sub-80 round is meaningful; surfacing
+   *  one from 9 months ago is filler. */
+  recent_milestones: MilestoneSignal[];
 };
 
 // ---- Builders ----
@@ -686,6 +742,371 @@ export function buildGroupLifetimeSignal(
   };
 }
 
+/**
+ * Course-mastery signals. For every course the group has finalized rounds
+ * at, picks the player with the lowest 18-hole-equivalent average gross
+ * who has played `minRounds` (default 3) finalized rounds at that course.
+ *
+ * Tone discipline: returns numeric data only. UI decides whether to phrase
+ * as "Patrick averages 78.4 at JGCC over 6 rounds" or "Patrick: 78.4 / 6".
+ * No "owns the course" language baked into the engine — the UI gets to
+ * decide what's understated for its surface.
+ *
+ * Returns sorted by depth (player's rounds_at_course desc) so deep
+ * histories rank above one-time leaders.
+ */
+export function buildCourseMasterySignals(
+  rounds: ClubhouseRound[],
+  rps: ClubhouseRoundPlayer[],
+  scores: ClubhouseScore[],
+  opts: { minRounds?: number } = {}
+): CourseMasterySignal[] {
+  const minRounds = opts.minRounds ?? 3;
+
+  // round_id -> { date, course_id, course_name, holes_scheduled }
+  const finalizedRounds = new Map<
+    string,
+    { course_id: string; course_name: string; holes_scheduled: number }
+  >();
+  for (const r of rounds) {
+    if (r.status !== "finalized") continue;
+    if (!r.course_id) continue;
+    finalizedRounds.set(r.id, {
+      course_id: r.course_id,
+      course_name: r.course_name ?? "Course",
+      holes_scheduled: r.holes ?? 18
+    });
+  }
+
+  // round_player_id -> sum of gross over scored holes + count of scored holes.
+  const grossByRp = new Map<string, { sum: number; count: number }>();
+  for (const s of scores) {
+    if (s.gross == null) continue;
+    const e = grossByRp.get(s.round_player_id) ?? { sum: 0, count: 0 };
+    e.sum += s.gross;
+    e.count += 1;
+    grossByRp.set(s.round_player_id, e);
+  }
+
+  // (course_id, player_id) -> aggregated stats
+  type Agg = {
+    course_id: string;
+    course_name: string;
+    player_id: string;
+    display_name: string;
+    /** Sum of 18-hole-equivalent gross totals across rounds. */
+    sum_gross_18: number;
+    rounds_count: number;
+    best_gross: number;
+  };
+  const agg = new Map<string, Agg>();
+
+  for (const rp of rps) {
+    const round = finalizedRounds.get(rp.round_id);
+    if (!round) continue;
+    const totals = grossByRp.get(rp.round_player_id);
+    if (!totals || totals.count === 0) continue;
+    // Only count rounds where at least 9 holes were actually scored —
+    // partial 4-hole abandons would otherwise distort the average.
+    if (totals.count < 9) continue;
+
+    // Normalize to 18 holes so a 9-hole round at the same course doesn't
+    // make a player look better than they are. We use SCORED holes as the
+    // denominator, not the round's `holes` field, because some rounds end
+    // early and we still want to compare apples to apples.
+    const gross_18 = (totals.sum * 18) / totals.count;
+    const key = `${round.course_id}|${rp.player_id}`;
+    const existing = agg.get(key) ?? {
+      course_id: round.course_id,
+      course_name: round.course_name,
+      player_id: rp.player_id,
+      display_name: rp.display_name,
+      sum_gross_18: 0,
+      rounds_count: 0,
+      best_gross: Number.POSITIVE_INFINITY
+    };
+    existing.sum_gross_18 += gross_18;
+    existing.rounds_count += 1;
+    if (totals.sum < existing.best_gross) existing.best_gross = totals.sum;
+    agg.set(key, existing);
+  }
+
+  // Group by course; pick the leader (lowest avg) with ≥minRounds.
+  type CourseRecords = {
+    course_id: string;
+    course_name: string;
+    rows: Array<Agg & { avg_gross_18: number }>;
+  };
+  const byCourse = new Map<string, CourseRecords>();
+  for (const e of agg.values()) {
+    if (e.rounds_count < minRounds) continue;
+    const avg = e.sum_gross_18 / e.rounds_count;
+    const cr = byCourse.get(e.course_id) ?? {
+      course_id: e.course_id,
+      course_name: e.course_name,
+      rows: []
+    };
+    cr.rows.push({ ...e, avg_gross_18: avg });
+    byCourse.set(e.course_id, cr);
+  }
+
+  const out: CourseMasterySignal[] = [];
+  for (const cr of byCourse.values()) {
+    cr.rows.sort((a, b) => a.avg_gross_18 - b.avg_gross_18);
+    const leader = cr.rows[0];
+    if (!leader) continue;
+    const runnerUp = cr.rows[1];
+    out.push({
+      course_id: cr.course_id,
+      course_name: cr.course_name,
+      leader: {
+        player_id: leader.player_id,
+        display_name: leader.display_name,
+        avg_gross_18: round1(leader.avg_gross_18),
+        best_gross: leader.best_gross,
+        rounds_at_course: leader.rounds_count
+      },
+      runner_up: runnerUp
+        ? {
+            player_id: runnerUp.player_id,
+            display_name: runnerUp.display_name,
+            avg_gross_18: round1(runnerUp.avg_gross_18),
+            rounds_at_course: runnerUp.rounds_count
+          }
+        : undefined
+    });
+  }
+  // Deepest-history courses first.
+  out.sort((a, b) => b.leader.rounds_at_course - a.leader.rounds_at_course);
+  return out;
+}
+
+/**
+ * Recent first-time milestones. Walks each player's finalized rounds in
+ * chronological order and detects the FIRST occurrence of:
+ *
+ *   - broke 80 (gross < 80 on a fully-scored 18-hole round)
+ *   - broke 90 (same, but only when they hadn't already broken 80)
+ *   - broke 100 (same, but only when they hadn't already broken 90)
+ *   - new personal best (gross strictly lower than every prior 18-hole round)
+ *   - first eagle (a single hole scored ≥2 under par)
+ *
+ * Returns ONLY milestones whose round_date is within the last
+ * `windowDays` (default 14). Older milestones are still detected but
+ * filtered out — surfacing yesterday's sub-80 is meaningful; surfacing
+ * one from last spring isn't.
+ *
+ * Idempotent: each player gets at most one of each kind, and the trigger
+ * is deterministic from the data. Re-rendering the dashboard doesn't
+ * re-fire milestones, and adding a NEW round can't retroactively flip
+ * an old milestone (the chronological walk respects round date order).
+ */
+export function buildRecentMilestones(
+  rounds: ClubhouseRound[],
+  rps: ClubhouseRoundPlayer[],
+  scores: ClubhouseScore[],
+  opts: { windowDays?: number; today?: string } = {}
+): MilestoneSignal[] {
+  const windowDays = opts.windowDays ?? 14;
+  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const cutoff = isoMinusDays(today, windowDays);
+
+  // round_id -> finalized round metadata
+  const finalized = new Map<
+    string,
+    { date: string; course_name: string | null; holes_scheduled: number }
+  >();
+  for (const r of rounds) {
+    if (r.status !== "finalized") continue;
+    finalized.set(r.id, {
+      date: r.date,
+      course_name: r.course_name,
+      holes_scheduled: r.holes ?? 18
+    });
+  }
+
+  // round_player_id -> { gross_total, holes_scored, has_eagle, eagle_hole }
+  const rpStats = new Map<
+    string,
+    {
+      gross_total: number;
+      holes_scored: number;
+      eagle_hole: number | null;
+    }
+  >();
+  for (const s of scores) {
+    if (s.gross == null) continue;
+    const e = rpStats.get(s.round_player_id) ?? {
+      gross_total: 0,
+      holes_scored: 0,
+      eagle_hole: null
+    };
+    e.gross_total += s.gross;
+    e.holes_scored += 1;
+    if (e.eagle_hole == null && s.gross <= s.par - 2) {
+      e.eagle_hole = s.hole_number;
+    }
+    rpStats.set(s.round_player_id, e);
+  }
+
+  // Player -> chronological list of (date, round_id, gross_total,
+  // holes_scored, holes_scheduled, course_name, eagle_hole)
+  type RoundEntry = {
+    date: string;
+    round_id: string;
+    gross_total: number;
+    holes_scored: number;
+    holes_scheduled: number;
+    course_name: string | null;
+    eagle_hole: number | null;
+  };
+  const byPlayer = new Map<
+    string,
+    { display_name: string; rounds: RoundEntry[] }
+  >();
+  for (const rp of rps) {
+    const round = finalized.get(rp.round_id);
+    if (!round) continue;
+    const stats = rpStats.get(rp.round_player_id);
+    if (!stats || stats.holes_scored === 0) continue;
+    const entry = byPlayer.get(rp.player_id) ?? {
+      display_name: rp.display_name,
+      rounds: []
+    };
+    entry.rounds.push({
+      date: round.date,
+      round_id: rp.round_id,
+      gross_total: stats.gross_total,
+      holes_scored: stats.holes_scored,
+      holes_scheduled: round.holes_scheduled,
+      course_name: round.course_name,
+      eagle_hole: stats.eagle_hole
+    });
+    byPlayer.set(rp.player_id, entry);
+  }
+
+  const out: MilestoneSignal[] = [];
+  for (const [player_id, e] of byPlayer.entries()) {
+    e.rounds.sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+    );
+
+    // Gross-break milestones — only count fully-scored 18-hole rounds
+    // (so a 9-hole 38 doesn't count as breaking 80).
+    let broke80 = false;
+    let broke90 = false;
+    let broke100 = false;
+    let firstEagle = false;
+    let bestSoFar: number | null = null;
+
+    for (const r of e.rounds) {
+      const fully18 = r.holes_scheduled === 18 && r.holes_scored === 18;
+
+      // Personal best — only on fully-scored 18s.
+      if (fully18) {
+        if (bestSoFar == null) {
+          // First 18-hole round establishes the baseline; not a
+          // milestone by itself.
+          bestSoFar = r.gross_total;
+        } else if (r.gross_total < bestSoFar) {
+          // New personal best — surface only if recent.
+          if (r.date >= cutoff) {
+            out.push({
+              player_id,
+              display_name: e.display_name,
+              kind: "personal_best",
+              date: r.date,
+              round_id: r.round_id,
+              course_name: r.course_name,
+              value: r.gross_total,
+              context: `previous best ${bestSoFar}`
+            });
+          }
+          bestSoFar = r.gross_total;
+        }
+      }
+
+      if (fully18 && !broke80 && r.gross_total < 80) {
+        broke80 = true;
+        if (r.date >= cutoff) {
+          out.push({
+            player_id,
+            display_name: e.display_name,
+            kind: "broke_80",
+            date: r.date,
+            round_id: r.round_id,
+            course_name: r.course_name,
+            value: r.gross_total
+          });
+        }
+      } else if (
+        fully18 &&
+        !broke80 &&
+        !broke90 &&
+        r.gross_total < 90
+      ) {
+        broke90 = true;
+        if (r.date >= cutoff) {
+          out.push({
+            player_id,
+            display_name: e.display_name,
+            kind: "broke_90",
+            date: r.date,
+            round_id: r.round_id,
+            course_name: r.course_name,
+            value: r.gross_total
+          });
+        }
+      } else if (
+        fully18 &&
+        !broke80 &&
+        !broke90 &&
+        !broke100 &&
+        r.gross_total < 100
+      ) {
+        broke100 = true;
+        if (r.date >= cutoff) {
+          out.push({
+            player_id,
+            display_name: e.display_name,
+            kind: "broke_100",
+            date: r.date,
+            round_id: r.round_id,
+            course_name: r.course_name,
+            value: r.gross_total
+          });
+        }
+      }
+
+      if (!firstEagle && r.eagle_hole != null) {
+        firstEagle = true;
+        if (r.date >= cutoff) {
+          out.push({
+            player_id,
+            display_name: e.display_name,
+            kind: "first_eagle",
+            date: r.date,
+            round_id: r.round_id,
+            course_name: r.course_name,
+            value: r.eagle_hole
+          });
+        }
+      }
+    }
+  }
+
+  // Most recent milestone first; tie-break by name for stable ordering.
+  out.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.display_name.localeCompare(b.display_name);
+  });
+  return out;
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
 // ---- Convenience: combined builder ----
 
 export function buildClubhouse(input: {
@@ -701,6 +1122,9 @@ export function buildClubhouse(input: {
   minStreak?: number;
   minRivalryRounds?: number;
   minPartnerRounds?: number;
+  minMasteryRounds?: number;
+  /** Lookback for "recent milestones" — defaults to 14 days. */
+  milestoneWindowDays?: number;
 }): ClubhouseBundle {
   return {
     group_name: input.group_name,
@@ -719,6 +1143,13 @@ export function buildClubhouse(input: {
       minRounds: input.minPartnerRounds
     }),
     lifetime: buildGroupLifetimeSignal(input.rounds, input.settlements, {
+      today: input.today
+    }),
+    course_mastery: buildCourseMasterySignals(input.rounds, input.rps, input.scores, {
+      minRounds: input.minMasteryRounds
+    }),
+    recent_milestones: buildRecentMilestones(input.rounds, input.rps, input.scores, {
+      windowDays: input.milestoneWindowDays,
       today: input.today
     })
   };

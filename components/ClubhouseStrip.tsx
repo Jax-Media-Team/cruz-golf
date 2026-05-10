@@ -4,6 +4,8 @@ import {
   fmtMoneyCents,
   fmtRelativeToPar,
   type ClubhouseBundle,
+  type CourseMasterySignal,
+  type MilestoneSignal,
   type PartnerSignal,
   type RivalrySignal
 } from "@/lib/clubhouse";
@@ -93,19 +95,32 @@ export function ClubhouseStrip({ bundle }: { bundle: ClubhouseBundle }) {
 
 /**
  * Builds and renders up to 4 stat cards from the bundle, prioritized by
- * what feels most alive right now:
- *   1. Active player streak (someone won N rounds in a row)
- *   2. Active rivalry run (one player taking money off another N straight)
- *   3. Top partner record (most-paired duo, win-rate forward)
- *   4. 30-day activity rollup
- *   5. Lifetime "your group has been at this for X" line
+ * recency / "feels most alive right now":
+ *   1. Recent milestone (someone broke 80 / hit a PR / first eagle)
+ *   2. Active player streak (won N in a row)
+ *   3. Active rivalry run (taking money off same player N straight)
+ *      OR fallback long-running matchup
+ *   4. Top partner record (most-paired duo)
+ *   5. Course mastery (deepest-history course's leader)
+ *   6. 30-day activity rollup
+ *   7. Lifetime "together for X years" line
+ *
+ * Tone discipline: every card is a statement. No badges, no fire emoji,
+ * no "RECORD!!!" energy. The data is the interest.
  */
 function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
   const cards: React.ReactNode[] = [];
 
+  // Recent milestone — surface only the freshest one. Multiple
+  // milestones in a single page-load would feel like a notification feed.
+  const milestone = bundle.recent_milestones[0];
+  if (milestone) {
+    cards.push(<StatCard key="milestone" {...milestoneCopy(milestone)} />);
+  }
+
   // Streak: one player on a roll.
   const streak = bundle.streaks[0];
-  if (streak) {
+  if (streak && cards.length < 4) {
     cards.push(
       <StatCard
         key="streak"
@@ -120,18 +135,19 @@ function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
     );
   }
 
-  // Rivalry: head-to-head streak (someone taking money off the same player
-  // round after round). Only surface when there's an active run of 3+ —
-  // otherwise it's just W-L noise.
+  // Rivalry: head-to-head streak. Only when active run ≥ 3.
   const runRivalry = bundle.rivalries.find(
     (r) => Math.abs(r.recent_run) >= 3
   );
-  if (runRivalry) {
+  if (runRivalry && cards.length < 4) {
     cards.push(
       <StatCard key="rivalry-run" {...rivalryRunCopy(runRivalry)} />
     );
-  } else if (bundle.rivalries[0] && bundle.rivalries[0].rounds_together >= 5) {
-    // No active streak, but show a long-running matchup if there is one.
+  } else if (
+    bundle.rivalries[0] &&
+    bundle.rivalries[0].rounds_together >= 5 &&
+    cards.length < 4
+  ) {
     cards.push(
       <StatCard key="rivalry-vol" {...rivalryStandingCopy(bundle.rivalries[0])} />
     );
@@ -141,6 +157,12 @@ function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
   const partner = bundle.partners[0];
   if (partner && cards.length < 4) {
     cards.push(<StatCard key="partner" {...partnerCopy(partner)} />);
+  }
+
+  // Course mastery: top player at the deepest-history course.
+  const mastery = bundle.course_mastery[0];
+  if (mastery && cards.length < 4) {
+    cards.push(<StatCard key="mastery" {...courseMasteryCopy(mastery)} />);
   }
 
   // 30-day activity.
@@ -170,8 +192,7 @@ function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
     );
   }
 
-  // Lifetime: only show when the group's history is meaningfully long
-  // (60+ days OR 8+ rounds). Otherwise it reads as filler.
+  // Lifetime: only when the group's history is meaningfully long.
   const span = fmtGroupSpan(bundle.lifetime.days_active);
   const lifetimeMeaningful =
     span && (bundle.lifetime.days_active >= 60 || bundle.lifetime.total_rounds >= 8);
@@ -279,4 +300,99 @@ function partnerCopy(p: PartnerSignal): {
         : ""
     }`
   };
+}
+
+// Course mastery copy. Phrased as a stat line, not "owns the course."
+// Patrick's example: "Patrick is averaging 3.2 birdies per round at JGCC"
+// — declarative, data-led, naturally discoverable.
+function courseMasteryCopy(m: CourseMasterySignal): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  return {
+    primary: (
+      <>
+        <span className="font-medium">{m.leader.display_name}</span> averages{" "}
+        {m.leader.avg_gross_18.toFixed(1)} at {m.course_name}
+      </>
+    ),
+    secondary: `${m.leader.rounds_at_course} round${
+      m.leader.rounds_at_course === 1 ? "" : "s"
+    } · best of ${m.leader.best_gross}${
+      m.runner_up
+        ? ` · ${m.runner_up.display_name} next at ${m.runner_up.avg_gross_18.toFixed(1)}`
+        : ""
+    }`
+  };
+}
+
+// Milestone copy. Each kind gets a distinct, understated phrasing.
+// "Tom finally broke 80 — 78 at JGCC" beats "🎉 NEW PR ALERT!!!"
+function milestoneCopy(m: MilestoneSignal): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  const where = m.course_name ? ` at ${m.course_name}` : "";
+  switch (m.kind) {
+    case "broke_80":
+      return {
+        primary: (
+          <>
+            <span className="font-medium">{m.display_name}</span> broke 80 for
+            the first time
+          </>
+        ),
+        secondary: `${m.value}${where} · ${prettyDate(m.date)}`
+      };
+    case "broke_90":
+      return {
+        primary: (
+          <>
+            <span className="font-medium">{m.display_name}</span> broke 90 for
+            the first time
+          </>
+        ),
+        secondary: `${m.value}${where} · ${prettyDate(m.date)}`
+      };
+    case "broke_100":
+      return {
+        primary: (
+          <>
+            <span className="font-medium">{m.display_name}</span> broke 100 for
+            the first time
+          </>
+        ),
+        secondary: `${m.value}${where} · ${prettyDate(m.date)}`
+      };
+    case "personal_best":
+      return {
+        primary: (
+          <>
+            <span className="font-medium">{m.display_name}</span> set a new
+            personal best
+          </>
+        ),
+        secondary: `${m.value}${where}${m.context ? ` · ${m.context}` : ""}`
+      };
+    case "first_eagle":
+      return {
+        primary: (
+          <>
+            <span className="font-medium">{m.display_name}</span> made an eagle
+            on hole {m.value}
+          </>
+        ),
+        secondary: `${prettyDate(m.date)}${where}`
+      };
+  }
+}
+
+function prettyDate(iso: string): string {
+  // "2026-05-15" → "May 15". Local timezone-free.
+  const [, m, d] = iso.split("-").map(Number);
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+  return `${months[(m ?? 1) - 1]} ${d ?? 1}`;
 }

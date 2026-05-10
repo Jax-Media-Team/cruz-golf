@@ -381,12 +381,23 @@ In rough priority order. Each gets its own QA sweep + regression tests.
      rounds together · $80 combined"
    - ✅ Group lifetime: "Sunday Crew · 47 rounds · $2,150 moved ·
      Together 4 years"
-   - ⏳ Course mastery: "Mitch owns hole 4 at JGCC", "Kyle still
-     hasn't won a Nassau at Pablo Creek" (needs per-hole + per-
-     course data + game-type bucketing)
-   - ⏳ Milestones: "Tom finally broke 80", "Biggest skins pot
-     your group has played" (needs first-time / record-setting
-     detection with idempotent firing)
+   - ✅ Course mastery (per-course leader): "Patrick averages 78.4
+     at JGCC over 6 rounds · best of 73 · Mitch next at 79.2".
+     `buildCourseMasterySignals` aggregates per-(course, player)
+     average gross normalized to 18 holes; min 3 finalized rounds at
+     the course; ignores partial rounds (<9 holes scored).
+   - ✅ Milestones (recent first-time events): "Tom broke 80 for the
+     first time — 78 at JGCC". `buildRecentMilestones` walks each
+     player's chronological rounds and surfaces first-time events
+     for broke_80 / broke_90 / broke_100 / personal_best / first_eagle
+     within the last 14 days. Idempotent — same data → same milestones,
+     no re-firing on page reload.
+   - ⏳ Hole-mastery: "Mitch owns hole 4 at JGCC" (needs per-hole
+     aggregation across rounds; data plumbing in place, just engine work)
+   - ⏳ Game-type-specific: "Kyle hasn't won a Nassau at Pablo Creek"
+     (needs game-type bucketing in settlements)
+   - ⏳ Group-record milestones: "Biggest skins pot the group has
+     played" (needs game settlement aggregation)
    - ⏳ Recent finalized "moments" (e.g. "Ben finally beat Kyle in
      skins") — overlaps with Course-mastery + Milestones
    - ⏳ Realtime live-position updates (currently snapshot at page

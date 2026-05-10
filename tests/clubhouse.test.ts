@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   buildClubhouse,
+  buildCourseMasterySignals,
   buildGroupActivitySignal,
   buildGroupLifetimeSignal,
   buildLiveRoundSignals,
   buildPartnerSignals,
+  buildRecentMilestones,
   buildRivalrySignals,
   buildStreakSignals,
   fmtGroupSpan,
@@ -740,6 +742,360 @@ describe("buildPartnerSignals", () => {
       expect(p.rounds).toBe(2);
       expect(p.wins).toBe(2);
     });
+  });
+});
+
+// --- Course mastery ---------------------------------------------------
+
+describe("buildCourseMasterySignals", () => {
+  function rFull(
+    id: string,
+    date: string,
+    course_id: string | null,
+    course_name = "JGCC",
+    holes = 18
+  ): ClubhouseRound {
+    return {
+      id,
+      date,
+      status: "finalized",
+      course_id,
+      course_name,
+      holes,
+      spectator_token: null
+    };
+  }
+
+  function makeScores(rpId: string, holes: number, par: number, gross: number) {
+    const out: ClubhouseScore[] = [];
+    for (let i = 1; i <= holes; i++) {
+      out.push({ round_player_id: rpId, hole_number: i, par, gross });
+    }
+    return out;
+  }
+
+  it("returns nothing when no player has hit minRounds at any course", () => {
+    const rounds = [
+      rFull("r1", "2026-05-01", "c-jgcc"),
+      rFull("r2", "2026-05-08", "c-jgcc")
+    ];
+    const rps = [
+      rp("rp-pat-1", "r1", "p-pat", "Patrick"),
+      rp("rp-pat-2", "r2", "p-pat", "Patrick")
+    ];
+    const scs = [
+      ...makeScores("rp-pat-1", 18, 4, 4),
+      ...makeScores("rp-pat-2", 18, 4, 4)
+    ];
+    expect(buildCourseMasterySignals(rounds, rps, scs)).toEqual([]);
+  });
+
+  it("picks the player with the lowest 18-hole-equivalent average gross", () => {
+    const rounds = [
+      rFull("r1", "2026-05-01", "c-jgcc"),
+      rFull("r2", "2026-05-08", "c-jgcc"),
+      rFull("r3", "2026-05-15", "c-jgcc")
+    ];
+    const rps: ClubhouseRoundPlayer[] = [];
+    const scs: ClubhouseScore[] = [];
+    for (let i = 1; i <= 3; i++) {
+      rps.push(rp(`rp-pat-${i}`, `r${i}`, "p-pat", "Patrick"));
+      rps.push(rp(`rp-mitch-${i}`, `r${i}`, "p-mitch", "Mitch"));
+      // Patrick averages 78 (4 per hole + 6 = 78... actually let's
+      // use round numbers). Patrick: 14 holes par-4, 4 holes par-5,
+      // gross 4 on every par-4, gross 4 on every par-5 → 72. Mitch
+      // gross 5 across the board → 90.
+      scs.push(...makeScores(`rp-pat-${i}`, 18, 4, 4)); // 72
+      scs.push(...makeScores(`rp-mitch-${i}`, 18, 4, 5)); // 90
+    }
+    const out = buildCourseMasterySignals(rounds, rps, scs);
+    expect(out).toHaveLength(1);
+    expect(out[0].course_id).toBe("c-jgcc");
+    expect(out[0].leader.player_id).toBe("p-pat");
+    expect(out[0].leader.avg_gross_18).toBe(72);
+    expect(out[0].leader.best_gross).toBe(72);
+    expect(out[0].leader.rounds_at_course).toBe(3);
+    expect(out[0].runner_up?.player_id).toBe("p-mitch");
+  });
+
+  it("normalizes 9-hole rounds to 18 so 9s and 18s compare apples to apples", () => {
+    // 3 9-hole rounds at gross 36 each → avg 9-hole 36 → avg 18-eq 72
+    const rounds = [
+      rFull("r1", "2026-05-01", "c-x", "X", 9),
+      rFull("r2", "2026-05-08", "c-x", "X", 9),
+      rFull("r3", "2026-05-15", "c-x", "X", 9)
+    ];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A"),
+      rp("rp-3", "r3", "p-a", "A")
+    ];
+    const scs = [
+      ...makeScores("rp-1", 9, 4, 4),
+      ...makeScores("rp-2", 9, 4, 4),
+      ...makeScores("rp-3", 9, 4, 4)
+    ];
+    const out = buildCourseMasterySignals(rounds, rps, scs);
+    expect(out[0].leader.avg_gross_18).toBe(72);
+  });
+
+  it("ignores rounds where fewer than 9 holes were scored", () => {
+    const rounds = [
+      rFull("r1", "2026-05-01", "c-x"),
+      rFull("r2", "2026-05-08", "c-x"),
+      rFull("r3", "2026-05-15", "c-x")
+    ];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A"),
+      rp("rp-3", "r3", "p-a", "A")
+    ];
+    const scs: ClubhouseScore[] = [
+      // r1: only 4 holes scored → ignored
+      { round_player_id: "rp-1", hole_number: 1, par: 4, gross: 4 },
+      { round_player_id: "rp-1", hole_number: 2, par: 4, gross: 4 },
+      { round_player_id: "rp-1", hole_number: 3, par: 4, gross: 4 },
+      { round_player_id: "rp-1", hole_number: 4, par: 4, gross: 4 },
+      ...makeScores("rp-2", 18, 4, 4),
+      ...makeScores("rp-3", 18, 4, 4)
+    ];
+    // Only 2 valid rounds; default minRounds=3 → no signal.
+    expect(buildCourseMasterySignals(rounds, rps, scs)).toEqual([]);
+  });
+
+  it("ignores live and draft rounds", () => {
+    const rounds = [
+      rFull("r1", "2026-05-01", "c-x"),
+      rFull("r2", "2026-05-08", "c-x"),
+      rFull("r3", "2026-05-15", "c-x"),
+      { ...rFull("r-live", "2026-05-20", "c-x"), status: "live" as const }
+    ];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A"),
+      rp("rp-3", "r3", "p-a", "A"),
+      rp("rp-live", "r-live", "p-a", "A")
+    ];
+    const scs = [
+      ...makeScores("rp-1", 18, 4, 4),
+      ...makeScores("rp-2", 18, 4, 4),
+      ...makeScores("rp-3", 18, 4, 4),
+      ...makeScores("rp-live", 18, 4, 3) // would lower the avg if counted
+    ];
+    const out = buildCourseMasterySignals(rounds, rps, scs);
+    expect(out[0].leader.rounds_at_course).toBe(3);
+    expect(out[0].leader.avg_gross_18).toBe(72);
+  });
+
+  it("sorts deepest-history courses first", () => {
+    const rounds = [
+      ...["r1", "r2", "r3", "r4", "r5"].map((id, i) =>
+        rFull(id, `2026-05-0${i + 1}`, "c-deep", "Deep")
+      ),
+      ...["r6", "r7", "r8"].map((id, i) =>
+        rFull(id, `2026-06-0${i + 1}`, "c-shallow", "Shallow")
+      )
+    ];
+    const rps: ClubhouseRoundPlayer[] = [];
+    const scs: ClubhouseScore[] = [];
+    for (let i = 1; i <= 8; i++) {
+      const rid = `r${i}`;
+      const rpid = `rp-${i}`;
+      rps.push(rp(rpid, rid, "p-a", "A"));
+      scs.push(...makeScores(rpid, 18, 4, 4));
+    }
+    const out = buildCourseMasterySignals(rounds, rps, scs);
+    expect(out.map((s) => s.course_id)).toEqual(["c-deep", "c-shallow"]);
+  });
+});
+
+// --- Recent milestones ------------------------------------------------
+
+describe("buildRecentMilestones", () => {
+  function rFull(
+    id: string,
+    date: string,
+    holes = 18,
+    course_id: string | null = "c-x",
+    course_name = "JGCC"
+  ): ClubhouseRound {
+    return {
+      id,
+      date,
+      status: "finalized",
+      course_id,
+      course_name,
+      holes,
+      spectator_token: null
+    };
+  }
+
+  function evenScores(rpId: string, holes: number, gross: number) {
+    return Array.from({ length: holes }, (_, i) => ({
+      round_player_id: rpId,
+      hole_number: i + 1,
+      par: 4,
+      gross
+    }));
+  }
+
+  it("fires broke_80 once on the first sub-80 18-hole round", () => {
+    // 3 rounds; the second is the first sub-80.
+    const rounds = [
+      rFull("r1", "2026-05-01"),
+      rFull("r2", "2026-05-08"),
+      rFull("r3", "2026-05-15")
+    ];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A"),
+      rp("rp-3", "r3", "p-a", "A")
+    ];
+    // Round 1 gross 90, round 2 gross 78 (FIRST sub-80), round 3 gross 79.
+    const scs = [
+      ...evenScores("rp-1", 18, 5).slice(0, 18), // 90 — let's make this 90
+      // 18 holes × 5 = 90. Good.
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-2",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 12 ? 4 : 5 // 12*4 + 6*5 = 78
+      })),
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-3",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 11 ? 4 : 5 // 11*4 + 7*5 = 79
+      }))
+    ];
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 365,
+      today: "2026-05-20"
+    });
+    const broke80s = out.filter((m) => m.kind === "broke_80");
+    expect(broke80s).toHaveLength(1);
+    expect(broke80s[0].round_id).toBe("r2");
+    expect(broke80s[0].value).toBe(78);
+  });
+
+  it("filters milestones to within the windowDays cutoff", () => {
+    // Sub-80 was 60 days ago; today's window is 14 days → no milestone.
+    const rounds = [rFull("r-old", "2026-03-01"), rFull("r-recent", "2026-05-15")];
+    const rps = [
+      rp("rp-old", "r-old", "p-a", "A"),
+      rp("rp-recent", "r-recent", "p-a", "A")
+    ];
+    const scs = [
+      ...evenScores("rp-old", 18, 4).slice(0, 18), // 72 — broke 80
+      ...evenScores("rp-recent", 18, 5).slice(0, 18) // 90 — broke nothing recent
+    ];
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 14,
+      today: "2026-05-20"
+    });
+    expect(out.find((m) => m.kind === "broke_80")).toBeUndefined();
+  });
+
+  it("only fires broke_90 when the player hasn't already broken 80", () => {
+    // r1: 78 (breaks 80). r2: 88 — should NOT fire broke_90 since 80 already broken.
+    const rounds = [rFull("r1", "2026-05-01"), rFull("r2", "2026-05-08")];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A")
+    ];
+    const scs = [
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-1",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 12 ? 4 : 5
+      })),
+      ...evenScores("rp-2", 18, 4).map((s, i) => ({
+        ...s,
+        gross: i < 14 ? 4 : 6 // 14*4 + 4*6 = 80; 80 isn't strictly < 90 by sub-90 rule.
+      }))
+    ];
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 365,
+      today: "2026-05-20"
+    });
+    expect(out.find((m) => m.kind === "broke_90")).toBeUndefined();
+  });
+
+  it("fires personal_best when a later 18-hole round beats every prior 18-hole gross", () => {
+    const rounds = [
+      rFull("r1", "2026-05-01"),
+      rFull("r2", "2026-05-08"),
+      rFull("r3", "2026-05-15")
+    ];
+    const rps = [
+      rp("rp-1", "r1", "p-a", "A"),
+      rp("rp-2", "r2", "p-a", "A"),
+      rp("rp-3", "r3", "p-a", "A")
+    ];
+    // r1=85, r2=82, r3=79 → r3 is personal best (and breaks 80).
+    const scs = [
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-1",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 13 ? 4 : 6.5
+      })).map((s) => ({ ...s, gross: Math.round(s.gross) })),
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-2",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 14 ? 4 : 6.5
+      })).map((s) => ({ ...s, gross: Math.round(s.gross) })),
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-3",
+        hole_number: i + 1,
+        par: 4,
+        gross: i < 17 ? 4 : 11
+      }))
+    ];
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 365,
+      today: "2026-05-20"
+    });
+    const pb = out.find((m) => m.kind === "personal_best");
+    expect(pb).toBeDefined();
+    expect(pb?.round_id).toBe("r3");
+  });
+
+  it("fires first_eagle on the hole that was 2+ under par", () => {
+    const rounds = [rFull("r1", "2026-05-08")];
+    const rps = [rp("rp-1", "r1", "p-a", "A")];
+    const scs: ClubhouseScore[] = [
+      // 18 holes: hole 7 is a par 5 the player aced for 3 (eagle).
+      ...Array.from({ length: 18 }, (_, i) => ({
+        round_player_id: "rp-1",
+        hole_number: i + 1,
+        par: i + 1 === 7 ? 5 : 4,
+        gross: i + 1 === 7 ? 3 : 4
+      }))
+    ];
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 365,
+      today: "2026-05-20"
+    });
+    const eagle = out.find((m) => m.kind === "first_eagle");
+    expect(eagle).toBeDefined();
+    expect(eagle?.value).toBe(7);
+  });
+
+  it("does NOT fire personal_best on the very first 18-hole round (baseline)", () => {
+    const rounds = [rFull("r1", "2026-05-01")];
+    const rps = [rp("rp-1", "r1", "p-a", "A")];
+    const scs = evenScores("rp-1", 18, 4); // 72
+    const out = buildRecentMilestones(rounds, rps, scs, {
+      windowDays: 365,
+      today: "2026-05-10"
+    });
+    expect(out.find((m) => m.kind === "personal_best")).toBeUndefined();
+    // It would still fire a broke_80 (72 < 80, first time) since 72 is
+    // an actual sub-80 round.
+    expect(out.find((m) => m.kind === "broke_80")).toBeDefined();
   });
 });
 
