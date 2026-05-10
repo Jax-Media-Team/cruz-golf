@@ -62,6 +62,17 @@ These guide every decision. When in doubt, re-read.
 10. **Watching ≠ editing ≠ acting as admin ≠ acting as user.**
     These four modes must be visually unmistakable. Banners,
     colors, and routes should never let those states blur.
+11. **Shared history is the moat.** Once a group has been using the
+    app for months, the rivalry counts, lifetime totals, partner
+    records, and trip archives are what makes it irreplaceable.
+    "Our golf history lives here" beats every feature checklist.
+    Every signal we surface should feel earned, data-supported,
+    naturally discoverable — never artificially manufactured.
+12. **Tone discipline.** Statements not exclamations. No badges,
+    no fire emoji on streaks, no fantasy-sports vibes, no casino
+    psychology. Member-member gambling group, golf-trip group
+    chat, private clubhouse — that's the voice. The data is the
+    interest, not the chrome.
 
 ---
 
@@ -143,8 +154,11 @@ This is the bucket that separates Cruz Golf from "another scorecard app."
 | GOLF-TRIP-ARCHIVES | Group trips spanning multiple courses + days | ⏳ open |
 | SANDBAGGER-WATCH | Players whose net wins suggest a soft handicap | ⏳ open — needs anomaly detection |
 | AI-RECAP-SMACK-TALK | Already partially shipped (SmackTalk component on finalize) | ✅ partial — generates moments at finalize |
-| RIVALRIES | Head-to-head career W/L between any two players | ⏳ open |
-| PARTNER-CHEMISTRY | "Together you're +$420; apart you're +$200" | ⏳ open |
+| RIVALRIES | Head-to-head career W/L between any two players | ✅ shipped — `buildRivalrySignals` surfaces both active streak runs ("Luis 4-in-a-row over Patrick") and long-running matchups ("Patrick vs Jeff: 14-12 all-time"). On dashboard ClubhouseStrip when min 3 rounds together. |
+| PARTNER-CHEMISTRY | "Together you're +$420; apart you're +$200" | ✅ shipped — `buildPartnerSignals` aggregates W-L-P across rounds where two players shared a team_id. Surfaces most-paired duo with their record + combined cents. Min 2 paired rounds. |
+| GROUP-LIFETIME | "Sunday Crew has moved $18,420 lifetime · together 4 years" | ✅ shipped — `buildGroupLifetimeSignal` totals every finalized round + cents moved + days-since-first-round. Only renders when meaningfully long (60+ days OR 8+ rounds) so it doesn't read as filler in new groups. |
+| COURSE-MASTERY | "Mitch owns hole 4 at JGCC", "Kyle still hasn't won a Nassau at Pablo Creek" | ⏳ open — needs per-hole and per-game-type aggregation; care needed so it doesn't tip into fantasy-sports tone |
+| MILESTONES | "Tom finally broke 80", "Biggest skins pot your group has played" | ⏳ open — first-time / record-setting detection. Must be idempotent so it doesn't re-fire on every page-load. |
 
 ## 📊 Stats / records (depth + accessibility)
 
@@ -286,18 +300,32 @@ In rough priority order. Each gets its own QA sweep + regression tests.
      group-flavored)
 4. **Living-clubhouse activity on /dashboard** — group-centric only
    (NOT public/algorithmic feed). Patrick's framing: "private golf
-   crew · 'our group lives here'", not "public golf influencer feed."
-   - ✅ `<ClubhouseStrip>` shipped — "🟢 Patrick -2 thru 7 · JGCC",
-     "🔥 Patrick on a 3-round heater", "📅 5 rounds · $215 moved · last
-     30 days at JGCC". Pure functions in `lib/clubhouse.ts` with 18
-     regression tests. Renders nothing if no live/streak/activity to
-     show.
+   crew · 'our golf history lives here'", not "public golf influencer
+   feed." Tone discipline: statements not exclamations, no badges,
+   no fire emoji, no fantasy-sports vibe.
+   - ✅ `<ClubhouseStrip>` shipped — live-round leader card,
+     understated stat cards, no chrome/badges. `lib/clubhouse.ts`
+     pure-function engine with regression tests.
+   - ✅ Streaks: "Patrick has won 3 rounds in a row · $15 taken
+     across the streak"
+   - ✅ Rivalries (active streaks): "Luis has taken money off
+     Patrick 4 rounds in a row · 7-3 all-time over 10 rounds"
+   - ✅ Rivalries (long matchups): "Patrick vs Jeff · 14-12
+     all-time · 26 rounds together"
+   - ✅ Partner chemistry: "Patrick + Ben · 5-1 as partners · 6
+     rounds together · $80 combined"
+   - ✅ Group lifetime: "Sunday Crew · 47 rounds · $2,150 moved ·
+     Together 4 years"
+   - ⏳ Course mastery: "Mitch owns hole 4 at JGCC", "Kyle still
+     hasn't won a Nassau at Pablo Creek" (needs per-hole + per-
+     course data + game-type bucketing)
+   - ⏳ Milestones: "Tom finally broke 80", "Biggest skins pot
+     your group has played" (needs first-time / record-setting
+     detection with idempotent firing)
    - ⏳ Recent finalized "moments" (e.g. "Ben finally beat Kyle in
-     skins") — needs moment-detection logic
+     skins") — overlaps with Course-mastery + Milestones
    - ⏳ Realtime live-position updates (currently snapshot at page
      load; could subscribe to scores realtime)
-   - ⏳ Rivalries: "Patrick vs Jeff: 14W-12L lifetime"
-   - ⏳ Partner chemistry: "Tom + Patrick: hottest scramble pairing"
 5. **Player linking / claiming** — guest → real account flow needs to
    be one tap, undoable, with visible audit trail
 6. **Personal stats pages** — depth without configurability creep

@@ -84,29 +84,26 @@ export default async function DashboardPage() {
   // Living-clubhouse signals — only fetched when the user is past
   // first-round onboarding (otherwise there's nothing to show and we'd
   // be paying query latency for an empty card).
+  //
+  // Pull the FULL group history (capped at 500 rounds for performance)
+  // so rivalries / partner chemistry / group lifetime have real data.
+  // The 30-day activity rollup is computed in-memory from the same set.
+  // For most groups 500 rounds = 5+ years, which is plenty.
   let clubhouse:
     | ReturnType<typeof buildClubhouse>
     | null = null;
   if (hasRounds && groupId) {
-    // Pull a 60-day window: enough for monthly activity rollup + recent-
-    // round streak detection without dragging the full history. Live and
-    // draft rounds are included regardless of date.
-    const cutoff = new Date();
-    cutoff.setUTCDate(cutoff.getUTCDate() - 60);
-    const cutoffIso = cutoff.toISOString().slice(0, 10);
-
     const [{ data: chRounds }, { data: chRps }, { data: chSettles }] = await Promise.all([
       sb
         .from("rounds")
         .select("id, date, status, holes, spectator_token, course_id, courses(name)")
         .eq("group_id", groupId)
         .is("deleted_at", null)
-        .or(`date.gte.${cutoffIso},status.eq.live,status.eq.draft`)
         .order("date", { ascending: false })
-        .limit(60),
+        .limit(500),
       sb
         .from("round_players")
-        .select("id, round_id, player_id, players(display_name)")
+        .select("id, round_id, player_id, team_id, players(display_name)")
         .order("round_id"),
       sb
         .from("settlements")
@@ -130,7 +127,8 @@ export default async function DashboardPage() {
         round_player_id: rp.id,
         round_id: rp.round_id,
         player_id: rp.player_id,
-        display_name: rp.players?.display_name ?? "Player"
+        display_name: rp.players?.display_name ?? "Player",
+        team_id: rp.team_id ?? null
       }));
 
     const settlesForBundle: ClubhouseSettlement[] = ((chSettles as any[]) ?? [])
