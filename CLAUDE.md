@@ -254,14 +254,52 @@ When in doubt about whether to ship: **ship**. Auto mode is usually on. Ask only
 
 ---
 
+## Privacy model (per Patrick, 2026-05-10 — decided)
+
+The starting privacy model unless a major technical reason forces otherwise:
+
+- **Everything defaults to group-private.** Group members see group leaderboards / records / settlements / clubhouse signals.
+- **Public links are explicit, read-only shares.** Spectator tokens (existing `rounds.spectator_token`), record-book share tokens (TBD).
+- **No global public social feed.** No discovery surface, no algorithmic timeline, no strangers in your data.
+- **No cross-group leaderboards by default.** A user who joins multiple groups sees each group's data, but groups don't bleed into each other's surfaces.
+- **Strangers only enter via explicit join/share.** A user accepting a group invite is the only path. Nobody appears on your records or rivalries unless they're a member of a group you're in.
+
+Friends-list scope (Q3): treat as **global per profile**, but every "share to friend" is an explicit one-time share — never an implicit data leak across groups.
+
+## Manual press UI — design questions for next session
+
+Patrick (2026-05-10) flagged manual presses as the most important remaining betting feature, and asked me to think through the parameters. Here's the design surface to lock down before building:
+
+| Question | Recommended answer |
+|---|---|
+| **Who can press?** | Either side's commissioner, OR any active player on the round. Default: any player on a side that's currently down. Both sides must acknowledge. |
+| **When is a press available?** | At any hole the down-side has played but no later than 3 holes from the segment end (matches the auto-press 3-hole rule). Disabled before scores exist. |
+| **What hole does the press start on?** | The NEXT hole after the trigger event. Press doesn't retroactively cover already-played holes. |
+| **Acknowledgement model?** | One-tap accept by the OTHER side. Mid-round wager-ack pattern, similar to existing `round_wager_acks`. Auto-expires after 24 hours if not accepted. |
+| **Stake?** | Defaults to parent segment's stake. Commissioner can override to a different stake. |
+| **Live leaderboard display?** | Shows "Press 1 open · holes 7-18 · Patrick + Ben press" inline with the segment summary. Per-press deltas accumulate into the per-player total. |
+| **Settlement display?** | Per-press line items in the FinalizeView's "By game" breakdown — same pattern as auto-presses already use (`label: "Nassau front · press 1"`). |
+| **Audit log?** | Every press open + accept + decline writes a `destructive_audit_log` row (kind: `press.open` / `press.accept` / `press.decline`). Provides recovery path if disputes arise. |
+| **Reversibility?** | Until accepted, the opener can withdraw. Once accepted, it's binding through finalize unless commissioner unfinalizes the round. |
+
+Ship plan when picking this up:
+1. New table `round_presses` (round_id, segment_label, opened_by_rp, opened_at, accepted_by_rps[], accepted_at, withdrawn_at, stake_cents, start_hole, status)
+2. RPCs: `fn_open_press`, `fn_accept_press`, `fn_decline_press`, `fn_withdraw_press`
+3. UI: small "Press →" affordance on the round page when commissioner-applicable + a "press accepted" banner for the opposing side
+4. Engine wiring: `lib/games/press.ts` extended to accept manual presses alongside auto-presses; settlement reads `round_presses` rows and applies them
+
+Defer until Patrick green-lights the design.
+
+---
+
 ## Open strategic questions
 
 | # | Question | Status |
 |---|---|---|
 | Q1 | Add `POSTGRES_URL` to Vercel via Supabase integration? | Patrick said "worth doing soon" — would unblock autonomous DDL apply. Not yet done. |
-| Q2 | Public record-book share — opt-in per round or per record-book? | Open |
-| Q3 | Friends list — global or per-group scope? | Open |
-| Q4 | Cross-group "club leaderboards" — opt-in per round or default-participate? | Probably opt-in |
+| Q2 | Public record-book share — opt-in per round or per record-book? | Defer until friends-list ships |
+| Q3 | Friends list — global or per-group scope? | **Decided 2026-05-10: global per profile, explicit one-time shares only.** |
+| Q4 | Cross-group "club leaderboards" — opt-in per round or default-participate? | **Decided 2026-05-10: no cross-group leaderboards by default.** |
 | Q5 | When a guest is linked to a real account, do their past rounds count toward personal stats? | Almost certainly yes |
 
 Don't re-ask these without reason. If a feature requires a decision on one, surface it with a recommendation.

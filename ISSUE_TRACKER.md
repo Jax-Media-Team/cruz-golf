@@ -1,5 +1,17 @@
 # Cruz Golf — Living Roadmap & Issue Tracker
 
+## Next session priorities (per Patrick, 2026-05-10)
+
+1. **Data integrity + trust** — no destructive ops without explicit approval; archive/restore default
+2. **Manual press UI** — design spec is in `CLAUDE.md` under "Manual press UI — design questions"; ready to build once green-lit
+3. **Installed-PWA / offline polish** — service worker + score-entry offline queue (already partial via `lib/score-queue.ts`)
+4. **Continue product QA** — regression tests + mobile sweeps + admin/non-admin checks + simulated rounds (the loop is working)
+5. **Course data accuracy** — never fabricate; placeholder/community/verified states must stay honest
+6. **Privacy model — decided 2026-05-10:** group-private default, no cross-group leaderboards, no public social feed (see CLAUDE.md)
+7. **Keep CLAUDE.md + this file current** — source of truth for cold sessions
+
+---
+
 ## Latest session highlights (2026-05-10 overnight, commits c82b32a → 77f5cf8)
 
 What shipped while you were away:
@@ -361,7 +373,8 @@ including the override-always-wins safety property.
 | 0028 | applied | JGCC template promotion: populates the placeholder template course with 5 tees + 90 holes from the JGCC preset and bumps verification_status to 'verified'. |
 | 0029 | **awaiting your apply** | audit hooks for the remaining destructive RPCs: fn_delete_round, fn_dedupe_jgcc_in_group, fn_link_guest_to_profile, fn_unlink_player. Same pattern as 0027 — appends a `fn_log_destructive` call to each function. Re-creates each in full; safe to re-run. |
 | 0030 | applied | Ponte Vedra Inn & Club Ocean (par 71) + Lagoon (par 70) populated from the official PVIC scorecard PDF. Both verified, fully cloneable. |
-| 0031 | **awaiting your apply** | Slim PVIC templates to one tee per color (drops Ladies' duplicates per the new simplification rule). Templates only — user clones are unaffected. |
+| 0031 | applied | Slim PVIC templates to one tee per color. Templates only — user clones unaffected. |
+| 0032 | **awaiting your apply** | TPC Sawgrass Stadium (Blue tee, 76.8/155, verified) + Deerwood CC (4 tees, yardage/par/SI verified; rating/slope placeholder, status=needs_review). Idempotent. |
 
 ---
 
