@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { supabaseServer } from "@/lib/supabase/server";
 import { BrandLockup } from "@/components/BrandLockup";
 import { HelpButton } from "@/components/HelpButton";
@@ -9,7 +10,14 @@ import { MobileMoreMenu } from "@/components/MobileMoreMenu";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    // Preserve the requested path so login can deep-link back. The path
+    // header is set by /middleware.ts.
+    const h = await headers();
+    const path = h.get("x-pathname") ?? "/dashboard";
+    const next = encodeURIComponent(path);
+    redirect(`/login?next=${next}`);
+  }
 
   // Show the Admin nav item only to platform admins. Wrapped in try/catch
   // so the layout doesn't crash if the migration hasn't run yet.

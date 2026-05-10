@@ -6,7 +6,7 @@ import { RoundsList } from "./rounds-list";
 export default async function DashboardPage() {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/login?next=/dashboard");
 
   // Get the user's first group (if any) so we can show context-aware onboarding state.
   const { data: groups } = await sb.from("groups").select("id, name").limit(1);
