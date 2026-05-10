@@ -81,15 +81,23 @@ export function PressControls({
   const [openDialog, setOpenDialog] = useState(false);
 
   // Bucket presses by my role so the UI shows the right call-to-action.
+  // Hide pending presses older than 24h — backend treats them as
+  // expired only when someone tries to act on them, but the UI
+  // shouldn't keep showing stale "awaiting response" rows.
   const { mine, awaitingMe, accepted } = useMemo(() => {
     const out = {
       mine: [] as PressRow[],
       awaitingMe: [] as PressRow[],
       accepted: [] as PressRow[]
     };
+    const expiryCutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const p of presses) {
-      if (p.status === "accepted") out.accepted.push(p);
-      else if (p.status === "pending") {
+      if (p.status === "accepted") {
+        out.accepted.push(p);
+      } else if (p.status === "pending") {
+        // Hide pending presses opened more than 24h ago — UI-side
+        // expiry. The next attempted action will flip the DB row.
+        if (new Date(p.opened_at).getTime() < expiryCutoff) continue;
         const onSideA = myRpId && p.side_a_rp_ids.includes(myRpId);
         const onSideB = myRpId && p.side_b_rp_ids.includes(myRpId);
         if (onSideA) out.mine.push(p);
@@ -451,10 +459,23 @@ function OpenPressDialog({
         />
       </div>
 
-      <div className="text-[11px] text-cream-100/55 leading-snug">
-        Sides default to your team vs everyone else
-        {defaultSideA.length === 1 && " (you alone vs everyone else)"}.
-        The other side has 24h to accept; it auto-expires after that.
+      <div className="text-[11px] text-cream-100/55 leading-snug space-y-1">
+        <p>
+          Sides default to your team vs everyone else
+          {defaultSideA.length === 1 &&
+            defaultSideB.length > 1 &&
+            ` (you alone vs ${defaultSideB.length} others — heads up, this is a 1-vs-${defaultSideB.length} press)`}
+          {defaultSideA.length === 1 &&
+            defaultSideB.length === 1 &&
+            " (1-vs-1)"}
+          {defaultSideA.length > 1 && ` (${defaultSideA.length}-vs-${defaultSideB.length})`}.
+        </p>
+        <p>The other side has 24h to accept; it auto-expires after that.</p>
+        {defaultSideA.length === 1 && defaultSideB.length > 1 && (
+          <p className="text-amber-300">
+            If you meant a 1-vs-1, set up teams on the round before pressing.
+          </p>
+        )}
       </div>
 
       {err && <p className="text-xs text-red-300">{err}</p>}

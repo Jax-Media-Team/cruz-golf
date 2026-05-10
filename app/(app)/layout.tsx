@@ -8,6 +8,8 @@ import { UpdateToast } from "@/components/UpdateToast";
 import { MobileMoreMenu } from "@/components/MobileMoreMenu";
 import { ActiveRoundPill } from "@/components/ActiveRoundPill";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -143,6 +145,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <InstallPrompt />
       <HelpButton />
       <UpdateToast />
+      <ServiceWorkerRegistration />
+      <OfflineIndicator />
     </div>
   );
 }
