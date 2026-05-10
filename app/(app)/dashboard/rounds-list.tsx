@@ -13,10 +13,10 @@ type Round = {
 };
 
 /**
- * Swipe-left or tap-X to delete. Confirms before issuing the delete.
- *
- * RLS on rounds requires commissioner role to delete; the schema's cascade
- * deletes clear round_players, scores, round_games, settlements, etc.
+ * Swipe-left or tap-⋯ to open the row's actions: Archive (always works,
+ * soft-delete) or Delete (hard delete via fn_delete_round RPC). If hard
+ * delete fails, we offer "Archive instead" without making the user re-enter
+ * the swipe.
  */
 export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   const sb = supabaseBrowser();
@@ -24,7 +24,7 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   const [rounds, setRounds] = useState(initialRounds);
   const [openSwipe, setOpenSwipe] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [errFor, setErrFor] = useState<{ id: string; msg: string } | null>(null);
 
   const startX = useRef<number | null>(null);
   function onTouchStart(e: React.TouchEvent) {
@@ -41,19 +41,52 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   async function deleteRound(r: Round) {
     if (
       !confirm(
-        `Delete this ${r.status} round at ${r.courses?.name ?? "the course"} on ${r.date}? This permanently removes scores, games, and settlements. Cannot be undone.`
+        `Permanently delete this ${r.status} round at ${r.courses?.name ?? "the course"} on ${r.date}? Removes scores, games, and settlements. Cannot be undone.`
       )
     )
       return;
     setBusyId(r.id);
-    setErr(null);
-    // Use the atomic RPC instead of a direct DELETE so cascade ordering and
-    // RLS quirks can't surface as the "Linked record is missing" message.
+    setErrFor(null);
     const { error } = await sb.rpc("fn_delete_round", { p_round_id: r.id });
     setBusyId(null);
     if (error) {
-      setErr(friendlyAuthError(error));
+      // Show actionable error with an immediate "Archive instead" option.
+      // friendlyAuthError translates known error patterns; we also include
+      // the raw message so we can debug stuck rows.
+      const friendly = friendlyAuthError(error);
+      const raw = (error as any)?.message ?? "";
+      setErrFor({
+        id: r.id,
+        msg: `${friendly}${raw && !friendly.includes(raw) ? ` (${raw})` : ""}`
+      });
       return;
+    }
+    setRounds((arr) => arr.filter((x) => x.id !== r.id));
+    setOpenSwipe(null);
+    router.refresh();
+  }
+
+  async function archiveRound(r: Round) {
+    if (
+      !confirm(
+        `Archive this round? It'll disappear from your dashboard but stay in records and stats. You can restore it from Admin if needed.`
+      )
+    )
+      return;
+    setBusyId(r.id);
+    setErrFor(null);
+    const { error } = await sb.rpc("fn_archive_round", { p_round_id: r.id });
+    setBusyId(null);
+    if (error) {
+      // Fallback: try a direct UPDATE if the RPC isn't installed yet.
+      const { error: e2 } = await sb
+        .from("rounds")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", r.id);
+      if (e2) {
+        setErrFor({ id: r.id, msg: friendlyAuthError(e2) });
+        return;
+      }
     }
     setRounds((arr) => arr.filter((x) => x.id !== r.id));
     setOpenSwipe(null);
@@ -62,14 +95,10 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
 
   return (
     <div className="space-y-2">
-      {err && (
-        <div className="card p-3 border border-red-400/40 bg-red-500/10 text-sm text-red-200">
-          {err}
-        </div>
-      )}
       {rounds.map((r) => {
         const isOpen = openSwipe === r.id;
         const isBusy = busyId === r.id;
+        const rowErr = errFor?.id === r.id ? errFor.msg : null;
         return (
           <div
             key={r.id}
@@ -77,22 +106,30 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
             onTouchStart={onTouchStart}
             onTouchEnd={(e) => onTouchEnd(e, r.id)}
           >
-            {/* Delete drawer behind the card */}
+            {/* Action drawer behind the card — Archive + Delete */}
             <div className="absolute inset-y-0 right-0 flex items-stretch">
+              <button
+                onClick={() => archiveRound(r)}
+                disabled={isBusy}
+                aria-label={`Archive round at ${r.courses?.name ?? "course"} on ${r.date}`}
+                className="bg-cream-100/15 hover:bg-cream-100/25 text-cream-50 px-4 font-medium text-xs transition-colors"
+              >
+                {isBusy ? "…" : "Archive"}
+              </button>
               <button
                 onClick={() => deleteRound(r)}
                 disabled={isBusy}
                 aria-label={`Delete round at ${r.courses?.name ?? "course"} on ${r.date}`}
-                className="bg-red-600 hover:bg-red-700 text-cream-50 px-5 font-medium text-sm transition-colors"
+                className="bg-red-600 hover:bg-red-700 text-cream-50 px-4 font-medium text-xs transition-colors"
               >
-                {isBusy ? "Deleting…" : "Delete"}
+                {isBusy ? "…" : "Delete"}
               </button>
             </div>
 
             {/* Foreground card slides left when swiped open */}
             <div
               className="relative bg-brand-900 transition-transform"
-              style={{ transform: isOpen ? "translateX(-92px)" : "translateX(0)" }}
+              style={{ transform: isOpen ? "translateX(-160px)" : "translateX(0)" }}
             >
               <div className="card card-hover p-4 flex items-center justify-between gap-3">
                 <Link href={`/rounds/${r.id}`} className="flex-1 min-w-0">
@@ -112,17 +149,30 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
                 >
                   {r.status}
                 </span>
-                {/* Desktop / explicit delete affordance — small × that opens the swipe drawer */}
                 <button
                   onClick={() => setOpenSwipe(isOpen ? null : r.id)}
-                  aria-label="Toggle delete option"
+                  aria-label="Toggle row actions"
                   className="text-cream-100/40 hover:text-red-300 text-lg leading-none px-1"
-                  title={isOpen ? "Hide delete" : "Show delete"}
+                  title={isOpen ? "Hide actions" : "Show actions"}
                 >
                   {isOpen ? "←" : "⋯"}
                 </button>
               </div>
             </div>
+
+            {/* Per-row error with a one-tap Archive fallback */}
+            {rowErr && (
+              <div className="card p-3 mt-1 border border-red-400/40 bg-red-500/10 text-xs text-red-200 flex items-center justify-between gap-3">
+                <span className="flex-1">{rowErr}</span>
+                <button
+                  type="button"
+                  onClick={() => archiveRound(r)}
+                  className="btn-secondary text-xs whitespace-nowrap"
+                >
+                  Archive instead →
+                </button>
+              </div>
+            )}
           </div>
         );
       })}

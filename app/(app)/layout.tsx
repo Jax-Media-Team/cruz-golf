@@ -38,15 +38,30 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   // Newest live round (if any) — used by the floating "Back to round" pill.
+  // Skip archived rounds (migration 0021 adds rounds.deleted_at). If the
+  // column isn't there yet we silently retry without the filter so the
+  // pill keeps working pre-migration.
   let activeRound: { id: string; courseName: string | null } | null = null;
   try {
-    const { data } = await sb
+    const filtered = await sb
       .from("rounds")
       .select("id, status, courses(name)")
       .eq("status", "live")
+      .is("deleted_at", null)
       .order("date", { ascending: false })
       .limit(1)
       .maybeSingle();
+    let data = filtered.data;
+    if (filtered.error) {
+      const r = await sb
+        .from("rounds")
+        .select("id, status, courses(name)")
+        .eq("status", "live")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      data = r.data;
+    }
     if (data) {
       activeRound = {
         id: data.id as string,

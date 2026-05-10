@@ -16,6 +16,24 @@ export default async function DashboardPage() {
   const groupId = groups?.[0]?.id;
   const groupName = groups?.[0]?.name;
 
+  // Defensive: filter archived rounds via deleted_at, falling back to
+  // unfiltered if migration 0021 isn't applied yet (so the dashboard
+  // never goes blank because of a missing column).
+  async function fetchRounds() {
+    const filtered = await sb
+      .from("rounds")
+      .select("id, date, status, courses(name)")
+      .is("deleted_at", null)
+      .order("date", { ascending: false })
+      .limit(10);
+    if (!filtered.error) return filtered;
+    return await sb
+      .from("rounds")
+      .select("id, date, status, courses(name)")
+      .order("date", { ascending: false })
+      .limit(10);
+  }
+
   const [
     { count: courseCount },
     { count: playerCount },
@@ -23,7 +41,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     sb.from("courses").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
     sb.from("players").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
-    sb.from("rounds").select("id, date, status, courses(name)").order("date", { ascending: false }).limit(10)
+    fetchRounds()
   ]);
 
   // Platform-admin nav surface: also unlocks the Admin quick-link below.
