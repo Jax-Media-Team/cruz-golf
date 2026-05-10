@@ -413,14 +413,9 @@ function PlayerRow({
                     >
                       Archive
                     </button>
-                    <button
-                      type="button"
-                      onClick={onHardDelete}
-                      className="block w-full text-left px-3 py-2 text-red-300 hover:bg-brand-900"
-                      role="menuitem"
-                    >
-                      Delete permanently
-                    </button>
+                    {/* Hard-delete temporarily disabled in the UI (P0
+                        safety, 2026-05-10). Use /admin/users → individual
+                        user → "Delete permanently" if absolutely needed. */}
                   </>
                 )}
               </div>

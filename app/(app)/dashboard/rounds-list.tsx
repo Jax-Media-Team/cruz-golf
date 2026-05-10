@@ -38,33 +38,9 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
     else if (dx > 30) setOpenSwipe(null);
   }
 
-  async function deleteRound(r: Round) {
-    if (
-      !confirm(
-        `Permanently delete this ${r.status} round at ${r.courses?.name ?? "the course"} on ${r.date}? Removes scores, games, and settlements. Cannot be undone.`
-      )
-    )
-      return;
-    setBusyId(r.id);
-    setErrFor(null);
-    const { error } = await sb.rpc("fn_delete_round", { p_round_id: r.id });
-    setBusyId(null);
-    if (error) {
-      // Show actionable error with an immediate "Archive instead" option.
-      // friendlyAuthError translates known error patterns; we also include
-      // the raw message so we can debug stuck rows.
-      const friendly = friendlyAuthError(error);
-      const raw = (error as any)?.message ?? "";
-      setErrFor({
-        id: r.id,
-        msg: `${friendly}${raw && !friendly.includes(raw) ? ` (${raw})` : ""}`
-      });
-      return;
-    }
-    setRounds((arr) => arr.filter((x) => x.id !== r.id));
-    setOpenSwipe(null);
-    router.refresh();
-  }
+  // deleteRound REMOVED from this UI as a P0 safety measure on 2026-05-10.
+  // Hard delete is admin-only via /admin/rounds going forward; the swipe
+  // drawer now only offers Archive (soft, reversible).
 
   async function archiveRound(r: Round) {
     if (
@@ -106,30 +82,26 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
             onTouchStart={onTouchStart}
             onTouchEnd={(e) => onTouchEnd(e, r.id)}
           >
-            {/* Action drawer behind the card — Archive + Delete */}
+            {/* Action drawer behind the card — Archive only by default.
+                Hard delete temporarily disabled in the swipe drawer to
+                prevent accidental data loss while we audit the delete
+                pipeline. Use /admin to permanently delete. */}
             <div className="absolute inset-y-0 right-0 flex items-stretch">
               <button
                 onClick={() => archiveRound(r)}
                 disabled={isBusy}
                 aria-label={`Archive round at ${r.courses?.name ?? "course"} on ${r.date}`}
-                className="bg-cream-100/15 hover:bg-cream-100/25 text-cream-50 px-4 font-medium text-xs transition-colors"
+                className="bg-cream-100/15 hover:bg-cream-100/25 text-cream-50 px-5 font-medium text-xs transition-colors"
+                title="Archive — round disappears from your dashboard but stays in records and stats. Can be restored from /admin."
               >
                 {isBusy ? "…" : "Archive"}
-              </button>
-              <button
-                onClick={() => deleteRound(r)}
-                disabled={isBusy}
-                aria-label={`Delete round at ${r.courses?.name ?? "course"} on ${r.date}`}
-                className="bg-red-600 hover:bg-red-700 text-cream-50 px-4 font-medium text-xs transition-colors"
-              >
-                {isBusy ? "…" : "Delete"}
               </button>
             </div>
 
             {/* Foreground card slides left when swiped open */}
             <div
               className="relative bg-brand-900 transition-transform"
-              style={{ transform: isOpen ? "translateX(-160px)" : "translateX(0)" }}
+              style={{ transform: isOpen ? "translateX(-92px)" : "translateX(0)" }}
             >
               <div className="card card-hover p-4 flex items-center justify-between gap-3">
                 <Link href={`/rounds/${r.id}`} className="flex-1 min-w-0">
@@ -160,17 +132,10 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
               </div>
             </div>
 
-            {/* Per-row error with a one-tap Archive fallback */}
+            {/* Per-row error */}
             {rowErr && (
-              <div className="card p-3 mt-1 border border-red-400/40 bg-red-500/10 text-xs text-red-200 flex items-center justify-between gap-3">
-                <span className="flex-1">{rowErr}</span>
-                <button
-                  type="button"
-                  onClick={() => archiveRound(r)}
-                  className="btn-secondary text-xs whitespace-nowrap"
-                >
-                  Archive instead →
-                </button>
+              <div className="card p-3 mt-1 border border-red-400/40 bg-red-500/10 text-xs text-red-200">
+                {rowErr}
               </div>
             )}
           </div>
