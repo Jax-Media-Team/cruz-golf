@@ -32,7 +32,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin/courses" className="btn-ghost">Courses</Link>
             <Link href="/admin/course-audit" className="btn-ghost">Course audit</Link>
             <Link href="/admin/feedback" className="btn-ghost">Feedback</Link>
-            <Link href="/admin/diagnostic" className="btn-ghost text-red-300">Diagnostic</Link>
           </nav>
           <span className="ml-auto text-xs text-cream-100/55">
             <Link href="/dashboard" className="text-gold-400 underline">← back to app</Link>
@@ -45,7 +44,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin/rounds" className="btn-ghost shrink-0">Rounds</Link>
           <Link href="/admin/courses" className="btn-ghost shrink-0">Courses</Link>
           <Link href="/admin/feedback" className="btn-ghost shrink-0">Feedback</Link>
-          <Link href="/admin/diagnostic" className="btn-ghost shrink-0 text-red-300">Diagnostic</Link>
         </nav>
       </header>
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">{children}</main>
