@@ -6,6 +6,7 @@ import { RoundHeaderActions } from "./header-actions";
 import { ClaimBanner } from "./claim-banner";
 import { UnfinalizeButton } from "./unfinalize-button";
 import { MarkPendingButton, ResumeRoundButton } from "./pending-controls";
+import { PressControls } from "./press-controls";
 import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,6 +73,30 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     .from("round_games")
     .select("id, game_type, name, stake_cents, allowance_pct, config")
     .eq("round_id", id);
+
+  // Manual presses — pending + accepted, hide expired/declined/withdrawn
+  // from the round-page (they're still in the audit log).
+  let presses: any[] = [];
+  try {
+    const { data: pressRows, error: pressErr } = await sb
+      .from("round_presses")
+      .select(
+        "id, game_id, segment_label, start_hole, end_hole, stake_cents, side_a_rp_ids, side_b_rp_ids, opened_by_rp_id, opened_at, accepted_at, declined_at, withdrawn_at, status"
+      )
+      .eq("round_id", id)
+      .in("status", ["pending", "accepted"])
+      .order("opened_at", { ascending: false });
+    if (!pressErr && pressRows) presses = pressRows;
+  } catch {
+    /* table missing — pre-0035 env */
+  }
+
+  // Resolve "my rp" for the press controls. Players have a profile_id;
+  // commissioners may be in the round as a player too. Null when the
+  // viewer isn't actually a player in this round.
+  const myRpId =
+    (rps ?? []).find((r: any) => r.players?.profile_id === user.id)?.id ??
+    null;
 
   // Stakes flag — used to decide whether to show the optional wagers tile.
   // The old handshake-required gate is gone; we no longer fetch ack rows.
@@ -191,6 +216,29 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       {claimCandidates.length > 0 && (
         <ClaimBanner roundId={id} candidates={claimCandidates} />
       )}
+
+      {/* Manual press controls — open / accept / decline / withdraw +
+          live display of accepted presses. Only renders for live or
+          pending rounds (finalized = no new presses; engine respects
+          the same gate). */}
+      {(round.status === "live" || round.status === "pending_finalization") &&
+        (rps?.length ?? 0) > 0 && (
+          <PressControls
+            roundId={id}
+            totalHoles={round.holes ?? 18}
+            rps={(rps ?? []).map((r: any) => ({
+              id: r.id,
+              player_id: r.player_id,
+              team_id: r.team_id,
+              display_name: r.players?.display_name ?? "Player",
+              is_me: r.players?.profile_id === user.id
+            }))}
+            games={(games ?? []) as any}
+            presses={presses as any}
+            myRpId={myRpId}
+            isCommissioner={isCommissioner}
+          />
+        )}
 
       {round.status === "finalized" && isCommissioner && (
         <div className="card p-4 flex items-center justify-between gap-3 border border-cream-100/15">

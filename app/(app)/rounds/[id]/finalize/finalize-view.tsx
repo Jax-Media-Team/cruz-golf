@@ -4,16 +4,24 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { minimumFlow, settleGame } from "@/lib/games";
+import { settleManualPress, type ManualPress, type HoleResult } from "@/lib/games/press";
+import { buildPlayerSheet } from "@/lib/scoring";
 import { generateRecap } from "@/lib/recap";
 import { SmackTalk } from "@/components/SmackTalk";
 import { ShareSheet } from "@/components/ShareSheet";
 import type { CourseHole, RoundGame, RoundPlayer, Score } from "@/lib/types";
+
+type ManualPressRow = ManualPress & {
+  status: string;
+  game_id: string | null;
+};
 
 export function FinalizeView({
   roundId,
   rps,
   scores,
   games,
+  manualPresses = [],
   totalHoles = 18,
   startingHole = 1
 }: {
@@ -21,6 +29,7 @@ export function FinalizeView({
   rps: any[];
   scores: Score[];
   games: any[];
+  manualPresses?: ManualPressRow[];
   totalHoles?: 9 | 18;
   startingHole?: number;
 }) {
@@ -71,6 +80,88 @@ export function FinalizeView({
     }
     lines.push({ game: g.name, perPlayer: m });
   }
+
+  // Manual presses — settle each one independently and add to totals.
+  // Per-press money distributes via the same loser-pays-stake / pot-
+  // splits-with-deterministic-remainder rule auto-presses use, keyed
+  // off the press's own side_a / side_b rp arrays (frozen at open
+  // time, so 6-6-6 partner rotations are handled correctly).
+  for (const press of manualPresses) {
+    if (press.status !== "accepted") continue;
+    if (press.side_a_rp_ids.length === 0 || press.side_b_rp_ids.length === 0) continue;
+
+    // Compute per-hole match-play results from A's perspective using
+    // each side's BEST gross score on that hole (best ball semantics —
+    // works for 1v1 Nassau and 2v2 best-ball alike). Net-or-gross
+    // matches whatever the parent game's mode is, but for v1 we use
+    // gross to keep the press model uncoupled from per-game allowance.
+    const sideASheets = press.side_a_rp_ids
+      .map((rpId) => players.find((p) => p.id === rpId))
+      .filter((p): p is RoundPlayer => !!p)
+      .map((p) => buildPlayerSheet(p, scores, holes));
+    const sideBSheets = press.side_b_rp_ids
+      .map((rpId) => players.find((p) => p.id === rpId))
+      .filter((p): p is RoundPlayer => !!p)
+      .map((p) => buildPlayerSheet(p, scores, holes));
+
+    const holeResults: HoleResult[] = holes.map((h) => {
+      const aScores = sideASheets
+        .map((s) => s.rows.find((r) => r.hole_number === h.hole_number)?.gross)
+        .filter((v): v is number => v != null);
+      const bScores = sideBSheets
+        .map((s) => s.rows.find((r) => r.hole_number === h.hole_number)?.gross)
+        .filter((v): v is number => v != null);
+      const aComplete = aScores.length === sideASheets.length;
+      const bComplete = bScores.length === sideBSheets.length;
+      if (!aComplete || !bComplete) {
+        return {
+          hole_number: h.hole_number,
+          a_won: false,
+          b_won: false,
+          push: false,
+          incomplete: true
+        };
+      }
+      const a = Math.min(...aScores);
+      const b = Math.min(...bScores);
+      return {
+        hole_number: h.hole_number,
+        a_won: a < b,
+        b_won: b < a,
+        push: a === b,
+        incomplete: false
+      };
+    });
+
+    const settled = settleManualPress(press, holeResults);
+    if (settled.result_delta == null || settled.result_delta === 0) continue;
+
+    // Apply pot. Same rule as press primitive: each loser pays stake,
+    // pot splits among winners with deterministic remainder.
+    const aWon = settled.result_delta > 0;
+    const winners = aWon ? press.side_a_rp_ids : press.side_b_rp_ids;
+    const losers = aWon ? press.side_b_rp_ids : press.side_a_rp_ids;
+    const pot = press.stake_cents * losers.length;
+    const m = new Map<string, number>();
+    for (const id of losers) {
+      const delta = -press.stake_cents;
+      totals.set(id, (totals.get(id) ?? 0) + delta);
+      m.set(id, delta);
+    }
+    const each = Math.floor(pot / winners.length);
+    const remainder = pot - each * winners.length;
+    const sortedWinners = [...winners].sort();
+    sortedWinners.forEach((id, i) => {
+      const delta = each + (i < remainder ? 1 : 0);
+      totals.set(id, (totals.get(id) ?? 0) + delta);
+      m.set(id, (m.get(id) ?? 0) + delta);
+    });
+    lines.push({
+      game: settled.label,
+      perPlayer: m
+    });
+  }
+
   const flows = minimumFlow(totals);
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
   const fmt = (c: number) => "$" + (Math.abs(c) / 100).toFixed(2);

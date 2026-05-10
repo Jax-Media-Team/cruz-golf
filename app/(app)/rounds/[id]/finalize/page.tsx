@@ -29,6 +29,22 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     .select("id, game_type, name, stake_cents, allowance_pct, config")
     .eq("round_id", id);
 
+  // Manual presses (accepted only) — settled alongside the auto-press
+  // chains. Defensive against the table not existing pre-0035.
+  let manualPresses: any[] = [];
+  try {
+    const { data: presses, error } = await sb
+      .from("round_presses")
+      .select(
+        "id, game_id, segment_label, start_hole, end_hole, stake_cents, side_a_rp_ids, side_b_rp_ids, status"
+      )
+      .eq("round_id", id)
+      .eq("status", "accepted");
+    if (!error && presses) manualPresses = presses;
+  } catch {
+    /* table missing — pre-0035 env */
+  }
+
   return (
     <div className="space-y-3">
       <RoundBreadcrumb
@@ -43,6 +59,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
         rps={rps ?? []}
         scores={scores ?? []}
         games={games ?? []}
+        manualPresses={manualPresses}
         totalHoles={(round.holes as 9 | 18) ?? 18}
         startingHole={round.starting_hole ?? 1}
       />

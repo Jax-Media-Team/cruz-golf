@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   detectAutoPresses,
   pressPotsBySide,
+  settleManualPress,
   type HoleResult,
+  type ManualPress,
   type PressOpts
 } from "@/lib/games/press";
 
@@ -288,5 +290,129 @@ describe("pressPotsBySide — money distribution", () => {
     // Net: everyone 0
     const total = [...out.values()].reduce((s, v) => s + v, 0);
     expect(total).toBe(0);
+  });
+});
+
+describe("settleManualPress — DB-driven press lifecycle", () => {
+  const press: ManualPress = {
+    id: "press-1",
+    segment_label: "Nassau back",
+    start_hole: 11,
+    end_hole: 18,
+    stake_cents: 1000,
+    side_a_rp_ids: ["rp-a"],
+    side_b_rp_ids: ["rp-b"]
+  };
+
+  it("settles to A-positive when A wins more holes in [start, end]", () => {
+    // Holes 1-10 ignored (out of range). Holes 11-18: A wins 5, B wins 2, 1 push.
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 10 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(11, "a"),
+      holeResult(12, "a"),
+      holeResult(13, "b"),
+      holeResult(14, "a"),
+      holeResult(15, "push"),
+      holeResult(16, "a"),
+      holeResult(17, "b"),
+      holeResult(18, "a")
+    ];
+    const out = settleManualPress(press, holes);
+    expect(out.start_hole).toBe(11);
+    expect(out.end_hole).toBe(18);
+    expect(out.result_delta).toBe(3); // A: 5, B: 2, delta = +3
+    expect(out.label).toContain("manual press");
+  });
+
+  it("returns null result_delta when ANY hole in range is incomplete", () => {
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 10 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(11, "a"),
+      holeResult(12, "a"),
+      holeResult(13, "b"),
+      holeResult(14, "pending"), // unscored
+      holeResult(15, "push"),
+      holeResult(16, "a"),
+      holeResult(17, "b"),
+      holeResult(18, "a")
+    ];
+    const out = settleManualPress(press, holes);
+    expect(out.result_delta).toBeNull();
+  });
+
+  it("ignores holes outside [start_hole, end_hole]", () => {
+    // A wins every hole on the front 9 — should NOT count.
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 9 }, (_, i) => holeResult(i + 1, "a")),
+      ...Array.from({ length: 9 }, (_, i) => holeResult(i + 10, "push"))
+    ];
+    const out = settleManualPress(press, holes);
+    expect(out.result_delta).toBe(0); // all pushes in range 11-18
+  });
+
+  it("zero result_delta on a halved press", () => {
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 10 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(11, "a"),
+      holeResult(12, "b"),
+      holeResult(13, "push"),
+      holeResult(14, "a"),
+      holeResult(15, "b"),
+      holeResult(16, "a"),
+      holeResult(17, "b"),
+      holeResult(18, "push")
+    ];
+    const out = settleManualPress(press, holes);
+    expect(out.result_delta).toBe(0);
+  });
+
+  it("integrates with pressPotsBySide for zero-sum money distribution", () => {
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 10 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(11, "a"),
+      holeResult(12, "a"),
+      holeResult(13, "a"),
+      holeResult(14, "a"),
+      holeResult(15, "push"),
+      holeResult(16, "a"),
+      holeResult(17, "a"),
+      holeResult(18, "a")
+    ];
+    const settled = settleManualPress(press, holes);
+    const pots = pressPotsBySide([settled], ["rp-a"], ["rp-b"]);
+    expect(pots.get("rp-a")).toBe(1000);
+    expect(pots.get("rp-b")).toBe(-1000);
+    const total = [...pots.values()].reduce((s, v) => s + v, 0);
+    expect(total).toBe(0);
+  });
+
+  it("works for 2v2 partner sides", () => {
+    const teamPress: ManualPress = {
+      ...press,
+      side_a_rp_ids: ["rp-a1", "rp-a2"],
+      side_b_rp_ids: ["rp-b1", "rp-b2"]
+    };
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 10 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(11, "a"),
+      holeResult(12, "a"),
+      holeResult(13, "b"),
+      holeResult(14, "a"),
+      holeResult(15, "push"),
+      holeResult(16, "a"),
+      holeResult(17, "b"),
+      holeResult(18, "a")
+    ];
+    const settled = settleManualPress(teamPress, holes);
+    const pots = pressPotsBySide(
+      [settled],
+      teamPress.side_a_rp_ids,
+      teamPress.side_b_rp_ids
+    );
+    // Each B player loses $10. Pot = $20, splits between A1+A2 = $10 each.
+    expect(pots.get("rp-a1")).toBe(1000);
+    expect(pots.get("rp-a2")).toBe(1000);
+    expect(pots.get("rp-b1")).toBe(-1000);
+    expect(pots.get("rp-b2")).toBe(-1000);
   });
 });

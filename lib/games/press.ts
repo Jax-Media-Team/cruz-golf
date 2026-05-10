@@ -179,6 +179,71 @@ export function detectAutoPresses(
 }
 
 /**
+ * Manual press — a press opened explicitly by a player during a round
+ * (rather than auto-fired by detectAutoPresses). Stored in the
+ * `round_presses` DB table; settlement reads accepted rows and runs
+ * them through `settleManualPress()` below at finalize time.
+ *
+ * Sides A and B are stored as round_player_id arrays at open time and
+ * persist for settlement. This is important for 6-6-6 where partner
+ * pairings rotate per segment — the settlement engine doesn't have to
+ * re-derive who was paired with whom; it's frozen at press-open time.
+ */
+export type ManualPress = {
+  /** Stable id from the DB row. */
+  id: string;
+  segment_label: string;
+  start_hole: number;
+  end_hole: number;
+  stake_cents: number;
+  /** Round-player ids on each side. Order doesn't matter; settlement
+   *  treats sets, not arrays. */
+  side_a_rp_ids: string[];
+  side_b_rp_ids: string[];
+};
+
+/**
+ * Settle a single manual press given the per-hole results from A's
+ * perspective. Matches the shape of detectAutoPresses output so the
+ * downstream pressPotsBySide() can apply manual + auto presses
+ * uniformly.
+ *
+ * Pushes contribute 0 to the press delta. Incomplete holes contribute
+ * 0 too — but if ANY hole in [start_hole, end_hole] is incomplete, the
+ * press is unsettled (result_delta = null). This matches the auto-press
+ * convention and means manual presses only settle when the entire
+ * covered range has scores.
+ */
+export function settleManualPress(
+  press: ManualPress,
+  holes: HoleResult[]
+): PressMatch {
+  const inRange = holes.filter(
+    (h) => h.hole_number >= press.start_hole && h.hole_number <= press.end_hole
+  );
+  let delta = 0;
+  let allComplete = true;
+  for (const h of inRange) {
+    if (h.incomplete) {
+      allComplete = false;
+      continue;
+    }
+    if (h.a_won) delta += 1;
+    else if (h.b_won) delta -= 1;
+  }
+  return {
+    label: `${press.segment_label} · manual press`,
+    segment_label: press.segment_label,
+    start_hole: press.start_hole,
+    end_hole: press.end_hole,
+    stake_cents: press.stake_cents,
+    trigger_hole: press.start_hole - 1, // synthesized for compatibility
+    trigger_delta: 0, // n/a for manual
+    result_delta: allComplete ? delta : null
+  };
+}
+
+/**
  * Convenience: aggregate per-side cents won/lost across a list of
  * settled presses. Pushes (delta=0) and unsettled presses (delta=null)
  * contribute zero. Mirrors the side-pot distribution rule used by
