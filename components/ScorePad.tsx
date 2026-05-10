@@ -81,7 +81,9 @@ export function ScorePad({
     return value;
   })();
 
-  const expected = current.par + strokesThisHole;
+  // Default-stroke value for the +/- buttons. ALWAYS par — handicap
+  // strokes only affect the net leaderboard, never the gross input.
+  const defaultGross = current.par;
 
   return (
     <div className="space-y-4 select-none">
@@ -104,11 +106,22 @@ export function ScorePad({
           <div className="text-xs text-cream-100/60 mt-0.5 flex items-center justify-end gap-2">
             <span>SI {current.stroke_index}</span>
             {strokesThisHole > 0 && (
-              <span className="inline-flex items-center gap-1 text-gold-400">
+              <span
+                className="inline-flex items-center gap-1"
+                title={
+                  strokesThisHole === 1
+                    ? "You get a stroke on this hole (counts toward net score)"
+                    : `You get ${strokesThisHole} strokes on this hole (counts toward net score)`
+                }
+                aria-label={
+                  strokesThisHole === 1
+                    ? "Receives a stroke on this hole"
+                    : `Receives ${strokesThisHole} strokes on this hole`
+                }
+              >
                 {Array.from({ length: Math.min(strokesThisHole, 3) }, (_, i) => (
-                  <span key={i} className="w-1.5 h-1.5 rounded-full bg-gold-500" />
+                  <span key={i} className="w-2 h-2 rounded-full bg-gold-500" />
                 ))}
-                <span className="ml-0.5">+{strokesThisHole}</span>
               </span>
             )}
           </div>
@@ -167,7 +180,7 @@ export function ScorePad({
         <div className="flex items-center justify-center gap-5 sm:gap-8">
           <button
             className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50 w-16 h-16 sm:w-20 sm:h-20 text-3xl active:scale-95 transition-transform"
-            onClick={() => set(Math.max(1, (score ?? expected) - 1))}
+            onClick={() => set(Math.max(1, (score ?? defaultGross) - 1))}
             aria-label="Decrease score"
           >
             −

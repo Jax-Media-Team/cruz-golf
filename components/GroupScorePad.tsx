@@ -139,11 +139,22 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave, onF
                   <div className="flex items-center gap-2">
                     <span className="font-serif text-lg text-cream-50 truncate">{p.display_name}</span>
                     {st > 0 && (
-                      <span className="inline-flex items-center gap-0.5 text-gold-400 text-[10px]">
+                      <span
+                        className="inline-flex items-center gap-0.5"
+                        title={
+                          st === 1
+                            ? "Gets a stroke on this hole (counts toward net score)"
+                            : `Gets ${st} strokes on this hole (counts toward net score)`
+                        }
+                        aria-label={
+                          st === 1
+                            ? `${p.display_name} receives a stroke on this hole`
+                            : `${p.display_name} receives ${st} strokes on this hole`
+                        }
+                      >
                         {Array.from({ length: Math.min(st, 3) }, (_, i) => (
-                          <span key={i} className="w-1.5 h-1.5 rounded-full bg-gold-500" />
+                          <span key={i} className="w-2 h-2 rounded-full bg-gold-500" />
                         ))}
-                        <span className="ml-0.5">+{st}</span>
                       </span>
                     )}
                   </div>
@@ -164,7 +175,10 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave, onF
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     className="btn bg-brand-900/70 border border-cream-100/15 text-cream-50 w-11 h-11 text-2xl active:scale-95"
-                    onClick={() => onSave(p.id, current.hole_number, Math.max(1, (s ?? current.par + st) - 1))}
+                    // First tap from blank starts at par. Strokes only affect
+                    // the net leaderboard; gross entry stays identical for
+                    // every player so it feels golf-natural.
+                    onClick={() => onSave(p.id, current.hole_number, Math.max(1, (s ?? current.par) - 1))}
                     aria-label={`Decrease ${p.display_name} score`}
                   >
                     −
@@ -177,7 +191,7 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave, onF
                   </div>
                   <button
                     className="btn bg-gold-500 text-brand-900 w-11 h-11 text-2xl active:scale-95"
-                    onClick={() => onSave(p.id, current.hole_number, (s ?? current.par + st - 1) + 1)}
+                    onClick={() => onSave(p.id, current.hole_number, (s ?? current.par - 1) + 1)}
                     aria-label={`Increase ${p.display_name} score`}
                   >
                     +

@@ -2,11 +2,21 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { RoundsList } from "./rounds-list";
+import {
+  OnboardingTour,
+  ReplayTourButton
+} from "@/components/OnboardingTour";
 
 export default async function DashboardPage() {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) redirect("/login?next=/dashboard");
+
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("display_name")
+    .eq("id", user.id)
+    .maybeSingle();
 
   // Get the user's first group (if any) so we can show context-aware onboarding state.
   const { data: groups } = await sb.from("groups").select("id, name").limit(1);
@@ -87,14 +97,30 @@ export default async function DashboardPage() {
     }
   ];
 
+  // First-visit auto-tour: only triggered for users who have never finished
+  // a round AND have no players or courses set up yet. After the first
+  // round is in, we never auto-show the tour. ReplayTourButton stays
+  // visible so it can be re-triggered manually.
+  const showAutoTour = !hasRounds && !hasPlayers;
+
   return (
     <div className="space-y-6">
-      <header className="flex items-end justify-between gap-3">
+      <OnboardingTour
+        displayName={profile?.display_name ?? user.email ?? null}
+        eligibleForAutoShow={showAutoTour}
+      />
+
+      <header className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <p className="h-eyebrow">{groupName ?? "Clubhouse"}</p>
           <h1 className="h-display text-4xl text-cream-50 mt-1">Rounds</h1>
         </div>
-        <Link href="/rounds/new" className="btn-primary">New round</Link>
+        <div className="flex items-center gap-2">
+          <ReplayTourButton
+            displayName={profile?.display_name ?? user.email ?? null}
+          />
+          <Link href="/rounds/new" className="btn-primary">New round</Link>
+        </div>
       </header>
 
       {showChecklist && (
