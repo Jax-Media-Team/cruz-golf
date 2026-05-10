@@ -2,7 +2,25 @@ import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { JgccQuickAdd } from "./jgcc-quick-add";
 import { TemplateCard } from "./template-card";
+import {
+  partitionGroupCourses,
+  filterTemplates,
+  hasJgccInGroup as hasJgccInGroupFn,
+  type TemplateCardData
+} from "@/lib/courses-page";
 
+/**
+ * Courses page layout — three clearly-labeled sections so a course never
+ * appears in more than one place at the same time:
+ *
+ *   YOUR COURSES   — alive group courses (the only section visible by default)
+ *   COURSE LIBRARY — cross-group templates, filtered to exclude any
+ *                    name-collision with your active courses
+ *   ARCHIVED       — only visible when ?archived=1
+ *
+ * The Quick-Add tile shows ONLY when the group has zero JGCC copies.
+ * If a JGCC copy exists, it appears once in YOUR COURSES — never twice.
+ */
 export default async function CoursesPage({
   searchParams
 }: {
@@ -15,24 +33,21 @@ export default async function CoursesPage({
   const { data: groups } = await sb.from("groups").select("id, name").limit(1);
   const groupId = groups?.[0]?.id;
 
-  // Group courses (alive by default; show archived too when ?archived=1).
-  let q = sb
+  // Group courses — pull alive + archived in one query so we can show counts
+  // and the archived section without a second round-trip.
+  const { data: courses } = await sb
     .from("courses")
     .select("id, name, city, state, course_tees(id), deleted_at")
     .eq("group_id", groupId ?? "")
     .order("name");
-  if (!showArchived) q = q.is("deleted_at", null);
-  const { data: courses } = await q;
 
-  // Pull template courses for the cross-group library. Defensive on missing
-  // is_template column (pre-0020 envs).
-  let templates: Array<{
-    id: string;
-    name: string;
-    city: string | null;
-    state: string | null;
-    tee_count: number;
-  }> = [];
+  const { alive: aliveGroupCourses, archived: archivedGroupCourses } =
+    partitionGroupCourses((courses ?? []) as any);
+
+  // Pull cross-group templates. Defensive on missing is_template column.
+  // Filtering rules live in `filterTemplates` (lib/courses-page.ts) so the
+  // "no course shows up in two sections" invariant has regression tests.
+  let templates: TemplateCardData[] = [];
   try {
     const { data, error } = await sb
       .from("courses")
@@ -41,29 +56,16 @@ export default async function CoursesPage({
       .is("deleted_at", null)
       .order("name");
     if (!error && data) {
-      templates = data.map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        city: t.city,
-        state: t.state,
-        tee_count: (t.course_tees ?? []).length
-      }));
+      templates = filterTemplates(data as any, (courses ?? []) as any);
     }
   } catch {
     /* migration not yet applied — show no templates */
   }
 
-  const aliveGroupCourses = (courses ?? []).filter((c: any) => !c.deleted_at);
-  const archivedGroupCourses = (courses ?? []).filter((c: any) => !!c.deleted_at);
-
-  // Find Patrick's existing JGCC course (if any) so the Quick Add card can
-  // turn into an "Open JGCC" button instead of creating a duplicate.
-  const existingJgcc = aliveGroupCourses.find((c: any) =>
-    (c.name as string).toLowerCase().includes("jacksonville golf")
-  );
+  const hasJgccInGroup = hasJgccInGroupFn(aliveGroupCourses);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="h-eyebrow">Layouts</p>
@@ -71,6 +73,7 @@ export default async function CoursesPage({
           <p className="text-xs text-cream-100/55 mt-1">
             {aliveGroupCourses.length} active
             {archivedGroupCourses.length > 0 && ` · ${archivedGroupCourses.length} archived`}
+            {templates.length > 0 && ` · ${templates.length} template${templates.length === 1 ? "" : "s"} available`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -85,61 +88,41 @@ export default async function CoursesPage({
         </div>
       </header>
 
-      {/* JGCC quick-add tile: shows ONE of three states.
-          1. Course already in your group → "Open JGCC →"
-          2. Template available + no copy yet → small Clone CTA
-          3. No template, no copy → original Quick Add */}
-      {existingJgcc ? (
-        <Link
-          href={`/courses/${existingJgcc.id}`}
-          className="card card-hover p-5 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors"
-        >
-          <div className="flex items-center gap-4">
-            <span className="text-3xl">🌴</span>
-            <div>
-              <div className="font-serif text-xl text-cream-50">
-                Jacksonville Golf & Country Club
-              </div>
-              <p className="text-xs text-cream-100/65 mt-0.5">
-                Already in your group&apos;s library — open to manage tees, pars, SI, yardages.
-              </p>
-            </div>
+      {/* Quick-add: shows ONLY when no JGCC exists yet in this group.
+          Once one does, the regular YOUR COURSES list shows it — no
+          duplicate hero tile, no two cards for the same course. */}
+      {!hasJgccInGroup && groupId && <JgccQuickAdd groupId={groupId} />}
+
+      {/* Section 1: YOUR COURSES (group's alive courses) */}
+      {aliveGroupCourses.length > 0 && (
+        <section className="space-y-2">
+          <p className="h-eyebrow text-gold-400">Your courses</p>
+          <div className="space-y-2">
+            {aliveGroupCourses.map((c: any) => (
+              <Link
+                key={c.id}
+                href={`/courses/${c.id}`}
+                prefetch={false}
+                className="card card-hover p-4 flex items-center justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-cream-50 truncate">{c.name}</div>
+                  <div className="text-sm text-cream-100/55 truncate">
+                    {[c.city, c.state].filter(Boolean).join(", ")}
+                  </div>
+                </div>
+                <span className="text-sm text-cream-100/55 shrink-0">
+                  {c.course_tees?.length ?? 0} tee
+                  {(c.course_tees?.length ?? 0) === 1 ? "" : "s"}
+                </span>
+              </Link>
+            ))}
           </div>
-          <span className="pill bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30 text-xs">
-            Already added
-          </span>
-        </Link>
-      ) : (
-        groupId && <JgccQuickAdd groupId={groupId} />
+        </section>
       )}
 
-      {/* Community library — templates anyone can clone. We hide a template
-          if your group already has a course with the same name (no duplicates). */}
-      {templates.length > 0 && (() => {
-        const aliveNamesLower = new Set(
-          aliveGroupCourses.map((c: any) => (c.name as string).toLowerCase())
-        );
-        const showableTemplates = templates.filter(
-          (t) => !aliveNamesLower.has(t.name.toLowerCase())
-        );
-        if (showableTemplates.length === 0) return null;
-        return (
-          <section className="space-y-2">
-            <p className="h-eyebrow text-gold-400">Course library</p>
-            <p className="text-xs text-cream-100/55">
-              Clone any of these into your group. You&apos;ll get a fresh copy
-              you can edit independently.
-            </p>
-            <div className="space-y-2">
-              {showableTemplates.map((t) => (
-                <TemplateCard key={t.id} template={t} />
-              ))}
-            </div>
-          </section>
-        );
-      })()}
-
-      {aliveGroupCourses.length === 0 && !existingJgcc && (
+      {/* Empty state — shown only when there's truly nothing to show. */}
+      {aliveGroupCourses.length === 0 && !hasJgccInGroup && (
         <div className="card p-8 text-center text-cream-100/70 space-y-2">
           <p>No courses yet.</p>
           <p className="text-xs text-cream-100/55">
@@ -156,31 +139,32 @@ export default async function CoursesPage({
         </div>
       )}
 
-      <div className="space-y-2">
-        {aliveGroupCourses.map((c: any) => (
-          <Link
-            key={c.id}
-            href={`/courses/${c.id}`}
-            prefetch={false}
-            className="card card-hover p-4 flex items-center justify-between"
-          >
-            <div className="min-w-0">
-              <div className="font-medium text-cream-50 truncate">{c.name}</div>
-              <div className="text-sm text-cream-100/55 truncate">
-                {[c.city, c.state].filter(Boolean).join(", ")}
-              </div>
-            </div>
-            <span className="text-sm text-cream-100/55 shrink-0">
-              {c.course_tees?.length ?? 0} tee{(c.course_tees?.length ?? 0) === 1 ? "" : "s"}
-            </span>
-          </Link>
-        ))}
-      </div>
+      {/* Section 2: COURSE LIBRARY (cross-group templates only).
+          Already filtered above to exclude any course present in your
+          group, by id AND by name. */}
+      {templates.length > 0 && (
+        <section className="space-y-2">
+          <p className="h-eyebrow text-gold-400">Course library</p>
+          <p className="text-xs text-cream-100/55">
+            Community templates from other groups. Clone one to add a fresh,
+            editable copy to your group.
+          </p>
+          <div className="space-y-2">
+            {templates.map((t) => (
+              <TemplateCard key={t.id} template={t} />
+            ))}
+          </div>
+        </section>
+      )}
 
-      {/* Archived section */}
+      {/* Section 3: ARCHIVED — only when ?archived=1 + something to show. */}
       {showArchived && archivedGroupCourses.length > 0 && (
         <section className="space-y-2 mt-6">
           <p className="h-eyebrow text-cream-100/45">Archived</p>
+          <p className="text-xs text-cream-100/45">
+            Hidden from the main list. Round history is preserved. Restore from the
+            course detail page.
+          </p>
           <div className="space-y-2">
             {archivedGroupCourses.map((c: any) => (
               <Link
