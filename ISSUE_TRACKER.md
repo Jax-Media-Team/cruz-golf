@@ -159,7 +159,7 @@ wagers) are queued in the engine-work table.
 | 1000-ROUND-TESTS | Property-based simulation: zero-sum, min-flow drains to zero | ✅ shipped (5 invariants × 200 random rounds) |
 | PRESS-OPTIONS-NON-NASSAU | Best Ball, 6-6-6 should support presses too | ⏳ open — engine work, ~3-4h |
 | SHOTGUN-START-AWARENESS | Auto-finalize math handles shotgun starts | ✅ counts entries, not "did they reach 18" |
-| AUDIT-LOG-DESTRUCTIVE | Trace destructive ops (delete round, archive player) | ⏳ open — needs new audit table |
+| AUDIT-LOG-DESTRUCTIVE | Trace destructive ops (delete round, archive player) | ✅ shipped — 0027 adds `destructive_audit_log` table, `fn_log_destructive` helper, augments archive/restore/pending/resume/verify/template-flag RPCs to write audit rows. Append-only via RLS, admin-read-only. /admin overview shows last 8 entries. |
 
 ## 🧑‍🤝‍🧑 Social / group features (the differentiator)
 
@@ -326,6 +326,7 @@ including the override-always-wins safety property.
 | 0024 | applied | course archive + JGCC dedupe RPCs |
 | 0025 | **awaiting your apply** | round lifecycle: 'pending_finalization' status + fn_mark_round_pending + fn_resume_round. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
 | 0026 | **awaiting your apply** | course library v2: verification_status + submitted_by + admin RPCs + 13 NE FL priority course shells (placeholder status) + JGCC template stub. Verification checklist at `supabase/migrations/VERIFY_0025_0026.md` |
+| 0027 | **awaiting your apply** | destructive_audit_log table + fn_log_destructive helper + augmented lifecycle RPCs (archive/restore round + course, mark/resume pending, verify, template flag) write audit rows. Append-only by RLS — no UPDATE/DELETE policies. Read access platform-admin-only. |
 
 ---
 

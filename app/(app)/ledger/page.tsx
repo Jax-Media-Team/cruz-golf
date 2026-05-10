@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+  buildBiggestPotSignal,
+  fmtMoneyCents,
+  type ClubhouseRound,
+  type ClubhouseSettlement
+} from "@/lib/clubhouse";
 
 export default async function LedgerPage() {
   const sb = await supabaseServer();
@@ -86,6 +92,26 @@ export default async function LedgerPage() {
     .map(([pid, t]) => ({ pid, ...t }))
     .sort((a, b) => b.net_cents - a.net_cents);
 
+  // "Biggest pot ever" — single round that moved the most money in the
+  // group's history. Surfaced as a calm callout below the standings.
+  const chRounds: ClubhouseRound[] = finalizedRounds.map((r: any) => ({
+    id: r.id,
+    date: r.date,
+    status: "finalized" as const,
+    course_name: r.courses?.name ?? null,
+    course_id: null,
+    spectator_token: null,
+    holes: 18
+  }));
+  const chSettles: ClubhouseSettlement[] = ((settlements as any[]) ?? []).map((s) => ({
+    round_id: s.round_id,
+    round_date: "",
+    from_round_player_id: s.from_round_player_id,
+    to_round_player_id: s.to_round_player_id,
+    amount_cents: s.amount_cents
+  }));
+  const biggestPot = buildBiggestPotSignal(chRounds, chSettles);
+
   const fmt = (cents: number) => {
     const sign = cents > 0 ? "+" : cents < 0 ? "−" : "";
     return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
@@ -146,6 +172,26 @@ export default async function LedgerPage() {
             ))}
           </ol>
         </div>
+      )}
+
+      {biggestPot && (
+        <Link
+          href={`/rounds/${biggestPot.round_id}`}
+          className="card card-hover p-4 flex items-center justify-between gap-3 hover:bg-brand-900/70 transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="h-eyebrow text-gold-400">Biggest pot to date</p>
+            <p className="text-cream-50 truncate mt-0.5">
+              {biggestPot.course_name ?? "Round"} · {biggestPot.date}
+            </p>
+            <p className="text-[11px] text-cream-100/55 mt-0.5">
+              {biggestPot.edges} settlement{biggestPot.edges === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="font-serif text-2xl text-gold-400 tabular-nums shrink-0">
+            {fmtMoneyCents(biggestPot.total_cents_moved)}
+          </div>
+        </Link>
       )}
 
       <div className="space-y-2">

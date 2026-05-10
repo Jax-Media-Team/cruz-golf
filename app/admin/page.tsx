@@ -70,6 +70,28 @@ export default async function AdminOverview() {
     .order("created_at", { ascending: false })
     .limit(20);
 
+  // Recent destructive-op log — defensive fetch (table doesn't exist
+  // until 0027 is applied; we silently skip if missing).
+  let recentAuditLog: Array<{
+    id: string;
+    occurred_at: string;
+    actor_profile_id: string | null;
+    kind: string;
+    target_id: string;
+    target_table: string;
+    detail: any;
+  }> = [];
+  try {
+    const { data, error } = await sb
+      .from("destructive_audit_log")
+      .select("id, occurred_at, actor_profile_id, kind, target_id, target_table, detail")
+      .order("occurred_at", { ascending: false })
+      .limit(8);
+    if (!error && data) recentAuditLog = data as any;
+  } catch {
+    /* table not yet present — admin tile silently hides */
+  }
+
   // ----- Computed analytics -----
   // Most played courses
   const courseRoundCount = new Map<string, number>();
@@ -290,6 +312,31 @@ export default async function AdminOverview() {
           </div>
         )}
       </section>
+
+      {recentAuditLog.length > 0 && (
+        <section className="card p-4 space-y-2">
+          <h2 className="font-serif text-lg text-cream-50">Recent admin activity</h2>
+          <p className="text-[11px] text-cream-100/55">
+            Append-only audit trail of destructive ops (archive, restore,
+            finalize, verify, lifecycle transitions). Read-only.
+          </p>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {recentAuditLog.map((entry) => (
+              <li
+                key={entry.id}
+                className="py-2 flex items-center justify-between gap-3"
+              >
+                <span className="text-cream-50 truncate font-mono text-xs">
+                  {entry.kind}
+                </span>
+                <span className="text-[11px] text-cream-100/55 tabular-nums shrink-0">
+                  {new Date(entry.occurred_at).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-4 space-y-3">

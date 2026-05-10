@@ -171,6 +171,35 @@ export type CourseMasterySignal = {
   };
 };
 
+export type HoleMasterySignal = {
+  course_id: string;
+  course_name: string;
+  hole_number: number;
+  par: number;
+  leader: {
+    player_id: string;
+    display_name: string;
+    /** Average gross on this hole. Lower = better. */
+    avg_score: number;
+    /** Avg score minus par. Negative = under par on average. */
+    vs_par: number;
+    /** How many times the player has scored this hole. */
+    hole_count: number;
+  };
+};
+
+export type BiggestPotSignal = {
+  /** Round where the largest cents-moved event occurred. */
+  round_id: string;
+  date: string;
+  course_name: string | null;
+  /** Total absolute cents that changed hands in this round across all
+   *  settlements (sum of all settlement edges). */
+  total_cents_moved: number;
+  /** How many distinct settlement edges this round had. */
+  edges: number;
+};
+
 export type MilestoneSignal = {
   player_id: string;
   display_name: string;
@@ -204,6 +233,13 @@ export type ClubhouseBundle = {
   partners: PartnerSignal[];
   lifetime: GroupLifetimeSignal;
   course_mastery: CourseMasterySignal[];
+  /** Per-(course, hole) leaders. Surfaced in restrained sub-cards
+   *  ("Mitch owns hole 4 at JGCC: 3.4 avg, 3 plays"). */
+  hole_mastery: HoleMasterySignal[];
+  /** Single biggest-pot round in the group's history. Surfaced when
+   *  meaningfully large (≥ $50 moved). Null when there's nothing
+   *  noteworthy. */
+  biggest_pot: BiggestPotSignal | null;
   /** Milestones from finalized rounds in the last `windowDays` only —
    *  surfacing yesterday's first sub-80 round is meaningful; surfacing
    *  one from 9 months ago is filler. */
@@ -1107,6 +1143,183 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+/**
+ * Hole mastery — for every (course, hole) the group has played at least
+ * `minPlays` finalized times, picks the player with the lowest average
+ * score on that hole. Sorted hardest-hole-first (highest avg-vs-par
+ * across all leaders).
+ *
+ * Tone: just data ("Mitch · 3.4 avg · 5 plays at JGCC hole 4"). No
+ * "owns the hole" language — UI decides phrasing.
+ */
+export function buildHoleMasterySignals(
+  rounds: ClubhouseRound[],
+  rps: ClubhouseRoundPlayer[],
+  scores: ClubhouseScore[],
+  opts: { minPlays?: number } = {}
+): HoleMasterySignal[] {
+  const minPlays = opts.minPlays ?? 3;
+  const finalizedRounds = new Map<
+    string,
+    { course_id: string; course_name: string }
+  >();
+  for (const r of rounds) {
+    if (r.status !== "finalized") continue;
+    if (!r.course_id) continue;
+    finalizedRounds.set(r.id, {
+      course_id: r.course_id,
+      course_name: r.course_name ?? "Course"
+    });
+  }
+
+  // rp_id -> { round_id, player_id, display_name }
+  const rpMeta = new Map<
+    string,
+    { round_id: string; player_id: string; display_name: string }
+  >();
+  for (const rp of rps) {
+    rpMeta.set(rp.round_player_id, {
+      round_id: rp.round_id,
+      player_id: rp.player_id,
+      display_name: rp.display_name
+    });
+  }
+
+  // (course_id, hole_number, player_id) -> { sum_gross, plays, par, name, course_name }
+  type Agg = {
+    course_id: string;
+    course_name: string;
+    hole_number: number;
+    par: number;
+    player_id: string;
+    display_name: string;
+    sum_gross: number;
+    plays: number;
+  };
+  const agg = new Map<string, Agg>();
+  for (const s of scores) {
+    if (s.gross == null) continue;
+    const meta = rpMeta.get(s.round_player_id);
+    if (!meta) continue;
+    const round = finalizedRounds.get(meta.round_id);
+    if (!round) continue;
+    const key = `${round.course_id}|${s.hole_number}|${meta.player_id}`;
+    const existing = agg.get(key) ?? {
+      course_id: round.course_id,
+      course_name: round.course_name,
+      hole_number: s.hole_number,
+      par: s.par,
+      player_id: meta.player_id,
+      display_name: meta.display_name,
+      sum_gross: 0,
+      plays: 0
+    };
+    existing.sum_gross += s.gross;
+    existing.plays += 1;
+    agg.set(key, existing);
+  }
+
+  // Group by (course_id, hole_number); pick the lowest-avg leader with
+  // ≥minPlays.
+  type HoleBucket = {
+    course_id: string;
+    course_name: string;
+    hole_number: number;
+    par: number;
+    rows: Agg[];
+  };
+  const byHole = new Map<string, HoleBucket>();
+  for (const e of agg.values()) {
+    if (e.plays < minPlays) continue;
+    const key = `${e.course_id}|${e.hole_number}`;
+    const b = byHole.get(key) ?? {
+      course_id: e.course_id,
+      course_name: e.course_name,
+      hole_number: e.hole_number,
+      par: e.par,
+      rows: []
+    };
+    b.rows.push(e);
+    byHole.set(key, b);
+  }
+
+  const out: HoleMasterySignal[] = [];
+  for (const b of byHole.values()) {
+    b.rows.sort((a, c) => a.sum_gross / a.plays - c.sum_gross / c.plays);
+    const leader = b.rows[0];
+    if (!leader) continue;
+    const avg = leader.sum_gross / leader.plays;
+    out.push({
+      course_id: b.course_id,
+      course_name: b.course_name,
+      hole_number: b.hole_number,
+      par: b.par,
+      leader: {
+        player_id: leader.player_id,
+        display_name: leader.display_name,
+        avg_score: round1(avg),
+        vs_par: round1(avg - b.par),
+        hole_count: leader.plays
+      }
+    });
+  }
+  // Hardest-hole-first (highest leader vs_par means even the leader is
+  // struggling — that's the most narratively interesting hole).
+  out.sort((a, b) => b.leader.vs_par - a.leader.vs_par);
+  return out;
+}
+
+/**
+ * Biggest-pot signal — the single finalized round in the group's
+ * history with the largest absolute cents-moved across all settlements.
+ * Returns null when nothing's meaningfully large (default ≥ $50 moved).
+ */
+export function buildBiggestPotSignal(
+  rounds: ClubhouseRound[],
+  settlements: ClubhouseSettlement[],
+  opts: { minCents?: number } = {}
+): BiggestPotSignal | null {
+  const minCents = opts.minCents ?? 5000;
+  const finalizedRounds = new Map<
+    string,
+    { date: string; course_name: string | null }
+  >();
+  for (const r of rounds) {
+    if (r.status !== "finalized") continue;
+    finalizedRounds.set(r.id, {
+      date: r.date,
+      course_name: r.course_name
+    });
+  }
+  type Pot = { round_id: string; total: number; edges: number };
+  const byRound = new Map<string, Pot>();
+  for (const s of settlements) {
+    if (!finalizedRounds.has(s.round_id)) continue;
+    const e = byRound.get(s.round_id) ?? {
+      round_id: s.round_id,
+      total: 0,
+      edges: 0
+    };
+    e.total += s.amount_cents; // settlements are already absolute (positive)
+    e.edges += 1;
+    byRound.set(s.round_id, e);
+  }
+  let best: Pot | null = null;
+  for (const p of byRound.values()) {
+    if (p.total < minCents) continue;
+    if (!best || p.total > best.total) best = p;
+  }
+  if (!best) return null;
+  const meta = finalizedRounds.get(best.round_id)!;
+  return {
+    round_id: best.round_id,
+    date: meta.date,
+    course_name: meta.course_name,
+    total_cents_moved: best.total,
+    edges: best.edges
+  };
+}
+
 // ---- Convenience: combined builder ----
 
 export function buildClubhouse(input: {
@@ -1148,6 +1361,8 @@ export function buildClubhouse(input: {
     course_mastery: buildCourseMasterySignals(input.rounds, input.rps, input.scores, {
       minRounds: input.minMasteryRounds
     }),
+    hole_mastery: buildHoleMasterySignals(input.rounds, input.rps, input.scores),
+    biggest_pot: buildBiggestPotSignal(input.rounds, input.settlements),
     recent_milestones: buildRecentMilestones(input.rounds, input.rps, input.scores, {
       windowDays: input.milestoneWindowDays,
       today: input.today
