@@ -1,5 +1,19 @@
 # Cruz Golf — Living Roadmap & Issue Tracker
 
+## Latest session highlights (2026-05-10 overnight, commits c82b32a → 77f5cf8)
+
+What shipped while you were away:
+
+- **Match-play + auto-presses for Best Ball + Aggregate** (engine + UI). Nassau got real presses earlier; this turn extended the same primitive to team games. New `match_play: true` config flips them to hole-by-hole settlement; `presses: 'auto_2_down'` fires when a team is 2 down with 3+ holes left. 9 new regression tests including zero-sum invariant and 3+ team fall-back.
+- **Career money + Last-round signals** in the clubhouse engine. Surfaced in `<ClubhouseStrip>` with restraint thresholds (career money: ≥ 5 rounds AND ≥ $30 netted; last-round: only the freshest finalized round).
+- **/admin/course-library bulk actions.** Multi-select + sticky action bar with Verify / Flag / Community / Placeholder / Untemplate per bucket. Parallel RPC dispatch via `Promise.allSettled`; per-row errors surface inline.
+- **Rivalry share image** at `/api/share/rivalry/image?a=…&b=…` — 1200×630 OG PNG. New `<RivalryShareButton>` on per-rivalry rows in `/players/[id]/stats`, surfaced only when `rounds_together ≥ 3`.
+- **QA agent findings — all 4 fixed:** P0 `ClubhouseRound` type missing `pending_finalization`, P1 admin /rounds Pending filter chip, P2 status pill amber styling across 4 admin pages (centralized via `statusPillFor()`), P2 admin user-detail bucketing (pending now in "Active rounds" instead of "Other rounds played").
+
+**Tests:** 239/239 passing. **Typecheck:** clean. **Migrations:** all applied through 0031.
+
+---
+
 **Product north star** (per Patrick, 2026-05-10):
 
 > **The operating system for private golf groups.**
@@ -249,7 +263,7 @@ read-only path; the admin banner is the only difference.
 | PUBLIC-RECORD-BOOK-LINK | Token-protected read-only record book viewable without signup | ⏳ open — needs `share_links` table |
 | FRIENDS-LIST | Per-user friends list for private record-book / leaderboard sharing | ⏳ open — biggest sharing feature gap |
 | AUTO-POST-SOCIAL | One-tap social share to FB / IG / X | ⏳ partial — Web Share API works; could add branded targets |
-| RIVALRY-CARD-IMAGE | "Patrick vs Jeff: 14W-12L lifetime" PNG | ⏳ open |
+| RIVALRY-CARD-IMAGE | "Patrick vs Jeff: 14W-12L lifetime" PNG | ✅ shipped — `/api/share/rivalry/image?a=&b=` route renders 1200×630 OG card via next/og. `<RivalryShareButton>` on player stats rivalry rows opens the existing ShareSheet. Surfaced only when rounds_together ≥ 3. Tone discipline held. |
 | GROUP-INVITE-LINK | "Join my Cruz Golf group" public invite | ⏳ open — currently only round-level invites |
 | EMAIL-SMS-INVITES | Send actual emails / texts to invitees | 🚫 blocked — needs Resend/Postmark/Twilio choice + budget |
 
