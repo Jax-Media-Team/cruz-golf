@@ -374,8 +374,9 @@ including the override-always-wins safety property.
 | 0029 | **awaiting your apply** | audit hooks for the remaining destructive RPCs: fn_delete_round, fn_dedupe_jgcc_in_group, fn_link_guest_to_profile, fn_unlink_player. Same pattern as 0027 — appends a `fn_log_destructive` call to each function. Re-creates each in full; safe to re-run. |
 | 0030 | applied | Ponte Vedra Inn & Club Ocean (par 71) + Lagoon (par 70) populated from the official PVIC scorecard PDF. Both verified, fully cloneable. |
 | 0031 | applied | Slim PVIC templates to one tee per color. Templates only — user clones unaffected. |
-| 0032 | **awaiting your apply** | TPC Sawgrass Stadium (Blue tee, 76.8/155, verified) + Deerwood CC (4 tees, yardage/par/SI verified; rating/slope placeholder, status=needs_review). Idempotent. |
-| 0033 | **awaiting your apply** | Berkeley Hall Club (Bluffton, SC) seeded as a NEW template (not on the priority-13 list). 6 men's tees (Black 74.9/141, Blue 72.8/137, Member 71.1/133, White 70.4/128, Fazio 69.6/126, Green 68.0/124), all printed on card. Status=verified. Idempotent. |
+| 0032 | applied | TPC Sawgrass Stadium (Blue tee, 76.8/155, verified) + Deerwood CC (4 tees, yardage/par/SI verified; rating/slope placeholder, status=needs_review). |
+| 0033 | **awaiting your apply** | Berkeley Hall Club — South Course (Bluffton, SC) seeded as a NEW template. 6 men's tees (Black 74.9/141, Blue 72.8/137, Member 71.1/133, White 70.4/128, Fazio 69.6/126, Green 68.0/124), all printed on card. Status=verified. Patrick confirmed South Course on 2026-05-10. Idempotent. |
+| 0034 | **awaiting your apply** | Timuquana Country Club populated. 4 men's tees (Green/Blue/White/Gold), yardage/par/SI verified from scorecard. Rating/slope placeholder 72.0/113 (not printed on card). Status=needs_review. Idempotent. |
 
 ---
 

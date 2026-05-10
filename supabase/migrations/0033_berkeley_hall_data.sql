@@ -1,8 +1,10 @@
--- 0033 — Berkeley Hall Club (Bluffton, SC) seeded as a verified template.
+-- 0033 — Berkeley Hall Club — South Course (Bluffton, SC) seeded
+-- as a verified template.
 --
 -- Source: official Berkeley Hall scorecard supplied by Patrick on
 -- 2026-05-10 (the "Berkley Hall Club Challenge" tournament card from
--- 12/3/22). Card prints rating + slope per tee, all clean reads.
+-- 12/3/22). Patrick confirmed this is the South Course. Card prints
+-- rating + slope per tee, all clean reads.
 --
 -- This course is NOT on the original NE Florida priority-13 seed
 -- (it's a Bluffton, SC course Patrick plays while traveling), so we
@@ -69,7 +71,7 @@ begin
 
   if v_course_id is null then
     insert into public.courses (group_id, name, city, state, is_template, verification_status)
-    values (v_template_group, 'Berkeley Hall Club', 'Bluffton', 'SC', true, 'verified')
+    values (v_template_group, 'Berkeley Hall Club — South Course', 'Bluffton', 'SC', true, 'verified')
     returning id into v_course_id;
   end if;
 
@@ -106,6 +108,6 @@ begin
     end loop;
   end loop;
 
-  raise notice 'Berkeley Hall populated: 6 tees, 108 holes, status=verified';
+  raise notice 'Berkeley Hall South populated: 6 tees, 108 holes, status=verified';
 end;
 $BERKELEY$;
