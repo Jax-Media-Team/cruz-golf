@@ -10,6 +10,9 @@
 > all-time records, the partner history, the recurring rivalries, the
 > trip archives — not the scorecard itself.
 
+**What we are NOT trying to be:** launch monitor app, shot-tracing
+analytics, GPS-heavy, ultra-technical stat golf, GHIN replacement.
+
 Course data + handicap workflows still need work, but **scorecard OCR +
 shared course library + community templates** is the right near-term
 path. Direct USGA/GHIN integration is reserved for later if licensing
@@ -20,12 +23,39 @@ priority bucket per Patrick's framing.
 
 ---
 
+## 🧭 Operating principles
+
+These guide every decision. When in doubt, re-read.
+
+1. **No duplicate UI.** If two things conceptually represent the same
+   object/action, show one. Audit for: duplicate CTAs, duplicate
+   course/player/round representations, multiple finalize flows,
+   overlapping navigation paths, redundant setup choices.
+2. **Opinionated over configurable.** Smart defaults beat 12 toggles.
+   Progressive disclosure for advanced options. Especially: games,
+   skins, presses, sharing, onboarding.
+3. **Deterministic rendering.** A given DB state must always produce
+   the same UI. Render rules belong in pure helpers with regression
+   tests, not inline filters.
+4. **Data integrity > velocity.** Soft-delete by default. No
+   destructive ops without an audit trail and a recovery path. Golf
+   betting/history apps cannot feel fragile.
+5. **Continuous QA.** Every meaningful change gets:
+   regression test → desktop+mobile sweep → admin/non-admin sweep →
+   simulated round → persistence/reload check. Don't wait for Patrick
+   to find bugs.
+6. **Stop when it's destructive, payments, ToS, privacy/security, or a
+   major architecture change.** Otherwise: ship.
+
+---
+
 ## 🚨 Critical bugs
 
 | # | Item | Status |
 |---|------|--------|
 | 0022-RECURSION | RLS infinite recursion on `platform_admins` blocked all course writes | ✅ fixed (migration 0022 applied) |
-| QUICK-ADD-DUPE | Quick Add JGCC created duplicates when course already existed | ✅ Quick Add tile now becomes "Already added → Open JGCC"; `fn_dedupe_jgcc_in_group` cleans existing dupes (in 0024) |
+| QUICK-ADD-DUPE | Quick Add JGCC created duplicates when course already existed | ✅ `fn_dedupe_jgcc_in_group` cleans existing dupes (0024 applied); smart dedupe ran for Patrick's group |
+| DUAL-JGCC-RENDER | Two JGCC entries showed on /courses (hero "Already added" tile + same row in YOUR COURSES) | ✅ killed the dual render; three labeled sections; dedup logic in `lib/courses-page.ts` with 18 regression tests (commit 4eb3549) |
 | DESKTOP-COURSE-404 | Course cards 404'd on desktop click (worked on mobile) | ✅ added `prefetch={false}` + friendly not-found page |
 | ROUND-DELETE-FK | "Linked record is missing" on round delete | ✅ fixed in 0019 + 0021 + frontend RPC switch |
 | FINISH-STEPS-NOOP | Get Started "Finish steps above" button did nothing | ✅ now disabled span with tooltip |
@@ -169,8 +199,32 @@ This is the bucket that separates Cruz Golf from "another scorecard app."
 | 0020 | applied | course templates + fn_clone_course extension |
 | 0021 | applied | rounds.deleted_at + fn_archive_round + fn_restore_round + fn_delete_round v2 |
 | 0022 | applied | RLS recursion fix (platform_admins / feedback / courses-templates-admin-write) |
-| 0023 | **awaiting your apply** | guest-to-account linking RPCs |
-| 0024 | **awaiting your apply** | course archive + JGCC dedupe RPCs |
+| 0023 | applied | guest-to-account linking RPCs |
+| 0024 | applied | course archive + JGCC dedupe RPCs |
+
+---
+
+## 🎯 Next major focus areas (per Patrick, 2026-05-10)
+
+In rough priority order. Each gets its own QA sweep + regression tests.
+
+1. **Onboarding flow** — first 60 seconds should be obvious; smart
+   defaults; progressive disclosure
+2. **Current-round navigation clarity** — at any moment, "what do I do
+   next" should be a single tap from anywhere
+3. **Player linking / claiming** — guest → real account flow needs to
+   be one tap, undoable, with visible audit trail
+4. **Personal stats pages** — depth without configurability creep
+5. **Record books** — already shipped; deepen with partner / rivalry /
+   lifetime aggregations
+6. **Social sharing** — round share, record share, rivalry cards
+7. **Public/private sharing models** — cleanly modeled, not a settings
+   maze
+8. **Friend/group relationships** — Q3 still open; pick a model and
+   ship it
+9. **Course library UX** — discovery, cloning, attribution, dedup
+10. **Installable / PWA app feel** — manifest + service worker +
+    offline score entry queue (already partial via score-queue.ts)
 
 ---
 
@@ -179,11 +233,11 @@ This is the bucket that separates Cruz Golf from "another scorecard app."
 (Cleared each session; lives here so the running narrative stays
 near the next-up work.)
 
-- 0022 applied, recursion gone, write smoke-test passed
-- Patrick's JGCC course intact (5 tees, 90 holes); duplicate appeared after he clicked Quick Add (the recursion was making `hasJgcc` false because the courses query was failing)
-- Quick Add tile now detects existing JGCC and routes to "Already added → Open"
-- Course detail page has Archive/Restore button (commissioner-only, gated on 0024)
+- 0022 + 0023 + 0024 applied; RLS recursion fix shipped; smart-dedupe ran
+  for Patrick (canonical JGCC restored, 3 empty dupes archived)
+- Course detail page has Archive/Restore button (commissioner-only)
 - `prefetch={false}` on course Links to dodge stale Next.js prefetches
-- Logo +25%
-- Issue tracker rewritten with this categorical structure
-- Two migrations queued: 0023 (guest linking) + 0024 (course archive + dedupe)
+- Issue tracker reorganized with operating principles + next focus areas
+- DUAL-JGCC-RENDER fix shipped (commit 4eb3549): killed the duplicate
+  hero tile, extracted dedup rules to `lib/courses-page.ts`, 18
+  regression tests; full suite at 160/160

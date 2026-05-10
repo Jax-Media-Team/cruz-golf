@@ -26,7 +26,12 @@ type Props = {
  *  2. Spectator share band — works in both modes; anyone with the link
  *     can watch the live leaderboard read-only.
  *
- * Plus the commissioner's quick actions (Invites, Upload card, Finalize).
+ * Plus the commissioner's "round-prep" quick actions (Upload card photo).
+ *
+ * NOTE: Invites and Finalize used to live here too. They were moved to the
+ * round page's secondary-actions grid so each round-state action has
+ * exactly one entry point. Header is now strictly round-meta + share +
+ * pre-round prep.
  */
 export function RoundHeaderActions({ roundId, spectatorToken, pin, accessMode, isCommissioner }: Props) {
   const [showPin, setShowPin] = useState(false);
@@ -149,18 +154,8 @@ export function RoundHeaderActions({ roundId, spectatorToken, pin, accessMode, i
           triggerClassName="btn-secondary text-xs"
         />
         {isCommissioner && (
-          <Link href={`/rounds/${roundId}/invites`} className="btn-secondary text-xs">
-            Invites
-          </Link>
-        )}
-        {isCommissioner && (
           <Link href={`/rounds/${roundId}/upload`} className="btn-secondary text-xs">
             Upload card photo
-          </Link>
-        )}
-        {isCommissioner && (
-          <Link href={`/rounds/${roundId}/finalize`} className="btn-primary text-xs">
-            Finalize
           </Link>
         )}
       </div>

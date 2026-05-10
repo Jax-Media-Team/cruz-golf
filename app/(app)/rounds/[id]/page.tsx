@@ -226,13 +226,20 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
                 <span className="font-serif text-sm text-cream-50 leading-tight">View wagers</span>
               </Link>
             )}
-            <Link
-              href={`/rounds/${id}/finalize`}
-              className="card card-hover p-3 text-center flex flex-col items-center gap-1"
-            >
-              <span className="text-xl">✅</span>
-              <span className="font-serif text-sm text-cream-50 leading-tight">Finalize</span>
-            </Link>
+            {/* Finalize tile — only shown when the prominent "All scores
+                entered" banner above is NOT showing. One Finalize CTA on
+                the page at any time. The banner takes over when ready;
+                this tile is the early-finalize escape hatch (e.g. shotgun
+                or 9-hole rounds) before the banner triggers. */}
+            {!allScoresIn && (
+              <Link
+                href={`/rounds/${id}/finalize`}
+                className="card card-hover p-3 text-center flex flex-col items-center gap-1"
+              >
+                <span className="text-xl">✅</span>
+                <span className="font-serif text-sm text-cream-50 leading-tight">Finalize</span>
+              </Link>
+            )}
           </div>
         </div>
       )}
