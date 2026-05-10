@@ -5,6 +5,7 @@ import {
   buildCourseMasterySignals,
   buildGroupActivitySignal,
   buildGroupLifetimeSignal,
+  buildHoleMasterySignals,
   buildLastRoundSignal,
   buildLiveRoundSignals,
   buildPartnerSignals,
@@ -1139,5 +1140,180 @@ describe("buildGroupLifetimeSignal", () => {
     expect(out.total_cents_moved).toBe(8000);
     expect(out.first_round_date).toBe("2024-08-12");
     expect(out.days_active).toBeGreaterThan(600); // ~21 months
+  });
+});
+
+// --- Hole mastery -----------------------------------------------------
+
+describe("buildHoleMasterySignals", () => {
+  it("returns nothing when no rounds are finalized", () => {
+    const rounds = [r("r-live", "2026-05-10", "live")];
+    const rps = [rp("rp1", "r-live", "p-mitch", "Mitch")];
+    const scores = [score("rp1", 4, 4, 3)];
+    expect(buildHoleMasterySignals(rounds, rps, scores)).toEqual([]);
+  });
+
+  it("requires ≥3 plays at the same (course, hole) to surface a leader", () => {
+    // Mitch has played hole 4 at JGCC twice → below default minPlays=3,
+    // so no signal even though he's the only candidate.
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-15", "finalized")
+    ];
+    const rps = [
+      rp("rp1", "r1", "p-mitch", "Mitch"),
+      rp("rp2", "r2", "p-mitch", "Mitch")
+    ];
+    const scores = [
+      score("rp1", 4, 4, 4),
+      score("rp2", 4, 4, 3)
+    ];
+    expect(buildHoleMasterySignals(rounds, rps, scores)).toEqual([]);
+  });
+
+  it("picks the lowest-avg leader at each (course, hole) once minPlays met", () => {
+    // Mitch plays hole 4 four times averaging 3.5; Patrick plays it three
+    // times averaging 4.67. Mitch is the leader.
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-08", "finalized"),
+      r("r3", "2026-04-15", "finalized"),
+      r("r4", "2026-04-22", "finalized")
+    ];
+    const rps = [
+      rp("rp-m1", "r1", "p-mitch", "Mitch"),
+      rp("rp-m2", "r2", "p-mitch", "Mitch"),
+      rp("rp-m3", "r3", "p-mitch", "Mitch"),
+      rp("rp-m4", "r4", "p-mitch", "Mitch"),
+      rp("rp-p1", "r1", "p-pat", "Patrick"),
+      rp("rp-p2", "r2", "p-pat", "Patrick"),
+      rp("rp-p3", "r3", "p-pat", "Patrick")
+    ];
+    const scores = [
+      // Mitch: 3, 4, 4, 3 → avg 3.5
+      score("rp-m1", 4, 4, 3),
+      score("rp-m2", 4, 4, 4),
+      score("rp-m3", 4, 4, 4),
+      score("rp-m4", 4, 4, 3),
+      // Patrick: 4, 5, 5 → avg 4.67
+      score("rp-p1", 4, 4, 4),
+      score("rp-p2", 4, 4, 5),
+      score("rp-p3", 4, 4, 5)
+    ];
+    const out = buildHoleMasterySignals(rounds, rps, scores);
+    expect(out).toHaveLength(1);
+    expect(out[0].hole_number).toBe(4);
+    expect(out[0].leader.display_name).toBe("Mitch");
+    expect(out[0].leader.avg_score).toBe(3.5);
+    expect(out[0].leader.vs_par).toBe(-0.5);
+    expect(out[0].leader.hole_count).toBe(4);
+  });
+
+  it("ignores null gross scores when computing the average", () => {
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-15", "finalized"),
+      r("r3", "2026-05-01", "finalized")
+    ];
+    const rps = [
+      rp("rp1", "r1", "p-mitch", "Mitch"),
+      rp("rp2", "r2", "p-mitch", "Mitch"),
+      rp("rp3", "r3", "p-mitch", "Mitch")
+    ];
+    const scores = [
+      score("rp1", 4, 4, 3),
+      score("rp2", 4, 4, null), // ignored
+      score("rp3", 4, 4, 4)
+    ];
+    // Only 2 valid plays → below default minPlays=3 → no signal.
+    expect(buildHoleMasterySignals(rounds, rps, scores)).toEqual([]);
+  });
+
+  it("only counts finalized rounds — drafts/live/pending are skipped", () => {
+    const rounds = [
+      r("r-fin", "2026-04-01", "finalized"),
+      r("r-pen", "2026-04-15", "pending_finalization"),
+      r("r-live", "2026-05-01", "live"),
+      r("r-draft", "2026-05-08", "draft")
+    ];
+    const rps = [
+      rp("rp-fin", "r-fin", "p-mitch", "Mitch"),
+      rp("rp-pen", "r-pen", "p-mitch", "Mitch"),
+      rp("rp-live", "r-live", "p-mitch", "Mitch"),
+      rp("rp-draft", "r-draft", "p-mitch", "Mitch")
+    ];
+    const scores = [
+      score("rp-fin", 4, 4, 3),
+      score("rp-pen", 4, 4, 3),
+      score("rp-live", 4, 4, 3),
+      score("rp-draft", 4, 4, 3)
+    ];
+    // Only 1 finalized play → below minPlays=3.
+    expect(buildHoleMasterySignals(rounds, rps, scores)).toEqual([]);
+  });
+
+  it("sorts hardest-hole-first by leader vs_par (highest first)", () => {
+    // Hole 4: leader avg 3.5, par 4 → vs_par = -0.5
+    // Hole 7: leader avg 5.7, par 4 → vs_par = +1.7 (harder)
+    // Hole 12: leader avg 5.0, par 5 → vs_par = 0.0
+    // Expected order: hole 7, hole 12, hole 4.
+    const rounds = ["r1", "r2", "r3"].map((id, i) =>
+      r(id, `2026-04-0${i + 1}`, "finalized")
+    );
+    const rps = rounds.flatMap((rd) => [rp(`rp-${rd.id}`, rd.id, "p-mitch", "Mitch")]);
+    const scores = rounds.flatMap((rd) => [
+      score(`rp-${rd.id}`, 4, 4, 3 + (rd.id === "r1" ? 1 : 0)), // 4,3,3 → avg ~3.33 — actually all should be normalized
+      // simpler: fixed scores per hole across rounds.
+      score(`rp-${rd.id}`, 7, 4, 6),
+      score(`rp-${rd.id}`, 12, 5, 5)
+    ]);
+    // Recompute hole 4: 4, 3, 3 → 3.33 → vs_par -0.67. Use that.
+    const out = buildHoleMasterySignals(rounds, rps, scores);
+    expect(out).toHaveLength(3);
+    // Hardest first: hole 7 (vs_par > 0), then hole 12 (0), then hole 4 (negative).
+    expect(out[0].hole_number).toBe(7);
+    expect(out[1].hole_number).toBe(12);
+    expect(out[2].hole_number).toBe(4);
+  });
+
+  it("respects minPlays override", () => {
+    // Same data — at minPlays=2 both Mitch's 2 plays surface.
+    const rounds = [
+      r("r1", "2026-04-01", "finalized"),
+      r("r2", "2026-04-15", "finalized")
+    ];
+    const rps = [
+      rp("rp1", "r1", "p-mitch", "Mitch"),
+      rp("rp2", "r2", "p-mitch", "Mitch")
+    ];
+    const scores = [
+      score("rp1", 4, 4, 3),
+      score("rp2", 4, 4, 4)
+    ];
+    expect(buildHoleMasterySignals(rounds, rps, scores)).toEqual([]);
+    const lowered = buildHoleMasterySignals(rounds, rps, scores, { minPlays: 2 });
+    expect(lowered).toHaveLength(1);
+    expect(lowered[0].leader.hole_count).toBe(2);
+  });
+
+  it("scopes per-(course, hole) — same hole at different courses are separate signals", () => {
+    const rounds = [
+      r("r-jg-1", "2026-04-01", "finalized", "JGCC", "c-jgcc"),
+      r("r-jg-2", "2026-04-08", "finalized", "JGCC", "c-jgcc"),
+      r("r-jg-3", "2026-04-15", "finalized", "JGCC", "c-jgcc"),
+      r("r-pv-1", "2026-04-22", "finalized", "PVIC Ocean", "c-pvic"),
+      r("r-pv-2", "2026-04-29", "finalized", "PVIC Ocean", "c-pvic"),
+      r("r-pv-3", "2026-05-06", "finalized", "PVIC Ocean", "c-pvic")
+    ];
+    const rps = rounds.map((rd) => rp(`rp-${rd.id}`, rd.id, "p-mitch", "Mitch"));
+    const scores = rounds.map((rd) =>
+      score(`rp-${rd.id}`, 4, 4, rd.course_name === "JGCC" ? 3 : 5)
+    );
+    const out = buildHoleMasterySignals(rounds, rps, scores);
+    expect(out).toHaveLength(2);
+    const jgcc = out.find((s) => s.course_name === "JGCC");
+    const pvic = out.find((s) => s.course_name === "PVIC Ocean");
+    expect(jgcc?.leader.avg_score).toBe(3);
+    expect(pvic?.leader.avg_score).toBe(5);
   });
 });

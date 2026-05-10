@@ -445,8 +445,13 @@ In rough priority order. Each gets its own QA sweep + regression tests.
      for broke_80 / broke_90 / broke_100 / personal_best / first_eagle
      within the last 14 days. Idempotent — same data → same milestones,
      no re-firing on page reload.
-   - ⏳ Hole-mastery: "Mitch owns hole 4 at JGCC" (needs per-hole
-     aggregation across rounds; data plumbing in place, just engine work)
+   - ✅ Hole-mastery: "Mitch owns hole 4 at JGCC · 4.6 avg · 5 plays"
+     — `buildHoleMasterySignals` aggregates per-(course, hole, player)
+     average gross from finalized rounds, picks the lowest-avg leader
+     once minPlays (default 3) is met, sorts hardest-hole-first by
+     leader vs_par. Wired into `<ClubhouseStrip>` + 8 regression tests
+     covering null-gross handling, status filtering, course scoping,
+     and minPlays override.
    - ⏳ Game-type-specific: "Kyle hasn't won a Nassau at Pablo Creek"
      (needs game-type bucketing in settlements)
    - ⏳ Group-record milestones: "Biggest skins pot the group has
