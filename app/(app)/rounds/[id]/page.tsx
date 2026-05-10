@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { RoundView } from "./round-view";
 import { RoundHeaderActions } from "./header-actions";
 import { ClaimBanner } from "./claim-banner";
+import { UnfinalizeButton } from "./unfinalize-button";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -153,6 +154,21 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
 
       {claimCandidates.length > 0 && (
         <ClaimBanner roundId={id} candidates={claimCandidates} />
+      )}
+
+      {round.status === "finalized" && isCommissioner && (
+        <div className="card p-4 flex items-center justify-between gap-3 border border-cream-100/15">
+          <div>
+            <p className="h-eyebrow text-gold-400">Locked</p>
+            <p className="text-sm text-cream-50 mt-1">
+              This round is finalized. Settlements are written.
+            </p>
+            <p className="text-[11px] text-cream-100/55 mt-0.5">
+              Need to fix a score? Unlock and re-finalize.
+            </p>
+          </div>
+          <UnfinalizeButton roundId={id} />
+        </div>
       )}
 
       {round.status !== "finalized" && (

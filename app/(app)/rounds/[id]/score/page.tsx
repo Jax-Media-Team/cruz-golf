@@ -17,10 +17,14 @@ export default async function ScoreEntryPage({
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, access_mode")
+    .select("id, group_id, access_mode, status")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
+
+  // Finalized rounds reject score writes via RLS; surface that earlier
+  // by routing the user back to the round page.
+  if (round.status === "finalized") redirect(`/rounds/${id}`);
 
   // Commissioner override applies everywhere.
   const { data: gm } = await sb

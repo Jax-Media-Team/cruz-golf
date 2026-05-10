@@ -10,10 +10,16 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, access_mode, courses(name)")
+    .select("id, group_id, access_mode, status, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
+
+  // Finalized rounds shouldn't accept new scores. Bounce the user back to
+  // the round page where the commissioner sees the "Unlock to edit"
+  // option. Without this, players landed on a working-looking form whose
+  // saves silently failed RLS.
+  if (round.status === "finalized") redirect(`/rounds/${id}`);
 
   const { data: gm } = await sb
     .from("group_members")
