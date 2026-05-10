@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { CourseLibraryActions } from "./course-library-actions";
+import { LibrarySearch } from "./library-search";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,13 @@ export const dynamic = "force-dynamic";
  * Both are gated server-side on fn_is_platform_admin() so a non-admin
  * stumbling onto this page can't mutate anything.
  */
-export default async function AdminCourseLibraryPage() {
+export default async function AdminCourseLibraryPage({
+  searchParams
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim().toLowerCase();
   const sb = supabaseAdmin();
 
   const [{ data: courses }, { data: tees }, { data: holes }, { data: rounds }] =
@@ -94,12 +101,22 @@ export default async function AdminCourseLibraryPage() {
     };
   });
 
+  // Apply search filter (name + city + state, case-insensitive).
+  const filtered = query
+    ? enriched.filter(
+        (c) =>
+          c.name.toLowerCase().includes(query) ||
+          (c.city ?? "").toLowerCase().includes(query) ||
+          (c.state ?? "").toLowerCase().includes(query)
+      )
+    : enriched;
+
   // Bucket by status for at-a-glance moderation.
   const buckets = {
-    placeholder: enriched.filter((c) => c.verification_status === "placeholder"),
-    community: enriched.filter((c) => c.verification_status === "community"),
-    needs_review: enriched.filter((c) => c.verification_status === "needs_review"),
-    verified: enriched.filter((c) => c.verification_status === "verified")
+    placeholder: filtered.filter((c) => c.verification_status === "placeholder"),
+    community: filtered.filter((c) => c.verification_status === "community"),
+    needs_review: filtered.filter((c) => c.verification_status === "needs_review"),
+    verified: filtered.filter((c) => c.verification_status === "verified")
   };
 
   return (
@@ -123,6 +140,8 @@ export default async function AdminCourseLibraryPage() {
           <SummaryPill label="Placeholder" count={buckets.placeholder.length} tone="muted" />
         </div>
       </header>
+
+      <LibrarySearch initialQuery={query} />
 
       <CourseTable label="Needs review" rows={buckets.needs_review} tone="amber" />
       <CourseTable label="Awaiting scorecard data" rows={buckets.placeholder} tone="muted" />

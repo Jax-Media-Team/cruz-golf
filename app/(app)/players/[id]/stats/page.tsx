@@ -6,6 +6,14 @@ import { strokesPerHole } from "@/lib/handicap";
 import { formatHi } from "@/lib/handicap-format";
 import { VenmoQR } from "@/components/VenmoQR";
 import { PlayerProfileEditor } from "./profile-editor";
+import {
+  buildPartnerSignals,
+  buildRivalrySignals,
+  fmtMoneyCents,
+  type ClubhouseRound,
+  type ClubhouseRoundPlayer,
+  type ClubhouseSettlement
+} from "@/lib/clubhouse";
 
 export default async function PlayerStatsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -181,6 +189,99 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
     }))
     .sort((a, b) => b.rounds - a.rounds);
 
+  // Partner + rivalry signals — uses the same clubhouse engine the
+  // dashboard does, scoped to rounds this player participated in. We
+  // pull every other rp in those rounds plus the settlement edges so
+  // the engine can compute head-to-head W-L and partner W-L without
+  // re-implementing the math here.
+  const playerRoundIds = finalizedRps.map((rp: any) => rp.rounds.id);
+  let partnerSignals: ReturnType<typeof buildPartnerSignals> = [];
+  let rivalrySignals: ReturnType<typeof buildRivalrySignals> = [];
+  let lifetimeUsd: { won: number; lost: number; vs: Map<string, number> } | null = null;
+  if (playerRoundIds.length > 0) {
+    const safeRoundIds = playerRoundIds.length
+      ? playerRoundIds
+      : ["00000000-0000-0000-0000-000000000000"];
+    const [{ data: allRps }, { data: allSettles }] = await Promise.all([
+      sb
+        .from("round_players")
+        .select("id, round_id, player_id, team_id, players(display_name)")
+        .in("round_id", safeRoundIds),
+      sb
+        .from("settlements")
+        .select(
+          "round_id, from_round_player_id, to_round_player_id, amount_cents"
+        )
+        .in("round_id", safeRoundIds)
+    ]);
+
+    const chRounds: ClubhouseRound[] = finalizedRps.map((rp: any) => ({
+      id: rp.rounds.id,
+      date: rp.rounds.date,
+      status: "finalized" as const,
+      course_name: rp.rounds.courses?.name ?? null,
+      course_id: null,
+      spectator_token: null,
+      holes: rp.rounds.holes ?? 18
+    }));
+    const chRps: ClubhouseRoundPlayer[] = ((allRps as any[]) ?? []).map((rp) => ({
+      round_player_id: rp.id,
+      round_id: rp.round_id,
+      player_id: rp.player_id,
+      display_name: rp.players?.display_name ?? "Player",
+      team_id: rp.team_id ?? null
+    }));
+    const chSettles: ClubhouseSettlement[] = ((allSettles as any[]) ?? []).map(
+      (s) => {
+        const round = chRounds.find((r) => r.id === s.round_id);
+        return {
+          round_id: s.round_id,
+          round_date: round?.date ?? "",
+          from_round_player_id: s.from_round_player_id,
+          to_round_player_id: s.to_round_player_id,
+          amount_cents: s.amount_cents
+        };
+      }
+    );
+
+    // Filter signals down to ones involving THIS player.
+    const allPartners = buildPartnerSignals(chRps, chSettles, chRounds, {
+      minRounds: 1
+    });
+    partnerSignals = allPartners.filter(
+      (p) => p.player_a_id === player.id || p.player_b_id === player.id
+    );
+
+    const allRivals = buildRivalrySignals(chRps, chSettles, chRounds, {
+      minRounds: 2
+    });
+    rivalrySignals = allRivals.filter(
+      (r) => r.player_a_id === player.id || r.player_b_id === player.id
+    );
+
+    // Lifetime $ vs each opponent — useful for "you owe / are owed by"
+    // breakdowns. Keyed by opponent player_id, signed from THIS player's
+    // perspective (positive = you've netted money off them).
+    const vsMap = new Map<string, number>();
+    const rpToPlayer = new Map(
+      chRps.map((rp) => [rp.round_player_id, rp.player_id])
+    );
+    let totalWon = 0;
+    let totalLost = 0;
+    for (const s of chSettles) {
+      const fromPid = rpToPlayer.get(s.from_round_player_id);
+      const toPid = rpToPlayer.get(s.to_round_player_id);
+      if (toPid === player.id && fromPid && fromPid !== player.id) {
+        vsMap.set(fromPid, (vsMap.get(fromPid) ?? 0) + s.amount_cents);
+        totalWon += s.amount_cents;
+      } else if (fromPid === player.id && toPid && toPid !== player.id) {
+        vsMap.set(toPid, (vsMap.get(toPid) ?? 0) - s.amount_cents);
+        totalLost += s.amount_cents;
+      }
+    }
+    lifetimeUsd = { won: totalWon, lost: totalLost, vs: vsMap };
+  }
+
   return (
     <div className="space-y-5 max-w-3xl">
       <header className="flex items-start justify-between gap-3 flex-wrap">
@@ -290,6 +391,119 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
                 </div>
               </li>
             ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Partner record — who they win/lose with as teammates. Shows up
+          to 3 most-paired teammates. Tone discipline: stat lines, not
+          "BEST DUO!!!". */}
+      {partnerSignals.length > 0 && (
+        <div className="card p-5">
+          <h2 className="font-serif text-xl text-cream-50 mb-3">As partners</h2>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {partnerSignals.slice(0, 3).map((p) => {
+              const partnerName =
+                p.player_a_id === player.id ? p.player_b_name : p.player_a_name;
+              return (
+                <li
+                  key={`${p.player_a_id}|${p.player_b_id}`}
+                  className="py-2 flex items-baseline justify-between gap-3"
+                >
+                  <span className="text-cream-50 truncate">{partnerName}</span>
+                  <div className="text-right shrink-0">
+                    <div className="text-cream-50 tabular-nums">
+                      {p.wins}-{p.losses}
+                      {p.pushes > 0 ? `-${p.pushes}` : ""}
+                    </div>
+                    <div className="text-[11px] text-cream-100/55">
+                      {p.rounds} round{p.rounds === 1 ? "" : "s"}
+                      {p.combined_cents !== 0 && (
+                        <>
+                          {" · "}
+                          <span
+                            className={
+                              p.combined_cents > 0
+                                ? "text-emerald-300"
+                                : "text-red-300"
+                            }
+                          >
+                            {p.combined_cents > 0 ? "+" : ""}
+                            {fmtMoneyCents(p.combined_cents)}
+                          </span>{" "}
+                          combined
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Head-to-head record — top 3 most-played opponents. Sign on the
+          recent_run is from A's perspective; we re-orient to THIS
+          player's view. */}
+      {rivalrySignals.length > 0 && (
+        <div className="card p-5">
+          <h2 className="font-serif text-xl text-cream-50 mb-3">Head to head</h2>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {rivalrySignals.slice(0, 5).map((r) => {
+              const isA = r.player_a_id === player.id;
+              const opponentName = isA ? r.player_b_name : r.player_a_name;
+              const myWins = isA ? r.a_wins : r.b_wins;
+              const theirWins = isA ? r.b_wins : r.a_wins;
+              const myRun = isA ? r.recent_run : -r.recent_run;
+              const dollars = lifetimeUsd?.vs.get(
+                isA ? r.player_b_id : r.player_a_id
+              );
+              return (
+                <li
+                  key={`${r.player_a_id}|${r.player_b_id}`}
+                  className="py-2 flex items-baseline justify-between gap-3"
+                >
+                  <span className="text-cream-50 truncate">{opponentName}</span>
+                  <div className="text-right shrink-0">
+                    <div className="text-cream-50 tabular-nums">
+                      {myWins}-{theirWins}
+                      {r.pushes > 0 ? `-${r.pushes}` : ""}
+                    </div>
+                    <div className="text-[11px] text-cream-100/55">
+                      {r.rounds_together} round
+                      {r.rounds_together === 1 ? "" : "s"}
+                      {Math.abs(myRun) >= 2 && (
+                        <>
+                          {" · "}
+                          <span
+                            className={
+                              myRun > 0 ? "text-emerald-300" : "text-red-300"
+                            }
+                          >
+                            {myRun > 0 ? `won ${myRun} in a row` : `lost ${-myRun} in a row`}
+                          </span>
+                        </>
+                      )}
+                      {dollars !== undefined && dollars !== 0 && (
+                        <>
+                          {" · "}
+                          <span
+                            className={
+                              dollars > 0 ? "text-emerald-300" : "text-red-300"
+                            }
+                          >
+                            {dollars > 0 ? "+" : ""}
+                            {fmtMoneyCents(dollars)}
+                          </span>{" "}
+                          lifetime
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
