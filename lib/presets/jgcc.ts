@@ -10,8 +10,10 @@ export const JGCC_STATE = "FL";
 // Pars by hole 1..18 (Out 36 + In 36 = 72)
 export const JGCC_PARS = [5, 4, 3, 4, 4, 3, 4, 5, 4, 4, 4, 3, 4, 5, 4, 5, 3, 4];
 
-// Stroke index per hole (1 = hardest)
-export const JGCC_MENS_SI =    [13, 7, 17, 3, 15, 5, 11, 1, 9, 16, 2, 12, 8, 18, 6, 14, 10, 4];
+// Stroke index per hole (1 = hardest). Official JGCC scorecard, verified
+// with the pro shop on 2026-05-10. Front 9: 13/7/17/1/5/15/9/11/3.
+// Back 9: 16/6/14/12/18/8/2/10/4. (Sums to 1..18 each side.)
+export const JGCC_MENS_SI =    [13, 7, 17, 1, 5, 15, 9, 11, 3, 16, 6, 14, 12, 18, 8, 2, 10, 4];
 export const JGCC_LADIES_SI =  [7, 9, 15, 13, 17, 11, 5, 1, 3, 16, 14, 18, 8, 10, 4, 12, 2, 6];
 
 // Yardages per tee per hole 1..18
