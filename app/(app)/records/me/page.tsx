@@ -51,8 +51,22 @@ export default async function PersonalRecordsPage() {
           <h1 className="h-display text-3xl text-cream-50 mt-1">Personal record book</h1>
         </header>
         <RecordsScopeNav active="me" myPlayerId={null} />
-        <div className="card p-8 text-center text-cream-100/65">
-          You aren&apos;t linked to a player yet. Open <Link href="/players" className="text-gold-400 underline">Players</Link> and claim your name from the roster, or have your commissioner invite you.
+        <div className="card p-6 sm:p-8 space-y-3 text-center">
+          <p className="text-3xl">🤝</p>
+          <h2 className="font-serif text-xl text-cream-50">
+            Claim your spot in {group.name}
+          </h2>
+          <p className="text-sm text-cream-100/65 max-w-md mx-auto">
+            You&apos;re signed in but not yet linked to a player on the roster.
+            Once you claim your name, every round you play gets stitched
+            into your personal record book.
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center pt-2">
+            <Link href="/players" className="btn-primary">Claim your name →</Link>
+            <Link href="/records" className="btn-ghost text-sm">
+              Browse the group book
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -105,8 +119,24 @@ export default async function PersonalRecordsPage() {
       <RecordsScopeNav active="me" myPlayerId={myPlayer.id} />
 
       {totalRounds === 0 ? (
-        <div className="card p-8 text-center text-cream-100/65">
-          No finalized rounds yet. Once you settle one, your personal records open up.
+        <div className="card p-6 sm:p-8 space-y-4">
+          <div className="text-center space-y-2">
+            <p className="text-3xl">📔</p>
+            <h2 className="font-serif text-2xl text-cream-50">
+              Your personal record book starts with round one
+            </h2>
+            <p className="text-sm text-cream-100/65 max-w-lg mx-auto">
+              Best 18, best 9, biggest cash-in, biggest disaster, lifetime
+              net, most birdies in a round, your record at every course you
+              play — every round you finish gets logged here forever.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Link href="/rounds/new" className="btn-primary">Start a round</Link>
+            <Link href="/records" className="btn-ghost text-sm">
+              See your group&apos;s records →
+            </Link>
+          </div>
         </div>
       ) : (
         <>

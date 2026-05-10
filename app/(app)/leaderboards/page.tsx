@@ -124,11 +124,33 @@ export default async function LeaderboardsPage() {
       </header>
 
       {(rounds?.length ?? 0) === 0 ? (
-        <div className="card p-8 text-center text-cream-100/65">
-          No finalized rounds yet. Finish a round to start populating leaderboards.
-          <div className="mt-3">
-            <Link href="/dashboard" className="text-gold-400 underline">
-              Back to dashboard →
+        <div className="card p-6 sm:p-8 space-y-4">
+          <div className="text-center space-y-2">
+            <p className="text-3xl">📊</p>
+            <h2 className="font-serif text-2xl text-cream-50">
+              Your crew&apos;s leaderboards open up after the first round
+            </h2>
+            <p className="text-sm text-cream-100/65 max-w-lg mx-auto">
+              Money won, win-rate, hot streaks, biggest blowups, most birdies,
+              best round of the year — all live here once a round is finalized.
+            </p>
+          </div>
+
+          <ul className="text-xs text-cream-100/65 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-2xl mx-auto">
+            <li className="surface rounded-lg px-3 py-2 text-center">💰 Money won</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🎯 Win rate</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🔥 Hot streak</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🐦 Birdies</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🏆 Best round</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🥶 Cold streak</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">📅 Most active</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">📈 $ / round</li>
+          </ul>
+
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Link href="/rounds/new" className="btn-primary">Start a round</Link>
+            <Link href="/demo" className="btn-ghost text-sm">
+              Peek at the demo →
             </Link>
           </div>
         </div>

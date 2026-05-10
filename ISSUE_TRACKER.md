@@ -46,6 +46,22 @@ These guide every decision. When in doubt, re-read.
    to find bugs.
 6. **Stop when it's destructive, payments, ToS, privacy/security, or a
    major architecture change.** Otherwise: ship.
+7. **No dead ends.** Every screen has a primary next action.
+   Empty states preview what's coming and offer a CTA, never just
+   "nothing here yet". The user should never think "what now?"
+8. **"Join the group", not "configure software".** Onboarding and
+   copy lean crew/group/social, not enterprise/setup-heavy. Group-
+   first language ("your crew", "your group", "your weekend") beats
+   generic software wording. Long-term emotional goal: "Our golf
+   group lives here," not "We use this scorekeeping app."
+9. **The app should feel alive.** Surface live rounds, recent
+   results, hot streaks, rivalries, activity. Spectator/admin
+   surfaces double as social-proof surfaces — same token-keyed
+   read-only path serves friends watching friends, members watching
+   member-member tournaments, and admins debugging.
+10. **Watching ≠ editing ≠ acting as admin ≠ acting as user.**
+    These four modes must be visually unmistakable. Banners,
+    colors, and routes should never let those states blur.
 
 ---
 
@@ -58,6 +74,8 @@ These guide every decision. When in doubt, re-read.
 | DUAL-JGCC-RENDER | Two JGCC entries showed on /courses (hero "Already added" tile + same row in YOUR COURSES) | ✅ killed the dual render; three labeled sections; dedup logic in `lib/courses-page.ts` with 18 regression tests (commit 4eb3549) |
 | DUPLICATE-FINALIZE-CTA | Three Finalize entry points on /rounds/[id] (header button + green banner + secondary tile) | ✅ header is round-meta only; banner and tile mutually exclusive (commit 9ec3ade) |
 | FAKE-IMPERSONATION | "View as User →" on /admin/rounds/[id] silently bounced to dashboard (RLS blocked admin from seeing other groups' rounds) and was a confused affordance — Patrick wanted observability, not impersonation | ✅ replaced with "👀 Spectate live →" using existing token-keyed read-only leaderboard + AdminSpectatorBanner; admin-mode flag re-verified server-side via `fn_is_platform_admin()` so it can't be spoofed |
+| DEAD-END-EMPTY-STATES | Leaderboards / records / records/me / ledger / records/me-unlinked all had empty states with no primary CTA — pure dead ends | ✅ rewritten with previews of what's coming + group-first language + Start a round / Set up your group / Claim your name CTAs |
+| ONBOARDING-TONE | Dashboard checklist read like enterprise setup ("Get started", "Add a course", "Add your players") | ✅ tone shift to "Set up your group" / "Pick your home course" / "Add your crew" / "Tee it up" with crew-flavored body copy |
 | DESKTOP-COURSE-404 | Course cards 404'd on desktop click (worked on mobile) | ✅ added `prefetch={false}` + friendly not-found page |
 | ROUND-DELETE-FK | "Linked record is missing" on round delete | ✅ fixed in 0019 + 0021 + frontend RPC switch |
 | FINISH-STEPS-NOOP | Get Started "Finish steps above" button did nothing | ✅ now disabled span with tooltip |
@@ -232,21 +250,45 @@ read-only path; the admin banner is the only difference.
 In rough priority order. Each gets its own QA sweep + regression tests.
 
 1. **Onboarding flow** — first 60 seconds should be obvious; smart
-   defaults; progressive disclosure
+   defaults; progressive disclosure. Tone: "join the group", not
+   "configure software"
+   - ✅ Dashboard checklist tone refresh (Set up your group / Pick
+     your home course / Add your crew / Tee it up)
+   - ⏳ OnboardingTour copy refresh
+   - ⏳ /onboarding finisher copy + flow review
+   - ⏳ Welcome card after first signup
 2. **Current-round navigation clarity** — at any moment, "what do I do
    next" should be a single tap from anywhere
-3. **Player linking / claiming** — guest → real account flow needs to
+   - ✅ Floating "Live · [course]" pill already shows on every
+     non-/dashboard, non-/round, non-/admin page
+   - ✅ /dashboard active-round hero card with one-tap to score-group
+   - ⏳ "what to do next" affordance on every round sub-page
+     (score, score-group, leaderboard, finalize, wagers, invites)
+   - ⏳ Persistent breadcrumb on round sub-pages (round name + back
+     to round)
+3. **Reduce dead-ends / empty-state CTAs**
+   - ✅ /leaderboards · /records · /records/me · /ledger empty
+     states rewritten with previews + Start-a-round / Set-up-your-
+     group / Claim-your-name CTAs
+   - ⏳ /players empty state (already has CTA but could preview
+     what links/stats unlock)
+   - ⏳ /courses empty state (already has CTA — could be more
+     group-flavored)
+4. **Live-activity / social proof on /dashboard** — "🟢 Tom is on
+   hole 7", "This week: 3 rounds, $145 changed hands", "Hot streak:
+   you've won 3 in a row", "🏆 New course record yesterday"
+5. **Player linking / claiming** — guest → real account flow needs to
    be one tap, undoable, with visible audit trail
-4. **Personal stats pages** — depth without configurability creep
-5. **Record books** — already shipped; deepen with partner / rivalry /
+6. **Personal stats pages** — depth without configurability creep
+7. **Record books** — already shipped; deepen with partner / rivalry /
    lifetime aggregations
-6. **Social sharing** — round share, record share, rivalry cards
-7. **Public/private sharing models** — cleanly modeled, not a settings
+8. **Social sharing** — round share, record share, rivalry cards
+9. **Public/private sharing models** — cleanly modeled, not a settings
    maze
-8. **Friend/group relationships** — Q3 still open; pick a model and
-   ship it
-9. **Course library UX** — discovery, cloning, attribution, dedup
-10. **Installable / PWA app feel** — manifest + service worker +
+10. **Friend/group relationships** — Q3 still open; pick a model and
+    ship it
+11. **Course library UX** — discovery, cloning, attribution, dedup
+12. **Installable / PWA app feel** — manifest + service worker +
     offline score entry queue (already partial via score-queue.ts)
 
 ---

@@ -85,26 +85,26 @@ export default async function DashboardPage() {
     {
       done: hasCourses,
       blocked: false,
-      title: "Add a course",
-      body: "We'll quick-add Jacksonville Golf & Country Club for you, or set up your own with rating, slope, and stroke index.",
+      title: "Pick your home course",
+      body: "Snap a scorecard photo or quick-add Jacksonville Golf & Country Club. The course library remembers tees, par, and stroke index so you never set this up twice.",
       href: "/courses",
       cta: hasCourses ? "Manage courses" : "Add your first course"
     },
     {
       done: hasPlayers,
       blocked: false,
-      title: "Add your players",
-      body: "Drop your regular crew in. Names and Handicap Indexes are enough — accounts and Venmo handles can come later.",
+      title: "Add your crew",
+      body: "Drop your regular foursome in — names + Handicap Indexes are enough to start. Venmo handles, GHIN numbers, and account claims can come later.",
       href: "/players",
-      cta: hasPlayers ? "Manage players" : "Add players"
+      cta: hasPlayers ? "Manage your roster" : "Add your crew"
     },
     {
       done: hasRounds,
       // Blocked when prerequisites aren't met. The button is replaced by a
       // disabled label rather than a no-op Link.
       blocked: !(hasCourses && hasPlayers),
-      title: "Start your first round",
-      body: "Pick the course, the players, and the games. Each player joins on their phone with a 4-digit PIN.",
+      title: "Tee it up",
+      body: "Pick your course, your players, and the games you want to run. Each player joins on their phone with a 4-digit PIN — no account required to play.",
       href: "/rounds/new",
       cta: "Start a round"
     }
@@ -139,7 +139,7 @@ export default async function DashboardPage() {
       {showChecklist && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="h-eyebrow text-gold-400">Get started</p>
+            <p className="h-eyebrow text-gold-400">Set up your group</p>
             <p className="text-xs text-cream-100/55">{steps.filter((s) => s.done).length} of {steps.length} done</p>
           </div>
           <ol className="space-y-2">

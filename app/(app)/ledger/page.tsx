@@ -11,8 +11,19 @@ export default async function LedgerPage() {
   const groupId = groups?.[0]?.id;
   if (!groupId) {
     return (
-      <div className="card p-8 text-center text-cream-100/65">
-        No group yet. <Link href="/dashboard" className="text-cream-50 underline">Dashboard</Link>
+      <div className="card p-6 sm:p-8 space-y-3 text-center">
+        <p className="text-3xl">🤝</p>
+        <h2 className="font-serif text-xl text-cream-50">
+          You&apos;re not in a group yet
+        </h2>
+        <p className="text-sm text-cream-100/65 max-w-md mx-auto">
+          The ledger lives at the group level — every round, every settlement,
+          every running total. Set up your crew and the numbers start ticking.
+        </p>
+        <div className="flex flex-wrap gap-2 justify-center pt-2">
+          <Link href="/onboarding" className="btn-primary">Set up your group →</Link>
+          <Link href="/dashboard" className="btn-ghost text-sm">Dashboard</Link>
+        </div>
       </div>
     );
   }
@@ -93,8 +104,19 @@ export default async function LedgerPage() {
       </header>
 
       {rows.length === 0 ? (
-        <div className="card p-8 text-center text-cream-100/65">
-          Nothing finalized yet. Settle a round and it&apos;ll show up here.
+        <div className="card p-6 sm:p-8 space-y-3 text-center">
+          <p className="text-3xl">💵</p>
+          <h2 className="font-serif text-xl text-cream-50">
+            Nothing&apos;s settled yet — your running ledger fills up here
+          </h2>
+          <p className="text-sm text-cream-100/65 max-w-md mx-auto">
+            Once a round finalizes, the season standings, who&apos;s up,
+            who&apos;s down, and who has to buy beers next time all live here.
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center pt-2">
+            <Link href="/rounds/new" className="btn-primary">Start a round</Link>
+            <Link href="/dashboard" className="btn-ghost text-sm">Dashboard</Link>
+          </div>
         </div>
       ) : (
         <div className="card overflow-hidden">

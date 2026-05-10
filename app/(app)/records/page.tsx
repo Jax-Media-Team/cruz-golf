@@ -79,8 +79,34 @@ export default async function RecordsPage() {
       <RecordsScopeNav active="group" myPlayerId={myPlayer?.id ?? null} />
 
       {totalRounds === 0 ? (
-        <div className="card p-8 text-center text-cream-100/65">
-          No finalized rounds yet. Records open up once rounds are settled.
+        <div className="card p-6 sm:p-8 space-y-4">
+          <div className="text-center space-y-2">
+            <p className="text-3xl">🏆</p>
+            <h2 className="font-serif text-2xl text-cream-50">
+              Your group&apos;s record book is waiting
+            </h2>
+            <p className="text-sm text-cream-100/65 max-w-lg mx-auto">
+              Lowest gross of all time, biggest single-round win, most birdies
+              in a round, season net, course records — every finalized round
+              feeds the lore.
+            </p>
+          </div>
+
+          <ul className="text-xs text-cream-100/65 grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-2xl mx-auto">
+            <li className="surface rounded-lg px-3 py-2 text-center">🏆 Lowest gross</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">💰 Biggest win</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🩸 Biggest loss</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">🐦 Most birdies</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">📅 Most rounds</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">👑 Season net</li>
+          </ul>
+
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Link href="/rounds/new" className="btn-primary">Start a round</Link>
+            <Link href="/dashboard" className="btn-ghost text-sm">
+              ← Back to dashboard
+            </Link>
+          </div>
         </div>
       ) : (
         <>
