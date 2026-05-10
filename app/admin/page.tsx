@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { formatDate } from "@/lib/format-date";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export const dynamic = "force-dynamic";
 
@@ -377,17 +378,10 @@ export default async function AdminOverview() {
                   <span className="text-cream-100/55 text-xs">{r.groups?.name ?? "Group"}</span>
                 </span>
                 <span className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={
-                      r.status === "live"
-                        ? "pill-live text-xs"
-                        : r.status === "finalized"
-                        ? "pill-final text-xs"
-                        : "pill-draft text-xs"
-                    }
-                  >
-                    {r.status}
-                  </span>
+                  {(() => {
+                    const pill = statusPillFor(r.status as RoundStatus);
+                    return <span className={`${pill.className} text-xs`}>{pill.label}</span>;
+                  })()}
                   <span className="text-xs text-cream-100/45 tabular-nums">{r.date}</span>
                 </span>
               </li>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { formatDate } from "@/lib/format-date";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,10 @@ export default async function AdminRoundDetail({ params }: { params: Promise<{ i
           <p className="text-sm text-cream-100/65 mt-1">
             <Link href={`/admin/groups/${r.group_id}`} className="hover:underline">{(r as any).groups?.name ?? "Group"}</Link>
             {" · "}{r.holes} holes
-            {" · "}<span className={r.status === "live" ? "pill-live text-xs" : r.status === "finalized" ? "pill-final text-xs" : "pill-draft text-xs"}>{r.status}</span>
+            {" · "}{(() => {
+              const pill = statusPillFor(r.status as RoundStatus);
+              return <span className={`${pill.className} text-xs`}>{pill.label}</span>;
+            })()}
           </p>
         </div>
         <div className="flex items-center gap-2">

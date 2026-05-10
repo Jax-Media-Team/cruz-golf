@@ -18,7 +18,7 @@
 export type ClubhouseRound = {
   id: string;
   date: string; // ISO yyyy-mm-dd
-  status: "draft" | "live" | "finalized";
+  status: "draft" | "live" | "pending_finalization" | "finalized";
   course_name: string | null;
   course_id: string | null;
   spectator_token: string | null;
@@ -133,6 +133,45 @@ export type PartnerSignal = {
   combined_cents: number;
 };
 
+export type CareerMoneyEntry = {
+  player_id: string;
+  display_name: string;
+  /** Lifetime cents netted (positive = won money; negative = lost). */
+  net_cents: number;
+  /** How many finalized rounds this player has played. */
+  rounds: number;
+};
+
+export type LastRoundSignal = {
+  round_id: string;
+  date: string;
+  course_name: string | null;
+  /** Top finisher (lowest gross or net depending on what the round
+   *  scored on; we just use lowest gross-over-par here for simplicity). */
+  leader: {
+    player_id: string;
+    display_name: string;
+    relative_to_par: number;
+    gross: number;
+  } | null;
+  /** Biggest cents winner (sum of settlement edges to this player). */
+  biggest_winner: {
+    player_id: string;
+    display_name: string;
+    net_cents: number;
+  } | null;
+  /** Biggest cents loser. */
+  biggest_loser: {
+    player_id: string;
+    display_name: string;
+    net_cents: number;
+  } | null;
+  /** Total cents that moved in this round (sum of all settlement edges). */
+  total_cents_moved: number;
+  /** Number of distinct settlement edges. */
+  edges: number;
+};
+
 export type GroupLifetimeSignal = {
   /** All finalized rounds the group has played, ever. */
   total_rounds: number;
@@ -236,6 +275,12 @@ export type ClubhouseBundle = {
   /** Per-(course, hole) leaders. Surfaced in restrained sub-cards
    *  ("Mitch owns hole 4 at JGCC: 3.4 avg, 3 plays"). */
   hole_mastery: HoleMasterySignal[];
+  /** Career money leaderboard — lifetime cents netted by every player
+   *  who's played a finalized round. Sorted by net_cents desc. */
+  career_money: CareerMoneyEntry[];
+  /** Most recent finalized round in the group, with leader + biggest
+   *  winner/loser. Null when no finalized rounds exist. */
+  last_round: LastRoundSignal | null;
   /** Single biggest-pot round in the group's history. Surfaced when
    *  meaningfully large (≥ $50 moved). Null when there's nothing
    *  noteworthy. */
@@ -1320,6 +1365,177 @@ export function buildBiggestPotSignal(
   };
 }
 
+/**
+ * Career money — lifetime cents netted by each player across every
+ * finalized round in the group. Sorted by net_cents desc (winners
+ * first), then by rounds played desc, then by name for stability.
+ *
+ * The /ledger page already shows a similar list but per-round-window;
+ * this signal is purely lifetime, intended for surfacing in the
+ * Clubhouse strip and on player stats pages.
+ */
+export function buildCareerMoney(
+  rps: ClubhouseRoundPlayer[],
+  settlements: ClubhouseSettlement[],
+  rounds: ClubhouseRound[]
+): CareerMoneyEntry[] {
+  const finalizedRoundIds = new Set(
+    rounds.filter((r) => r.status === "finalized").map((r) => r.id)
+  );
+  const rpToPlayer = new Map(
+    rps.map((rp) => [
+      rp.round_player_id,
+      { player_id: rp.player_id, display_name: rp.display_name }
+    ])
+  );
+
+  const totals = new Map<
+    string,
+    { display_name: string; net_cents: number; round_set: Set<string> }
+  >();
+
+  // Initialize entries for every player who appears in a finalized round
+  // (so a player who only ever pushed shows up at $0 with their round
+  // count, rather than vanishing entirely).
+  for (const rp of rps) {
+    if (!finalizedRoundIds.has(rp.round_id)) continue;
+    const e = totals.get(rp.player_id) ?? {
+      display_name: rp.display_name,
+      net_cents: 0,
+      round_set: new Set<string>()
+    };
+    e.round_set.add(rp.round_id);
+    totals.set(rp.player_id, e);
+  }
+
+  for (const s of settlements) {
+    if (!finalizedRoundIds.has(s.round_id)) continue;
+    const from = rpToPlayer.get(s.from_round_player_id);
+    const to = rpToPlayer.get(s.to_round_player_id);
+    if (from && totals.has(from.player_id)) {
+      totals.get(from.player_id)!.net_cents -= s.amount_cents;
+    }
+    if (to && totals.has(to.player_id)) {
+      totals.get(to.player_id)!.net_cents += s.amount_cents;
+    }
+  }
+
+  const out: CareerMoneyEntry[] = [];
+  for (const [player_id, e] of totals.entries()) {
+    out.push({
+      player_id,
+      display_name: e.display_name,
+      net_cents: e.net_cents,
+      rounds: e.round_set.size
+    });
+  }
+  out.sort((a, b) => {
+    if (b.net_cents !== a.net_cents) return b.net_cents - a.net_cents;
+    if (b.rounds !== a.rounds) return b.rounds - a.rounds;
+    return a.display_name.localeCompare(b.display_name);
+  });
+  return out;
+}
+
+/**
+ * Most-recent finalized round signal — small "what just happened"
+ * summary for the dashboard. Returns null when no finalized rounds.
+ */
+export function buildLastRoundSignal(
+  rounds: ClubhouseRound[],
+  rps: ClubhouseRoundPlayer[],
+  scores: ClubhouseScore[],
+  settlements: ClubhouseSettlement[]
+): LastRoundSignal | null {
+  const finalized = rounds.filter((r) => r.status === "finalized");
+  if (finalized.length === 0) return null;
+  finalized.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const last = finalized[0];
+
+  const lastRps = rps.filter((rp) => rp.round_id === last.id);
+  const lastRpIds = new Set(lastRps.map((rp) => rp.round_player_id));
+
+  // Leader: lowest gross-vs-par across the round.
+  let leader: LastRoundSignal["leader"] = null;
+  for (const rp of lastRps) {
+    const rpScores = scores.filter(
+      (s) => s.round_player_id === rp.round_player_id && s.gross != null
+    );
+    if (rpScores.length === 0) continue;
+    const gross = rpScores.reduce((s, x) => s + (x.gross as number), 0);
+    const par = rpScores.reduce((s, x) => s + x.par, 0);
+    const relative = gross - par;
+    if (
+      leader == null ||
+      relative < leader.relative_to_par ||
+      (relative === leader.relative_to_par && gross < leader.gross)
+    ) {
+      leader = {
+        player_id: rp.player_id,
+        display_name: rp.display_name,
+        relative_to_par: relative,
+        gross
+      };
+    }
+  }
+
+  // Biggest winner / loser by settlement net.
+  const rpToPlayer = new Map(
+    lastRps.map((rp) => [
+      rp.round_player_id,
+      { player_id: rp.player_id, display_name: rp.display_name }
+    ])
+  );
+  const netByPlayer = new Map<
+    string,
+    { display_name: string; net_cents: number }
+  >();
+  let totalCents = 0;
+  let edges = 0;
+  for (const s of settlements) {
+    if (!lastRpIds.has(s.from_round_player_id)) continue;
+    if (!lastRpIds.has(s.to_round_player_id)) continue;
+    const from = rpToPlayer.get(s.from_round_player_id)!;
+    const to = rpToPlayer.get(s.to_round_player_id)!;
+    const fromEntry = netByPlayer.get(from.player_id) ?? {
+      display_name: from.display_name,
+      net_cents: 0
+    };
+    fromEntry.net_cents -= s.amount_cents;
+    netByPlayer.set(from.player_id, fromEntry);
+    const toEntry = netByPlayer.get(to.player_id) ?? {
+      display_name: to.display_name,
+      net_cents: 0
+    };
+    toEntry.net_cents += s.amount_cents;
+    netByPlayer.set(to.player_id, toEntry);
+    totalCents += s.amount_cents;
+    edges += 1;
+  }
+
+  let biggestWinner: LastRoundSignal["biggest_winner"] = null;
+  let biggestLoser: LastRoundSignal["biggest_loser"] = null;
+  for (const [player_id, e] of netByPlayer.entries()) {
+    if (e.net_cents > 0 && (!biggestWinner || e.net_cents > biggestWinner.net_cents)) {
+      biggestWinner = { player_id, display_name: e.display_name, net_cents: e.net_cents };
+    }
+    if (e.net_cents < 0 && (!biggestLoser || e.net_cents < biggestLoser.net_cents)) {
+      biggestLoser = { player_id, display_name: e.display_name, net_cents: e.net_cents };
+    }
+  }
+
+  return {
+    round_id: last.id,
+    date: last.date,
+    course_name: last.course_name,
+    leader,
+    biggest_winner: biggestWinner,
+    biggest_loser: biggestLoser,
+    total_cents_moved: totalCents,
+    edges
+  };
+}
+
 // ---- Convenience: combined builder ----
 
 export function buildClubhouse(input: {
@@ -1363,6 +1579,13 @@ export function buildClubhouse(input: {
     }),
     hole_mastery: buildHoleMasterySignals(input.rounds, input.rps, input.scores),
     biggest_pot: buildBiggestPotSignal(input.rounds, input.settlements),
+    career_money: buildCareerMoney(input.rps, input.settlements, input.rounds),
+    last_round: buildLastRoundSignal(
+      input.rounds,
+      input.rps,
+      input.scores,
+      input.settlements
+    ),
     recent_milestones: buildRecentMilestones(input.rounds, input.rps, input.scores, {
       windowDays: input.milestoneWindowDays,
       today: input.today

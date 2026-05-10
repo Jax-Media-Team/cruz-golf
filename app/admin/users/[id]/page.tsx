@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { formatDate, formatDateTime } from "@/lib/format-date";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 import { UserActions } from "./user-actions";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +50,15 @@ export default async function AdminUserDetail({
   };
   const allRps = (roundPlayers ?? []) as unknown as RpRow[];
   const liveRps = allRps.filter((rp) => rp.rounds?.status === "live");
+  const pendingRps = allRps.filter((rp) => rp.rounds?.status === "pending_finalization");
   const draftRps = allRps.filter((rp) => rp.rounds?.status === "draft");
-  const otherRps = allRps.filter((rp) => rp.rounds && rp.rounds.status !== "live" && rp.rounds.status !== "draft");
+  const otherRps = allRps.filter(
+    (rp) =>
+      rp.rounds &&
+      rp.rounds.status !== "live" &&
+      rp.rounds.status !== "pending_finalization" &&
+      rp.rounds.status !== "draft"
+  );
 
   return (
     <div className="space-y-5">
@@ -141,21 +149,21 @@ export default async function AdminUserDetail({
         )}
       </section>
 
-      {/* Live + draft rounds first — these are the support-workflow targets.
+      {/* Live + pending + draft rounds — the support-workflow targets.
           Each row links to /admin/rounds/[id] (full admin detail) AND a
           read-only spectator leaderboard so support can see what the user
           sees without altering anything. */}
-      {(liveRps.length > 0 || draftRps.length > 0) && (
+      {(liveRps.length > 0 || pendingRps.length > 0 || draftRps.length > 0) && (
         <section className="card p-4 border border-gold-500/30">
           <h2 className="font-serif text-lg text-cream-50 mb-1">
-            Active rounds ({liveRps.length + draftRps.length})
+            Active rounds ({liveRps.length + pendingRps.length + draftRps.length})
           </h2>
           <p className="text-[11px] text-cream-100/55 mb-2">
-            Live + draft rounds this user is in. Spectate is read-only — it
-            won&apos;t mutate anything.
+            Live, awaiting finalization, and draft rounds this user is in.
+            Spectate is read-only — it won&apos;t mutate anything.
           </p>
           <ul className="divide-y divide-cream-100/8 text-sm">
-            {[...liveRps, ...draftRps].map((rp) => {
+            {[...liveRps, ...pendingRps, ...draftRps].map((rp) => {
               const r = rp.rounds!;
               const courseName = r.courses?.name ?? "Course";
               const groupName = r.groups?.name ?? "Group";
@@ -174,15 +182,10 @@ export default async function AdminUserDetail({
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={
-                        r.status === "live"
-                          ? "pill-live text-[10px]"
-                          : "pill-draft text-[10px]"
-                      }
-                    >
-                      {r.status}
-                    </span>
+                    {(() => {
+                      const pill = statusPillFor(r.status as RoundStatus);
+                      return <span className={`${pill.className} text-[10px]`}>{pill.label}</span>;
+                    })()}
                     {r.spectator_token && (
                       <Link
                         href={`/rounds/${rp.round_id}/leaderboard?token=${r.spectator_token}&adminMode=1`}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export const dynamic = "force-dynamic";
 
@@ -95,9 +96,10 @@ export default async function AdminGroupDetail({ params }: { params: Promise<{ i
                     👀 Spectate
                   </Link>
                 )}
-                <span className={r.status === "live" ? "pill-live text-xs" : r.status === "finalized" ? "pill-final text-xs" : "pill-draft text-xs"}>
-                  {r.status}
-                </span>
+                {(() => {
+                  const pill = statusPillFor(r.status as RoundStatus);
+                  return <span className={`${pill.className} text-xs`}>{pill.label}</span>;
+                })()}
               </div>
             </li>
           ))}

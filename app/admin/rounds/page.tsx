@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,12 @@ export default async function AdminRoundsPage({
     )
     .order("created_at", { ascending: false })
     .limit(200);
-  if (status === "live" || status === "finalized" || status === "draft") {
+  if (
+    status === "live" ||
+    status === "finalized" ||
+    status === "draft" ||
+    status === "pending_finalization"
+  ) {
     query = query.eq("status", status);
   }
   const { data: rounds } = await query;
@@ -46,6 +52,7 @@ export default async function AdminRoundsPage({
         <nav className="flex gap-1 text-xs">
           <Link href="/admin/rounds" className={`btn-ghost ${!status ? "bg-brand-800/70" : ""}`}>All</Link>
           <Link href="/admin/rounds?status=live" className={`btn-ghost ${status === "live" ? "bg-brand-800/70" : ""}`}>Live</Link>
+          <Link href="/admin/rounds?status=pending_finalization" className={`btn-ghost ${status === "pending_finalization" ? "bg-brand-800/70" : ""}`}>Pending</Link>
           <Link href="/admin/rounds?status=finalized" className={`btn-ghost ${status === "finalized" ? "bg-brand-800/70" : ""}`}>Finalized</Link>
           <Link href="/admin/rounds?status=draft" className={`btn-ghost ${status === "draft" ? "bg-brand-800/70" : ""}`}>Draft</Link>
         </nav>
@@ -78,9 +85,10 @@ export default async function AdminRoundsPage({
                   <td className="px-3 py-2 text-right tabular-nums">{r.holes}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{playerCount.get(r.id) ?? 0}</td>
                   <td className="px-3 py-2">
-                    <span className={r.status === "live" ? "pill-live text-xs" : r.status === "finalized" ? "pill-final text-xs" : "pill-draft text-xs"}>
-                      {r.status}
-                    </span>
+                    {(() => {
+                      const pill = statusPillFor(r.status as RoundStatus);
+                      return <span className={`${pill.className} text-xs`}>{pill.label}</span>;
+                    })()}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {r.status === "live" && r.spectator_token && (

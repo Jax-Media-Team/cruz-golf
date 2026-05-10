@@ -4,9 +4,11 @@ import {
   fmtMoneyCents,
   fmtRelativeToPar,
   type BiggestPotSignal,
+  type CareerMoneyEntry,
   type ClubhouseBundle,
   type CourseMasterySignal,
   type HoleMasterySignal,
+  type LastRoundSignal,
   type MilestoneSignal,
   type PartnerSignal,
   type RivalrySignal
@@ -113,10 +115,16 @@ export function ClubhouseStrip({ bundle }: { bundle: ClubhouseBundle }) {
 function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
   const cards: React.ReactNode[] = [];
 
+  // Last finalized round — short summary of "what just happened."
+  // Cap one card; rendered first so the freshest memory is the loudest.
+  if (bundle.last_round) {
+    cards.push(<StatCard key="last-round" {...lastRoundCopy(bundle.last_round)} />);
+  }
+
   // Recent milestone — surface only the freshest one. Multiple
   // milestones in a single page-load would feel like a notification feed.
   const milestone = bundle.recent_milestones[0];
-  if (milestone) {
+  if (milestone && cards.length < 4) {
     cards.push(<StatCard key="milestone" {...milestoneCopy(milestone)} />);
   }
 
@@ -182,6 +190,19 @@ function HistoryCards({ bundle }: { bundle: ClubhouseBundle }) {
   // 30-day window (would duplicate the activity card otherwise).
   if (bundle.biggest_pot && cards.length < 4) {
     cards.push(<StatCard key="biggest-pot" {...biggestPotCopy(bundle.biggest_pot)} />);
+  }
+
+  // Career money leader — only surface when the leader has played
+  // ≥ 5 rounds AND netted at least $30. Otherwise the number's too
+  // small to be interesting.
+  const moneyLeader = bundle.career_money[0];
+  if (
+    moneyLeader &&
+    moneyLeader.rounds >= 5 &&
+    moneyLeader.net_cents >= 3000 &&
+    cards.length < 4
+  ) {
+    cards.push(<StatCard key="career-money" {...careerMoneyCopy(moneyLeader)} />);
   }
 
   // 30-day activity.
@@ -437,6 +458,58 @@ function biggestPotCopy(b: BiggestPotSignal): {
     secondary: `${b.course_name ?? "Round"} · ${prettyDate(b.date)} · ${b.edges} settlement${
       b.edges === 1 ? "" : "s"
     }`
+  };
+}
+
+// Last-round recap. Statement form: "JGCC · Friday · Patrick -2, took $42".
+function lastRoundCopy(r: LastRoundSignal): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  const leader = r.leader
+    ? `${r.leader.display_name} ${fmtRelativeToPar(r.leader.relative_to_par)}`
+    : null;
+  const winner = r.biggest_winner
+    ? `${r.biggest_winner.display_name} took ${fmtMoneyCents(r.biggest_winner.net_cents)}`
+    : null;
+  // Primary line: leader by score. Secondary: course/date + biggest winner.
+  return {
+    primary: leader ? (
+      <>
+        <span className="font-medium">{r.leader!.display_name}</span> won{" "}
+        {r.course_name ?? "the round"} at{" "}
+        {fmtRelativeToPar(r.leader!.relative_to_par)}
+      </>
+    ) : (
+      <>Last round · {r.course_name ?? "Round"}</>
+    ),
+    secondary: (
+      <>
+        {prettyDate(r.date)}
+        {winner ? ` · ${winner}` : ""}
+        {r.total_cents_moved > 0
+          ? ` · ${fmtMoneyCents(r.total_cents_moved)} moved across ${r.edges} settlement${
+              r.edges === 1 ? "" : "s"
+            }`
+          : ""}
+      </>
+    )
+  };
+}
+
+// Career money leader — lifetime net winner across the group.
+function careerMoneyCopy(m: CareerMoneyEntry): {
+  primary: React.ReactNode;
+  secondary: React.ReactNode;
+} {
+  return {
+    primary: (
+      <>
+        <span className="font-medium">{m.display_name}</span> · lifetime{" "}
+        <span className="text-emerald-300">+{fmtMoneyCents(m.net_cents)}</span>
+      </>
+    ),
+    secondary: `Across ${m.rounds} round${m.rounds === 1 ? "" : "s"}`
   };
 }
 
