@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { GamesEditor } from "./games-editor";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +83,13 @@ export default async function RoundGamesPage({
 
   return (
     <div className="space-y-5 max-w-3xl">
+      <Breadcrumbs
+        items={[
+          { label: "Rounds", href: "/dashboard" },
+          { label: (round as any).courses?.name ?? "Round", href: `/rounds/${id}` },
+          { label: "Games & bets" }
+        ]}
+      />
       <header>
         <p className="h-eyebrow text-gold-400">Games & bets</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">

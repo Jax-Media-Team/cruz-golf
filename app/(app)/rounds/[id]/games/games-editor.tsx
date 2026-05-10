@@ -203,52 +203,42 @@ function GameCard({
             disabled={disabled}
           />
         </div>
-        {!isNassau && (
+        {!isNassau && !isSkins && (
           <div>
-            <label className="label">
-              {isSkins ? "Each skin (USD)" : "Stake (USD)"}
-            </label>
+            <label className="label">Stake (USD)</label>
             <input
               className="input"
               type="number"
               step="0.50"
               min={0}
-              value={
-                isSkins
-                  ? ((game.config?.skin_value_cents as number) ?? 0) / 100
-                  : game.stake_cents / 100
-              }
-              onChange={(e) => {
+              defaultValue={game.stake_cents / 100}
+              onBlur={(e) => {
                 const dollars = parseFloat(e.target.value);
                 const cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
-                if (isSkins) {
-                  onPatch({
-                    config: { ...(game.config ?? {}), skin_value_cents: cents }
-                  });
-                } else {
-                  onPatch({ stake_cents: cents });
-                }
+                onPatch({ stake_cents: cents });
               }}
               disabled={disabled}
             />
-            {isSkins && (
-              <p className="text-[10px] text-cream-100/45 mt-0.5">
-                What each skin pays out. Total pot scales with how many skins
-                are won (max 18).
-              </p>
-            )}
           </div>
+        )}
+        {isSkins && (
+          <SkinsConfigBlock
+            config={game.config ?? {}}
+            disabled={disabled}
+            onPatch={(c) => onPatch({ config: c })}
+          />
         )}
         <div>
           <label className="label">Allowance %</label>
           <input
             className="input"
-            type="number"
-            min={0}
-            max={150}
-            value={game.allowance_pct}
-            onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
+            type="text"
+            inputMode="numeric"
+            defaultValue={game.allowance_pct}
+            key={game.allowance_pct}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => {
+              const v = parseInt(e.currentTarget.value, 10);
               onPatch({ allowance_pct: Number.isFinite(v) ? v : 100 });
             }}
             disabled={disabled}
@@ -271,6 +261,173 @@ function GameCard({
           Remove this game
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Skins config block. Two payout modes:
+ *  - "pot"   (default): every player buys in. The total pot (buyin × N
+ *            players) is divided EQUALLY among every skin won. So 4 skins
+ *            on a $160 pot = $40/skin. Number of players is determined at
+ *            settlement time.
+ *  - "fixed":            each skin pays a fixed dollar amount.
+ *
+ * Advanced (collapsed by default): ties carry/split, birdie validation,
+ * carry escalation. Sensible defaults: ties carry, no birdie required,
+ * linear escalation.
+ */
+function SkinsConfigBlock({
+  config,
+  disabled,
+  onPatch
+}: {
+  config: Record<string, unknown>;
+  disabled: boolean;
+  onPatch: (next: Record<string, unknown>) => void;
+}) {
+  const skinMode: "pot" | "fixed" =
+    (config.skin_mode as any) ??
+    ((config.skin_value_cents as number) != null && (config.buyin_cents as number) == null
+      ? "fixed"
+      : "pot");
+  const buyinDollars = ((config.buyin_cents as number) ?? 2000) / 100;
+  const skinValueDollars = ((config.skin_value_cents as number) ?? 200) / 100;
+  const ties = (config.ties as string) ?? "carry";
+  const requireBirdie = !!config.require_birdie;
+  const escalation = (config.escalation as string) ?? "linear";
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  function set(next: Record<string, unknown>) {
+    onPatch({ ...config, ...next });
+  }
+
+  return (
+    <div className="sm:col-span-2 rounded-lg border border-cream-100/10 p-3 space-y-3">
+      <div>
+        <label className="label">Payout style</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => set({ skin_mode: "pot" })}
+            className={`pill text-xs px-3 py-1.5 ${
+              skinMode === "pot"
+                ? "bg-gold-500 text-brand-900"
+                : "bg-brand-900/60 border border-cream-100/15 text-cream-100/85"
+            }`}
+          >
+            Pot-based
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => set({ skin_mode: "fixed" })}
+            className={`pill text-xs px-3 py-1.5 ${
+              skinMode === "fixed"
+                ? "bg-gold-500 text-brand-900"
+                : "bg-brand-900/60 border border-cream-100/15 text-cream-100/85"
+            }`}
+          >
+            Fixed value
+          </button>
+        </div>
+        <p className="text-[10px] text-cream-100/55 mt-1">
+          {skinMode === "pot"
+            ? "Everyone buys in. Whatever skins are won, the pot is divided equally among them."
+            : "Each skin pays a fixed dollar amount, regardless of how many are won."}
+        </p>
+      </div>
+
+      {skinMode === "pot" ? (
+        <div>
+          <label className="label">Buy-in per player (USD)</label>
+          <input
+            className="input"
+            type="number"
+            step="0.50"
+            min={0}
+            defaultValue={buyinDollars}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value);
+              set({ buyin_cents: Number.isFinite(v) ? Math.round(v * 100) : 0 });
+            }}
+            disabled={disabled}
+          />
+          <p className="text-[10px] text-cream-100/45 mt-0.5">
+            Example: 8 players × $20 = $160 pot. If 5 skins are won, each is
+            worth $32.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <label className="label">Each skin (USD)</label>
+          <input
+            className="input"
+            type="number"
+            step="0.50"
+            min={0}
+            defaultValue={skinValueDollars}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value);
+              set({ skin_value_cents: Number.isFinite(v) ? Math.round(v * 100) : 0 });
+            }}
+            disabled={disabled}
+          />
+          <p className="text-[10px] text-cream-100/45 mt-0.5">
+            Example: $10 a skin × 5 skins = $50 total moves at the end.
+          </p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="text-[11px] text-cream-100/55 hover:text-cream-50"
+        onClick={() => setShowAdvanced((v) => !v)}
+      >
+        {showAdvanced ? "▾ Hide advanced" : "▸ Advanced (ties, birdie, carry)"}
+      </button>
+      {showAdvanced && (
+        <div className="space-y-2 pt-1 border-t border-cream-100/10">
+          <div>
+            <label className="label">Tied holes</label>
+            <select
+              className="input"
+              value={ties}
+              onChange={(e) => set({ ties: e.target.value })}
+              disabled={disabled}
+            >
+              <option value="carry">Carry — tie pushes the skin to the next hole</option>
+              <option value="split">Split — pot splits between tied players</option>
+              <option value="nullify">Nullify — tied holes are dropped</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-cream-100/85">
+            <input
+              type="checkbox"
+              checked={requireBirdie}
+              onChange={(e) => set({ require_birdie: e.target.checked })}
+              disabled={disabled}
+            />
+            Birdie or better required (Canadian-style)
+          </label>
+          {skinMode === "fixed" && ties === "carry" && (
+            <div>
+              <label className="label">Carry value</label>
+              <select
+                className="input"
+                value={escalation}
+                onChange={(e) => set({ escalation: e.target.value })}
+                disabled={disabled}
+              >
+                <option value="linear">Add — every carry adds the base value</option>
+                <option value="double">Double — value doubles after each carry</option>
+                <option value="flat">Flat — value never changes</option>
+              </select>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -393,10 +550,14 @@ function AddGameForm({
     const baseLabel = nextFamily.hasMode ? `${nextFamily.label} (${nextMode})` : v.label;
     const taken = existing.some((g) => g.name === baseLabel);
     setName(taken ? `${baseLabel} #${existing.length + 1}` : baseLabel);
-    if (p?.defaults.stake_cents) setStake(p.defaults.stake_cents / 100);
-    else if (t === "skins_canadian" || t.startsWith("skins"))
-      setStake(((p?.defaults.config as any)?.skin_value_cents ?? 200) / 100);
-    else setStake(0);
+    if (t.startsWith("skins") || t === "skins_canadian") {
+      // Skins default to pot-based with $20 buy-in.
+      setStake(((p?.defaults.config as any)?.buyin_cents ?? 2000) / 100);
+    } else if (p?.defaults.stake_cents) {
+      setStake(p.defaults.stake_cents / 100);
+    } else {
+      setStake(0);
+    }
   }
 
   function pickFamily(key: string) {
@@ -516,20 +677,20 @@ function AddGameForm({
             {!isNassauFamily && (
               <div>
                 <label className="label">
-                  {stakeIsSkin ? "Each skin (USD)" : "Stake (USD)"}
+                  {stakeIsSkin ? "Buy-in per player (USD)" : "Stake (USD)"}
                 </label>
                 <input
                   className="input"
                   type="number"
                   step="0.50"
                   min={0}
-                  value={stake}
-                  onChange={(e) => setStake(parseFloat(e.target.value) || 0)}
+                  defaultValue={stake}
+                  onBlur={(e) => setStake(parseFloat(e.target.value) || 0)}
                 />
                 {stakeIsSkin && (
                   <p className="text-[10px] text-cream-100/45 mt-0.5">
-                    What each skin pays out. Total pot scales with how many
-                    skins are won (max 18).
+                    Pot-based by default — pot is divided equally among won
+                    skins. Switch to fixed-value after adding if you prefer.
                   </p>
                 )}
               </div>
@@ -551,7 +712,9 @@ function AddGameForm({
               let config: Record<string, unknown> = { ...resolvedPreset.defaults.config };
               let stake_cents = resolvedPreset.defaults.stake_cents;
               if (stakeIsSkin) {
-                config = { ...config, skin_value_cents: cents };
+                // Pot-based default: write buyin_cents (preset config already
+                // sets skin_mode: "pot"). User can switch to fixed mode later.
+                config = { ...config, buyin_cents: cents };
                 stake_cents = 0;
               } else if (!isNassauFamily) {
                 stake_cents = cents;

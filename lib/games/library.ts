@@ -99,7 +99,13 @@ export const GAME_LIBRARY: GamePreset[] = [
     game_type: "skins_gross",
     label: "Skins (gross)",
     short: "Lowest gross score on a hole wins a skin; ties carry over.",
-    defaults: { stake_cents: 0, allowance_pct: 100, config: { skin_value_cents: 200 } },
+    // Default to pot-based, $20 buy-in per player. Engine reads
+    // skin_mode/buyin_cents (pot) or skin_value_cents (fixed).
+    defaults: {
+      stake_cents: 0,
+      allowance_pct: 100,
+      config: { skin_mode: "pot", buyin_cents: 2000, ties: "carry" }
+    },
     hasGrossNetToggle: true,
     toggleTo: "skins_net"
   },
@@ -107,7 +113,11 @@ export const GAME_LIBRARY: GamePreset[] = [
     game_type: "skins_net",
     label: "Skins (net)",
     short: "Lowest net score on a hole wins a skin; ties carry over.",
-    defaults: { stake_cents: 0, allowance_pct: 100, config: { skin_value_cents: 200 } },
+    defaults: {
+      stake_cents: 0,
+      allowance_pct: 100,
+      config: { skin_mode: "pot", buyin_cents: 2000, ties: "carry" }
+    },
     hasGrossNetToggle: true,
     toggleTo: "skins_gross"
   },
@@ -115,7 +125,11 @@ export const GAME_LIBRARY: GamePreset[] = [
     game_type: "skins_canadian",
     label: "Skins (Canadian)",
     short: "Birdie or better required to win a skin (lots of carryovers).",
-    defaults: { stake_cents: 0, allowance_pct: 100, config: { skin_value_cents: 500 } },
+    defaults: {
+      stake_cents: 0,
+      allowance_pct: 100,
+      config: { skin_mode: "pot", buyin_cents: 2000, require_birdie: true, ties: "carry" }
+    },
     hasGrossNetToggle: false
   },
   {

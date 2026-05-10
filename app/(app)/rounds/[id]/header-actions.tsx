@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { ShareSheet } from "@/components/ShareSheet";
 
 type Props = {
   roundId: string;
@@ -62,20 +63,14 @@ export function RoundHeaderActions({ roundId, spectatorToken, pin, accessMode, i
           Copy invite
         </button>
       )}
-      <button
-        className="btn-secondary text-xs"
-        onClick={() => copy(spectatorUrl, "Spectator link")}
-      >
-        Spectator link
-      </button>
-      <a
-        className="btn-secondary text-xs"
-        href={`/api/share/round/${roundId}/image?token=${spectatorToken}`}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Share image
-      </a>
+      <ShareSheet
+        title="Live leaderboard"
+        url={spectatorUrl}
+        imageUrl={`/api/share/round/${roundId}/image?token=${spectatorToken}`}
+        imageFilename={`cruz-golf-${roundId}.png`}
+        triggerLabel="Share"
+        triggerClassName="btn-secondary text-xs"
+      />
       {isCommissioner && (
         <select
           className="input w-auto text-xs py-2"

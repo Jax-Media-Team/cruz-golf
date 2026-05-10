@@ -70,32 +70,21 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     .select("id, game_type, name, stake_cents, allowance_pct, config")
     .eq("round_id", id);
 
-  // Wager handshake check.
+  // Stakes flag — used to decide whether to show the optional wagers tile.
+  // The old handshake-required gate is gone; we no longer fetch ack rows.
   const hasStakes = (games ?? []).some((g: any) => (g.stake_cents ?? 0) > 0);
-  let myAck: { acknowledged_at: string } | null = null;
-  if (hasStakes) {
-    const { data: ack } = await sb
-      .from("round_wager_acks")
-      .select("acknowledged_at")
-      .eq("round_id", id)
-      .eq("profile_id", user.id)
-      .maybeSingle();
-    myAck = (ack as any) ?? null;
-  }
-  // Commissioner view of who has acked.
-  let pendingAcks: number = 0;
-  if (isCommissioner && hasStakes) {
-    const { data: invitees } = await sb
-      .from("round_invitees")
-      .select("profile_id")
-      .eq("round_id", id);
-    const { data: acks } = await sb
-      .from("round_wager_acks")
-      .select("profile_id")
-      .eq("round_id", id);
-    const ackSet = new Set((acks ?? []).map((a: any) => a.profile_id));
-    pendingAcks = (invitees ?? []).filter((i: any) => !ackSet.has(i.profile_id)).length;
-  }
+
+  // Auto-finalize prompt: show a banner once every player has a score on
+  // every hole the round actually has. Works for shotgun starts (we count
+  // distinct hole_numbers, not "did they reach 18"). Only relevant for
+  // live rounds with at least one player + one game.
+  const expectedScores =
+    (rps?.length ?? 0) * Math.min(round.holes ?? 18, 18);
+  const enteredScores = (scores ?? []).filter((s: any) => s.gross != null).length;
+  const allScoresIn =
+    expectedScores > 0 &&
+    enteredScores >= expectedScores &&
+    round.status === "live";
 
   return (
     <div className="space-y-5">
@@ -140,27 +129,25 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         />
       </header>
 
-      {hasStakes && !isCommissioner && !myAck && (
+      {/* Wager handshake banners removed: per product decision the handshake
+          is opt-in and not surfaced here. Players can still review wagers
+          via the "View wagers" tile below if stakes exist. */}
+
+      {allScoresIn && isCommissioner && (
         <Link
-          href={`/rounds/${id}/wagers`}
-          className="card p-4 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors border border-[#D9AD2C]/30"
+          href={`/rounds/${id}/finalize`}
+          className="card p-4 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors border border-emerald-400/40 bg-emerald-500/5"
         >
           <div>
-            <div className="font-serif text-lg text-cream-50">Confirm the wagers before scoring</div>
-            <p className="text-xs text-cream-100/65 mt-0.5">Tap to review the bets and lock yourself in.</p>
+            <div className="font-serif text-lg text-cream-50">
+              ✅ All scores entered. Review and finalize?
+            </div>
+            <p className="text-xs text-cream-100/65 mt-0.5">
+              Lock in the round and compute settlements. You can unlock later
+              if anything needs fixing.
+            </p>
           </div>
-          <span className="pill bg-[#D9AD2C] text-brand-900">Pending →</span>
-        </Link>
-      )}
-      {hasStakes && isCommissioner && pendingAcks > 0 && (
-        <Link
-          href={`/rounds/${id}/wagers`}
-          className="card p-3 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors text-sm"
-        >
-          <span className="text-cream-100/85">
-            {pendingAcks} {pendingAcks === 1 ? "player hasn't" : "players haven't"} confirmed wagers yet.
-          </span>
-          <span className="pill-draft">Review →</span>
+          <span className="pill bg-emerald-500 text-brand-900">Finalize →</span>
         </Link>
       )}
 
@@ -228,7 +215,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
               className="card card-hover p-3 text-center flex flex-col items-center gap-1"
             >
               <span className="text-xl">✅</span>
-              <span className="font-serif text-sm text-cream-50 leading-tight">Settle up</span>
+              <span className="font-serif text-sm text-cream-50 leading-tight">Finalize</span>
             </Link>
           </div>
         </div>

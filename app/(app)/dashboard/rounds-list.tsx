@@ -47,7 +47,9 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
       return;
     setBusyId(r.id);
     setErr(null);
-    const { error } = await sb.from("rounds").delete().eq("id", r.id);
+    // Use the atomic RPC instead of a direct DELETE so cascade ordering and
+    // RLS quirks can't surface as the "Linked record is missing" message.
+    const { error } = await sb.rpc("fn_delete_round", { p_round_id: r.id });
     setBusyId(null);
     if (error) {
       setErr(friendlyAuthError(error));

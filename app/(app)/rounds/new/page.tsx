@@ -504,19 +504,21 @@ export default function NewRoundPage() {
 
       <section className="card p-4 space-y-3">
         <h2 className="font-serif text-xl text-cream-50">Basics</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
+        {/* Stack date + holes vertically on phones (the type="date" picker
+            otherwise overlaps the holes select on small screens). */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="min-w-0">
             <label className="label">Date</label>
-            <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input className="input w-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="label">Holes</label>
-            <select className="input" value={holes} onChange={(e) => setHoles(parseInt(e.target.value) as 9 | 18)}>
+            <select className="input w-full" value={holes} onChange={(e) => setHoles(parseInt(e.target.value) as 9 | 18)}>
               <option value={18}>18</option>
               <option value={9}>9</option>
             </select>
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2 min-w-0">
             <label className="label">Course</label>
             <select className="input" value={courseId} onChange={(e) => setCourseId(e.target.value)}>
               <option value="">Pick a course…</option>
@@ -1000,7 +1002,18 @@ function GameConfigEditor({
           )}
           <div>
             <label className="label text-xs">Allowance %</label>
-            <input className="input text-sm" type="number" value={value.allowance_pct} onChange={(e) => onChange({ allowance_pct: parseInt(e.target.value) || 100 })} />
+            <input
+              className="input text-sm"
+              type="text"
+              inputMode="numeric"
+              defaultValue={value.allowance_pct}
+              key={value.allowance_pct}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => {
+                const v = parseInt(e.currentTarget.value, 10);
+                onChange({ allowance_pct: Number.isFinite(v) ? v : 100 });
+              }}
+            />
           </div>
         </div>
 
@@ -1061,7 +1074,18 @@ function GameConfigEditor({
       <Money label="Stake $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
       <div>
         <label className="label text-xs">Allowance %</label>
-        <input className="input text-sm" type="number" value={value.allowance_pct} onChange={(e) => onChange({ allowance_pct: parseInt(e.target.value) || 100 })} />
+        <input
+              className="input text-sm"
+              type="text"
+              inputMode="numeric"
+              defaultValue={value.allowance_pct}
+              key={value.allowance_pct}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => {
+                const v = parseInt(e.currentTarget.value, 10);
+                onChange({ allowance_pct: Number.isFinite(v) ? v : 100 });
+              }}
+            />
       </div>
     </div>
   );
@@ -1164,11 +1188,15 @@ function TeamsSection({
           <label className="label mb-0 mr-1">Teams</label>
           <input
             className="input w-20"
-            type="number"
-            min={0}
-            max={6}
-            value={teamCount}
-            onChange={(e) => setTeamCount(parseInt(e.target.value) || 0)}
+            type="text"
+            inputMode="numeric"
+            defaultValue={teamCount}
+            key={teamCount}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => {
+              const v = parseInt(e.currentTarget.value, 10);
+              setTeamCount(Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 0);
+            }}
           />
           <button
             type="button"

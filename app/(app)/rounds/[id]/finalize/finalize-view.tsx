@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { minimumFlow, settleGame } from "@/lib/games";
 import { generateRecap } from "@/lib/recap";
 import { SmackTalk } from "@/components/SmackTalk";
+import { ShareSheet } from "@/components/ShareSheet";
 import type { CourseHole, RoundGame, RoundPlayer, Score } from "@/lib/types";
 
 export function FinalizeView({
@@ -106,6 +108,12 @@ export function FinalizeView({
 
   return (
     <div className="space-y-5 max-w-2xl">
+      <Link
+        href={`/rounds/${roundId}#leaderboard`}
+        className="btn-ghost text-xs"
+      >
+        ← Back to leaderboard
+      </Link>
       <header>
         <p className="h-eyebrow">Settlement</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">Finalize round</h1>
@@ -206,24 +214,22 @@ export function FinalizeView({
       {err && <p className="text-red-300 text-sm">{err}</p>}
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" disabled={busy} onClick={finalize}>
-          {busy ? "Finalizing…" : "Finalize & lock"}
+          {busy ? "Finalizing…" : "Finalize round"}
         </button>
-        <a
-          className="btn-secondary"
-          href={`/api/share/round/${roundId}/image`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open share image
-        </a>
-        <a
-          className="btn-secondary"
-          href={`/api/share/round/${roundId}/image`}
-          download={`cruz-golf-${roundId}.png`}
-        >
-          Download PNG
-        </a>
+        <ShareSheet
+          title="Round results"
+          url={typeof window !== "undefined" ? window.location.origin + `/rounds/${roundId}/leaderboard` : ""}
+          imageUrl={`/api/share/round/${roundId}/image`}
+          imageFilename={`cruz-golf-${roundId}.png`}
+          triggerLabel="Share"
+          triggerClassName="btn-secondary"
+        />
       </div>
+      <p className="text-[11px] text-cream-100/55">
+        After finalizing, the commissioner can still unlock the round to fix
+        scores. Players can&apos;t edit on a finalized round until it&apos;s
+        unlocked.
+      </p>
     </div>
   );
 }

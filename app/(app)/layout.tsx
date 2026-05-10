@@ -6,6 +6,7 @@ import { BrandLockup } from "@/components/BrandLockup";
 import { HelpButton } from "@/components/HelpButton";
 import { UpdateToast } from "@/components/UpdateToast";
 import { MobileMoreMenu } from "@/components/MobileMoreMenu";
+import { ActiveRoundPill } from "@/components/ActiveRoundPill";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -34,6 +35,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isPlatformAdmin = !!data;
   } catch {
     isPlatformAdmin = false;
+  }
+
+  // Newest live round (if any) — used by the floating "Back to round" pill.
+  let activeRound: { id: string; courseName: string | null } | null = null;
+  try {
+    const { data } = await sb
+      .from("rounds")
+      .select("id, status, courses(name)")
+      .eq("status", "live")
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      activeRound = {
+        id: data.id as string,
+        courseName: ((data as any).courses?.name as string | undefined) ?? null
+      };
+    }
+  } catch {
+    /* ignore — pill is non-critical */
   }
 
   return (
@@ -78,6 +99,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <TabLink href="/leaderboards" label="Boards" />
         <MobileMoreMenu isPlatformAdmin={isPlatformAdmin} />
       </nav>
+      <ActiveRoundPill
+        roundId={activeRound?.id ?? null}
+        courseName={activeRound?.courseName ?? null}
+      />
       <HelpButton />
       <UpdateToast />
     </div>

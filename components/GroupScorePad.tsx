@@ -210,8 +210,14 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave, onF
         })}
       </div>
 
-      {/* Footer nav — sticky so Next is always reachable while scrolling rows */}
-      <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-brand-950 via-brand-950/95 to-transparent">
+      {/* Footer nav — sticky so Next is always reachable while scrolling rows.
+          Sits above the mobile bottom-nav (5-tab grid) on phones; on sm+ the
+          bottom-nav is gone so we anchor at 0. We also pad-bottom with
+          env(safe-area-inset-bottom) for notched iPhones. */}
+      <div
+        className="sticky -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-brand-950 via-brand-950/95 to-transparent bottom-16 sm:bottom-0"
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+      >
         <div className="flex gap-2">
           <button
             className="btn-secondary flex-1 py-3"

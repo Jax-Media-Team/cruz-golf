@@ -82,9 +82,16 @@ export function GroupScoreEntry({
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <Link href={`/rounds/${roundId}`} className="btn-ghost text-sm">← Back</Link>
-        <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">Group scoring</span>
+      <header className="flex items-center justify-between gap-3 flex-wrap">
+        <Link
+          href={`/rounds/${roundId}#leaderboard`}
+          className="btn-ghost text-sm"
+        >
+          ← Leaderboard
+        </Link>
+        <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">
+          Group scoring
+        </span>
       </header>
 
       <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />

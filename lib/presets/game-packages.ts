@@ -16,101 +16,84 @@ export type GamePackage = {
   games: PackageGame[];
 };
 
+/**
+ * Generic, opinion-free Quick Start packages — one per common game type
+ * with sensible defaults. Personalized presets ("Friendly Nassau",
+ * "Aggressive Nassau", "Quarter Skins") used to live here; they were too
+ * specific to one group's vibe and ended up as noise. Users now save
+ * their own setups via the "Save as preset" button on /rounds/new.
+ */
 export const GAME_PACKAGES: GamePackage[] = [
   {
-    id: "gentlemans",
-    label: "Gentleman's bet",
-    blurb: "$5 individual net. One game, one winner. No skins, no presses.",
-    emoji: "🤝",
+    id: "individual_net",
+    label: "Individual",
+    blurb: "Lowest net score wins the pot. Simple and works with any group size.",
+    emoji: "👤",
     games: [
-      { game_type: "individual_net", name: "Individual net", stake_cents: 500, allowance_pct: 100, config: {} }
+      { game_type: "individual_net", name: "Individual (net)", stake_cents: 1000, allowance_pct: 100, config: {} }
     ]
   },
   {
-    id: "friendly_nassau",
-    label: "Friendly Nassau",
-    blurb: "$5 / $5 / $10 match-play Nassau. No presses. Polite group.",
-    emoji: "⛳",
-    games: [
-      {
-        game_type: "nassau",
-        name: "Nassau (5/5/10)",
-        stake_cents: 500,
-        allowance_pct: 100,
-        config: { match_play: true, front_stake_cents: 500, back_stake_cents: 500, overall_stake_cents: 1000, presses: "none" }
-      }
-    ]
-  },
-  {
-    id: "aggressive_nassau",
-    label: "Aggressive Nassau",
-    blurb: "$10 / $10 / $20 with auto-press at 2 down. Wallets out.",
-    emoji: "🔥",
-    games: [
-      {
-        game_type: "nassau",
-        name: "Nassau (10/10/20, auto-press)",
-        stake_cents: 1000,
-        allowance_pct: 100,
-        config: { match_play: true, front_stake_cents: 1000, back_stake_cents: 1000, overall_stake_cents: 2000, presses: "auto_2_down" }
-      }
-    ]
-  },
-  {
-    id: "quarter_skins",
-    label: "Quarter skins",
-    blurb: "Net skins, $0.25 each, ties carry, value doubles after a carry.",
+    id: "skins",
+    label: "Skins",
+    blurb: "Each hole pays one skin. Tie pushes the skin to the next hole.",
     emoji: "🍀",
     games: [
       {
         game_type: "skins_net",
-        name: "Net skins (25¢, doubling)",
+        name: "Skins (net)",
         stake_cents: 0,
         allowance_pct: 100,
-        config: { skin_value_cents: 25, ties: "carry", escalation: "double", unclaimed: "split_winners" }
+        config: { skin_value_cents: 200, ties: "carry", escalation: "linear" }
       }
     ]
   },
   {
-    id: "canadian",
-    label: "Canadian skins",
-    blurb: "Birdie validates. Carry on tie or no birdie. Linear escalation.",
-    emoji: "🍁",
+    id: "nassau",
+    label: "Nassau",
+    blurb: "Three side bets: front 9, back 9, overall. Optional presses.",
+    emoji: "⛳",
     games: [
       {
-        game_type: "skins_canadian",
-        name: "Canadian skins (birdie validates)",
+        game_type: "nassau",
+        name: "Nassau",
         stake_cents: 0,
         allowance_pct: 100,
-        config: { skin_value_cents: 100, require_birdie: true, escalation: "linear", ties: "carry", unclaimed: "split_winners" }
+        config: {
+          match_play: true,
+          front_stake_cents: 1000,
+          back_stake_cents: 1000,
+          overall_stake_cents: 1000,
+          presses_enabled: true
+        }
       }
     ]
   },
   {
-    id: "three_way",
-    label: "Three-way",
-    blurb: "Individual net + 2-man best ball + net skins. Three settlements.",
-    emoji: "♣",
+    id: "best_ball",
+    label: "Best ball",
+    blurb: "Two-person team. Lower score on each hole counts.",
+    emoji: "🤝",
     games: [
-      { game_type: "individual_net", name: "Individual net", stake_cents: 500, allowance_pct: 95, config: {} },
-      { game_type: "best_ball_net", name: "Best ball net", stake_cents: 1000, allowance_pct: 85, config: {} },
-      {
-        game_type: "skins_net",
-        name: "Net skins",
-        stake_cents: 0,
-        allowance_pct: 100,
-        config: { skin_value_cents: 100, ties: "carry", escalation: "linear" }
-      }
+      { game_type: "best_ball_net", name: "Best ball (net)", stake_cents: 2000, allowance_pct: 85, config: {} }
     ]
   },
   {
-    id: "members_day",
-    label: "Members' day",
-    blurb: "Team aggregate net + closest-to-pin pot on every par-3.",
-    emoji: "🏆",
+    id: "scramble",
+    label: "Scramble",
+    blurb: "Pick the best shot every turn. One score per team per hole.",
+    emoji: "🎯",
     games: [
-      { game_type: "aggregate_net", name: "Team aggregate net", stake_cents: 2000, allowance_pct: 100, config: {} },
-      { game_type: "ctp", name: "Closest to the pin", stake_cents: 500, allowance_pct: 100, config: { holes: [3, 6, 12, 17] } }
+      { game_type: "scramble_gross", name: "Scramble", stake_cents: 2000, allowance_pct: 100, config: {} }
+    ]
+  },
+  {
+    id: "six_six_six",
+    label: "6–6–6",
+    blurb: "Three 6-hole segments. Partners rotate every 6 holes.",
+    emoji: "♻️",
+    games: [
+      { game_type: "six_six_six", name: "6–6–6", stake_cents: 500, allowance_pct: 100, config: {} }
     ]
   }
 ];
