@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { strokesPerHole } from "@/lib/handicap";
 import { GroupScorePad, type GroupPlayer } from "@/components/GroupScorePad";
 import { ScoreGrid } from "@/components/ScoreGrid";
@@ -29,6 +30,7 @@ export function GroupScoreEntry({
   rps: RP[];
   existing: Existing[];
 }) {
+  const router = useRouter();
   const saver = useScoreSaver({ roundId });
   // Default to grid on wider screens (desktop / iPad), cards on phones.
   const [entryMode, setEntryMode] = useState<"cards" | "grid">(() => {
@@ -147,7 +149,14 @@ export function GroupScoreEntry({
             </button>
           </div>
           {entryMode === "cards" ? (
-            <GroupScorePad holes={holes} players={players} scores={scores} onSave={save} />
+            <GroupScorePad
+              holes={holes}
+              players={players}
+              scores={scores}
+              onSave={save}
+              onFinish={() => router.push(`/rounds/${roundId}#leaderboard`)}
+              finishLabel="View leaderboard →"
+            />
           ) : (
             <ScoreGrid holes={holes} players={players} scores={scores} onSave={save} />
           )}

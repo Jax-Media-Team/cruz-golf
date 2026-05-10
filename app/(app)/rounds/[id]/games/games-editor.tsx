@@ -1,8 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { GAME_LIBRARY, getPreset, type GamePreset } from "@/lib/games/library";
+import {
+  GAME_FAMILIES,
+  getFamily,
+  getPreset,
+  type GameFamily
+} from "@/lib/games/library";
 import type { GameType } from "@/lib/types";
 
 type Game = {
@@ -62,20 +67,18 @@ export function GamesEditor({
     router.refresh();
   }
 
-  async function addGame(preset: GamePreset, overrides: Partial<Game>) {
+  async function addGame(payload: {
+    game_type: GameType;
+    name: string;
+    stake_cents: number;
+    allowance_pct: number;
+    config: Record<string, unknown>;
+  }) {
     setBusy(true);
     setErr(null);
-    const payload = {
-      round_id: roundId,
-      game_type: preset.game_type,
-      name: overrides.name || preset.label,
-      stake_cents: overrides.stake_cents ?? preset.defaults.stake_cents,
-      allowance_pct: overrides.allowance_pct ?? preset.defaults.allowance_pct,
-      config: overrides.config ?? preset.defaults.config
-    };
     const { data, error } = await sb
       .from("round_games")
-      .insert(payload)
+      .insert({ round_id: roundId, ...payload })
       .select("id, game_type, name, stake_cents, allowance_pct, config")
       .single();
     setBusy(false);
@@ -203,7 +206,7 @@ function GameCard({
         {!isNassau && (
           <div>
             <label className="label">
-              {isSkins ? "Pot per skin (USD)" : "Stake (USD)"}
+              {isSkins ? "Each skin (USD)" : "Stake (USD)"}
             </label>
             <input
               className="input"
@@ -228,6 +231,12 @@ function GameCard({
               }}
               disabled={disabled}
             />
+            {isSkins && (
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                What each skin pays out. Total pot scales with how many skins
+                are won (max 18).
+              </p>
+            )}
           </div>
         )}
         <div>
@@ -328,6 +337,18 @@ function NassauConfig({
   );
 }
 
+/**
+ * AddGameForm — family-first picker.
+ *
+ * Step 1: pick a family (Individual / Best ball / Aggregate / Scramble /
+ *         Skins / Nassau / 6–6–6 / Side bets).
+ * Step 2: if the family has multiple variants, pick one (defaults set).
+ *         If the family has gross/net mode, show the radio.
+ * Step 3: name + stake (or "each skin"/Nassau-special UI).
+ *
+ * Resolves to a concrete GameType via family.variants[i].resolve(mode)
+ * before insert.
+ */
 function AddGameForm({
   existing,
   onCancel,
@@ -336,24 +357,63 @@ function AddGameForm({
 }: {
   existing: Game[];
   onCancel: () => void;
-  onAdd: (preset: GamePreset, overrides: Partial<Game>) => void;
+  onAdd: (payload: {
+    game_type: GameType;
+    name: string;
+    stake_cents: number;
+    allowance_pct: number;
+    config: Record<string, unknown>;
+  }) => void;
   busy: boolean;
 }) {
-  const [pickedType, setPickedType] = useState<GameType | "">("");
-  const preset = pickedType ? getPreset(pickedType) : undefined;
+  const [familyKey, setFamilyKey] = useState<string>("");
+  const family = familyKey ? getFamily(familyKey) : undefined;
+  const [variantKey, setVariantKey] = useState<string>("");
+  const variant = useMemo(
+    () => family?.variants.find((v) => v.key === variantKey),
+    [family, variantKey]
+  );
+  const [mode, setMode] = useState<"gross" | "net">("net");
   const [name, setName] = useState("");
   const [stake, setStake] = useState<number>(0);
 
-  function applyPreset(t: GameType) {
-    setPickedType(t);
+  // Resolve the concrete game_type the user has currently configured (or null).
+  const resolved = useMemo<GameType | null>(() => {
+    if (!variant) return null;
+    return variant.resolve(family?.hasMode ? mode : null);
+  }, [variant, family, mode]);
+  const resolvedPreset = resolved ? getPreset(resolved) : undefined;
+
+  // Choose a suggested name + default stake whenever family/variant/mode shifts.
+  function autofill(nextFamily: GameFamily, nextVariantKey: string, nextMode: "gross" | "net") {
+    const v = nextFamily.variants.find((x) => x.key === nextVariantKey);
+    if (!v) return;
+    const t = v.resolve(nextFamily.hasMode ? nextMode : null);
     const p = getPreset(t);
-    if (!p) return;
-    // Suggest a unique-ish name when adding a duplicate game.
-    const baseName = p.label;
-    const taken = existing.some((g) => g.name === baseName);
-    setName(taken ? `${baseName} #${existing.length + 1}` : baseName);
-    setStake(p.defaults.stake_cents / 100);
+    const baseLabel = nextFamily.hasMode ? `${nextFamily.label} (${nextMode})` : v.label;
+    const taken = existing.some((g) => g.name === baseLabel);
+    setName(taken ? `${baseLabel} #${existing.length + 1}` : baseLabel);
+    if (p?.defaults.stake_cents) setStake(p.defaults.stake_cents / 100);
+    else if (t === "skins_canadian" || t.startsWith("skins"))
+      setStake(((p?.defaults.config as any)?.skin_value_cents ?? 200) / 100);
+    else setStake(0);
   }
+
+  function pickFamily(key: string) {
+    setFamilyKey(key);
+    const f = getFamily(key);
+    if (!f) return;
+    const v = f.defaultVariant;
+    const m = f.defaultMode ?? "net";
+    setVariantKey(v);
+    setMode(m);
+    autofill(f, v, m);
+  }
+
+  const isSkinsFamily = familyKey === "skins";
+  const isNassauFamily = familyKey === "nassau";
+  // For "side bets" → CTP/long_drive/custom — a stake field still applies.
+  const stakeIsSkin = isSkinsFamily;
 
   return (
     <div className="card p-4 space-y-3 border border-gold-500/30">
@@ -368,23 +428,81 @@ function AddGameForm({
           Cancel
         </button>
       </div>
+
       <div>
-        <label className="label">Game type</label>
+        <label className="label">Game</label>
         <select
           className="input"
-          value={pickedType}
-          onChange={(e) => applyPreset(e.target.value as GameType)}
+          value={familyKey}
+          onChange={(e) => pickFamily(e.target.value)}
         >
           <option value="">— Pick a game —</option>
-          {GAME_LIBRARY.map((g) => (
-            <option key={g.game_type} value={g.game_type}>
-              {g.label}
+          {GAME_FAMILIES.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.label}
             </option>
           ))}
         </select>
-        {preset && <p className="text-xs text-cream-100/55 mt-1">{preset.short}</p>}
+        {family && <p className="text-xs text-cream-100/55 mt-1">{family.short}</p>}
       </div>
-      {preset && (
+
+      {family && family.variants.length > 1 && (
+        <div>
+          <label className="label">Variant</label>
+          <div className="flex flex-wrap gap-2">
+            {family.variants.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => {
+                  setVariantKey(v.key);
+                  autofill(family, v.key, mode);
+                }}
+                className={`pill text-xs px-3 py-1.5 ${
+                  variantKey === v.key
+                    ? "bg-gold-500 text-brand-900"
+                    : "bg-brand-900/60 border border-cream-100/15 text-cream-100/85"
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {variant && <p className="text-xs text-cream-100/55 mt-1">{variant.short}</p>}
+        </div>
+      )}
+
+      {family && family.hasMode && (
+        <div>
+          <label className="label">Mode</label>
+          <div className="flex gap-2">
+            {(["gross", "net"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  setMode(m);
+                  if (family) autofill(family, variantKey, m);
+                }}
+                className={`pill text-xs px-3 py-1.5 capitalize ${
+                  mode === m
+                    ? "bg-gold-500 text-brand-900"
+                    : "bg-brand-900/60 border border-cream-100/15 text-cream-100/85"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-cream-100/45 mt-0.5">
+            <span className="text-cream-100/65">Gross</span> uses raw scores.{" "}
+            <span className="text-cream-100/65">Net</span> applies handicaps so
+            higher-handicap players are competitive.
+          </p>
+        </div>
+      )}
+
+      {family && variant && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -395,10 +513,10 @@ function AddGameForm({
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            {preset.game_type !== "nassau" && (
+            {!isNassauFamily && (
               <div>
                 <label className="label">
-                  {preset.game_type.startsWith("skins") ? "Pot per skin (USD)" : "Stake (USD)"}
+                  {stakeIsSkin ? "Each skin (USD)" : "Stake (USD)"}
                 </label>
                 <input
                   className="input"
@@ -408,23 +526,43 @@ function AddGameForm({
                   value={stake}
                   onChange={(e) => setStake(parseFloat(e.target.value) || 0)}
                 />
+                {stakeIsSkin && (
+                  <p className="text-[10px] text-cream-100/45 mt-0.5">
+                    What each skin pays out. Total pot scales with how many
+                    skins are won (max 18).
+                  </p>
+                )}
               </div>
             )}
           </div>
+          {isNassauFamily && (
+            <p className="text-[11px] text-cream-100/55">
+              Set the front 9 / back 9 / overall stakes after adding — Nassau
+              has three side bets that you can configure independently.
+            </p>
+          )}
           <button
             type="button"
             className="btn-primary"
-            disabled={busy || !name}
+            disabled={busy || !name || !resolved}
             onClick={() => {
+              if (!resolved || !resolvedPreset) return;
               const cents = Math.round(stake * 100);
-              const overrides: Partial<Game> = { name };
-              if (preset.game_type.startsWith("skins")) {
-                overrides.config = { ...(preset.defaults.config ?? {}), skin_value_cents: cents };
-                overrides.stake_cents = 0;
-              } else if (preset.game_type !== "nassau") {
-                overrides.stake_cents = cents;
+              let config: Record<string, unknown> = { ...resolvedPreset.defaults.config };
+              let stake_cents = resolvedPreset.defaults.stake_cents;
+              if (stakeIsSkin) {
+                config = { ...config, skin_value_cents: cents };
+                stake_cents = 0;
+              } else if (!isNassauFamily) {
+                stake_cents = cents;
               }
-              onAdd(preset, overrides);
+              onAdd({
+                game_type: resolved,
+                name,
+                stake_cents,
+                allowance_pct: resolvedPreset.defaults.allowance_pct,
+                config
+              });
             }}
           >
             {busy ? "Adding…" : "Add game"}

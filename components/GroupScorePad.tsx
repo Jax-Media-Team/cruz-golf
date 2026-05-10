@@ -18,6 +18,13 @@ type Props = {
   scores: Record<string, number | null>;
   initialHole?: number;
   onSave: (roundPlayerId: string, holeNumber: number, gross: number) => void | Promise<void>;
+  /**
+   * Called when the user taps the "Done" button on the last hole. The host
+   * page decides where to send them (leaderboard, finalize, etc.). If
+   * omitted, the last-hole button is hidden.
+   */
+  onFinish?: () => void;
+  finishLabel?: string;
 };
 
 function outcomeLabel(diff: number): { label: string; tone: "red" | "white" | "muted" } {
@@ -30,7 +37,7 @@ function outcomeLabel(diff: number): { label: string; tone: "red" | "white" | "m
 
 const k = (rpId: string, hole: number) => `${rpId}:${hole}`;
 
-export function GroupScorePad({ holes, players, scores, initialHole, onSave }: Props) {
+export function GroupScorePad({ holes, players, scores, initialHole, onSave, onFinish, finishLabel }: Props) {
   const ordered = useMemo(() => [...holes].sort((a, b) => a.hole_number - b.hole_number), [holes]);
   const firstHole = ordered[0]?.hole_number ?? 1;
   const lastHole = ordered[ordered.length - 1]?.hole_number ?? 18;
@@ -213,23 +220,32 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave }: P
           >
             ← Prev
           </button>
-          <button
-            className={`flex-[2] py-3 rounded-xl font-medium transition-colors active:scale-95 ${
-              hole >= lastHole
-                ? "bg-brand-900/60 text-cream-100/40 cursor-not-allowed"
+          {hole >= lastHole && onFinish ? (
+            <button
+              className="flex-[2] py-3 rounded-xl font-medium transition-colors active:scale-95 bg-gold-500 text-brand-900 shadow-soft"
+              onClick={onFinish}
+            >
+              {finishLabel ?? "View leaderboard →"}
+            </button>
+          ) : (
+            <button
+              className={`flex-[2] py-3 rounded-xl font-medium transition-colors active:scale-95 ${
+                hole >= lastHole
+                  ? "bg-brand-900/60 text-cream-100/40 cursor-not-allowed"
+                  : allEntered
+                  ? "bg-gold-500 text-brand-900 shadow-soft"
+                  : "bg-brand-800 text-cream-50 border border-cream-100/15"
+              }`}
+              onClick={() => setHole(Math.min(lastHole, hole + 1))}
+              disabled={hole >= lastHole}
+            >
+              {hole >= lastHole
+                ? "Last hole"
                 : allEntered
-                ? "bg-gold-500 text-brand-900 shadow-soft"
-                : "bg-brand-800 text-cream-50 border border-cream-100/15"
-            }`}
-            onClick={() => setHole(Math.min(lastHole, hole + 1))}
-            disabled={hole >= lastHole}
-          >
-            {hole >= lastHole
-              ? "Last hole"
-              : allEntered
-              ? `Next → Hole ${hole + 1}`
-              : `Skip to Hole ${hole + 1}`}
-          </button>
+                ? `Next → Hole ${hole + 1}`
+                : `Skip to Hole ${hole + 1}`}
+            </button>
+          )}
         </div>
         {!allEntered && players.length > 0 && (
           <p className="text-[11px] text-cream-100/55 text-center mt-2">
