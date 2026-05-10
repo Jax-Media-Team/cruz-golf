@@ -229,7 +229,7 @@ function GameCard({
           />
         )}
         <div>
-          <label className="label">Allowance %</label>
+          <label className="label">Hcp Allowance %</label>
           <input
             className="input"
             type="text"
@@ -244,7 +244,8 @@ function GameCard({
             disabled={disabled}
           />
           <p className="text-[10px] text-cream-100/45 mt-0.5">
-            WHS: 100 = full strokes, 85 = match-play scaled.
+            % of full handicap players get. 100 = full strokes, 85 = standard
+            match-play scaling.
           </p>
         </div>
       </div>

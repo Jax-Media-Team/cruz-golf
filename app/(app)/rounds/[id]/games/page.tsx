@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
-import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 import { GamesEditor } from "./games-editor";
 
 export const dynamic = "force-dynamic";
@@ -83,22 +83,21 @@ export default async function RoundGamesPage({
 
   return (
     <div className="space-y-5 max-w-3xl">
-      <Breadcrumbs
-        items={[
-          { label: "Rounds", href: "/dashboard" },
-          { label: (round as any).courses?.name ?? "Round", href: `/rounds/${id}` },
-          { label: "Games & bets" }
-        ]}
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={(round as any).courses?.name ?? null}
+        date={round.date}
+        status={round.status as any}
+        page="Games & bets"
       />
       <header>
         <p className="h-eyebrow text-gold-400">Games & bets</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">
-          {(round as any).courses?.name ?? "Round"}
+          {round.holes} holes ·{" "}
+          {scoreCount
+            ? `${scoreCount} score${scoreCount === 1 ? "" : "s"} entered`
+            : "no scores yet"}
         </h1>
-        <p className="text-sm text-cream-100/55 mt-1">
-          {round.date} · {round.holes} holes ·{" "}
-          {scoreCount ? `${scoreCount} score${scoreCount === 1 ? "" : "s"} entered` : "no scores yet"}
-        </p>
       </header>
 
       {isFinalized ? (
@@ -116,10 +115,9 @@ export default async function RoundGamesPage({
           hasScores={(scoreCount ?? 0) > 0}
         />
       )}
-
-      <Link href={`/rounds/${id}`} className="btn-ghost text-sm">
-        ← Back to round
-      </Link>
+      {/* Back-to-round duplicate removed — RoundBreadcrumb at the top is
+          the single canonical "back" affordance per the no-duplicate-UI
+          principle. */}
     </div>
   );
 }

@@ -32,7 +32,7 @@ function describeGame(g: Game) {
   if (g.config?.presses === "manual") parts.push("manual presses");
   if (typeof g.config?.front_stake_cents === "number")
     parts.push(`F ${fmtMoney(g.config.front_stake_cents)} / B ${fmtMoney(g.config.back_stake_cents ?? g.stake_cents)} / O ${fmtMoney(g.config.overall_stake_cents ?? g.stake_cents)}`);
-  if (g.allowance_pct !== 100) parts.push(`${g.allowance_pct}% allowance`);
+  if (g.allowance_pct !== 100) parts.push(`${g.allowance_pct}% hcp allowance`);
   return parts.join(" · ");
 }
 

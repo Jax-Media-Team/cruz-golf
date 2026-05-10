@@ -76,6 +76,11 @@ These guide every decision. When in doubt, re-read.
 | FAKE-IMPERSONATION | "View as User →" on /admin/rounds/[id] silently bounced to dashboard (RLS blocked admin from seeing other groups' rounds) and was a confused affordance — Patrick wanted observability, not impersonation | ✅ replaced with "👀 Spectate live →" using existing token-keyed read-only leaderboard + AdminSpectatorBanner; admin-mode flag re-verified server-side via `fn_is_platform_admin()` so it can't be spoofed |
 | DEAD-END-EMPTY-STATES | Leaderboards / records / records/me / ledger / records/me-unlinked all had empty states with no primary CTA — pure dead ends | ✅ rewritten with previews of what's coming + group-first language + Start a round / Set up your group / Claim your name CTAs |
 | ONBOARDING-TONE | Dashboard checklist read like enterprise setup ("Get started", "Add a course", "Add your players") | ✅ tone shift to "Set up your group" / "Pick your home course" / "Add your crew" / "Tee it up" with crew-flavored body copy |
+| HEADER-WASTED-SPACE | Header was `min-h-[140px] sm:min-h-[200px]` with oversized icons, leaving visible breathing space above/below the lockup | ✅ tightened to `py-2 sm:py-3` with 72/120px icons; ~40px reclaimed mobile, ~80px desktop. Brand mark stays prominent. |
+| PWA-SAFE-AREA | Bottom nav buttons too close to iPhone home indicator; status bar overlapped header in installed PWA | ✅ `pb-[env(safe-area-inset-bottom)]` on nav + `pt-[env(safe-area-inset-top)]` on header + body padding scales with safe area |
+| SPECTATOR-CONFUSING-COPY | "That tab is only available inside the round dashboard for invitees" sounded broken | ✅ rewritten as intentional "Spectator view · gross + net only · Skins, teams, and wagers stay inside the group" |
+| ALLOWANCE-WORDING | "Allowance %" was unclear to non-WHS golfers | ✅ renamed to "Hcp Allowance %" everywhere user-facing + helper text "% of full handicap players get. 100 = full strokes, 85 = standard match-play scaling." |
+| CLUBHOUSE-TONE-DOWN | Initial ClubhouseStrip read too gamified ("🔥 Patrick on a 3-round heater") | ✅ rewritten as understated stat lines ("Patrick has won 3 rounds in a row · $15 taken across the streak"), no fire emoji, statements not exclamations |
 | DESKTOP-COURSE-404 | Course cards 404'd on desktop click (worked on mobile) | ✅ added `prefetch={false}` + friendly not-found page |
 | ROUND-DELETE-FK | "Linked record is missing" on round delete | ✅ fixed in 0019 + 0021 + frontend RPC switch |
 | FINISH-STEPS-NOOP | Get Started "Finish steps above" button did nothing | ✅ now disabled span with tooltip |
@@ -264,9 +269,10 @@ In rough priority order. Each gets its own QA sweep + regression tests.
    - ✅ /dashboard active-round hero card with one-tap to score-group
    - ✅ `<RoundBreadcrumb>` component shipped — persistent
      "← Course · date · status" header on /finalize, /score,
-     /score-group, /invites
-   - ⏳ Wire RoundBreadcrumb into /games (currently uses generic
-     Breadcrumbs), /wagers, /upload, /join for full consistency
+     /score-group, /invites, /wagers, /upload, /games (replaced
+     generic Breadcrumbs for consistency)
+   - ⏳ /join intentionally keeps its dashboard back-link (user isn't
+     yet inside the round)
    - ⏳ "what to do next" affordance on each sub-page (e.g.
      /score-group last-hole "Done? → Finalize" already exists; audit
      the others)
@@ -305,6 +311,19 @@ In rough priority order. Each gets its own QA sweep + regression tests.
 11. **Course library UX** — discovery, cloning, attribution, dedup
 12. **Installable / PWA app feel** — manifest + service worker +
     offline score entry queue (already partial via score-queue.ts)
+    - ✅ iOS safe-area insets on top header + bottom nav (so status
+      bar and home indicator never overlap chrome)
+    - ⏳ Service worker / offline shell
+    - ⏳ App-icon polish for iOS standalone
+    - ⏳ Native-feeling page transitions
+    - ⏳ Loading skeletons on slow networks
+
+## 🛠 Engine work queued (bigger refactors)
+
+| # | Item | Why it's not a quick fix |
+|---|------|--------------------------|
+| PRESS-ALL-GAMES | Make presses a first-class capability for Nassau, Best Ball, 6-6-6, team games, Ryder Cup formats — not Nassau-only | The press model lives inside `lib/games/nassau.ts` only. Generalizing it means a `lib/games/press.ts` that any game module can opt into, plus settlement-time aggregation across press chains for non-Nassau game types. Probably a 1-day refactor with new property tests. |
+| GROSS-NET-MIXED | Replace separate "Gross Skins" + "Net Skins" entries with one "Skins" + a Gross/Net/Mixed toggle inside setup. Same for any game that has gross/net variants today. | Touches the GAMES registry, the rounds/new game-picker UI, the games-editor mid-round, the settlement engine's per-game mode handling, and the type system. Worth doing carefully so simulation tests don't regress. |
 
 ---
 

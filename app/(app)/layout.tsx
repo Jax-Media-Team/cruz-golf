@@ -74,19 +74,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen flex flex-col pb-20 sm:pb-0">
-      <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 min-h-[140px] sm:min-h-[200px]">
+    // pb scales to clear the fixed bottom nav (5rem) + iOS home-indicator
+    // safe area when the app is installed as a PWA. sm:pb-0 because the
+    // nav is mobile-only.
+    <div className="min-h-screen flex flex-col pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
+      {/* Sticky header — pt accounts for iOS notched safe area when the
+          app runs in installed-PWA mode (Safari status bar overlaps the
+          chrome otherwise). */}
+      <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10 pt-[env(safe-area-inset-top)]">
+        {/* Tightened header — was min-h-[140px] sm:min-h-[200px] which left
+            visible breathing room above and below the icon. Now py-2 with
+            slightly trimmed icons reclaims ~40px on mobile, ~80px on
+            desktop while keeping the brand mark prominent. */}
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 py-2 sm:py-3">
           <Link
             href="/dashboard"
             className="flex items-center shrink-0"
             aria-label="Cruz Golf — home"
           >
             <span className="hidden sm:inline-flex">
-              <BrandLockup iconHeight={225} />
+              <BrandLockup iconHeight={120} />
             </span>
             <span className="sm:hidden inline-flex">
-              <BrandLockup iconHeight={135} />
+              <BrandLockup iconHeight={72} />
             </span>
           </Link>
           <nav className="hidden sm:flex items-center gap-1">
@@ -112,7 +122,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">{children}</main>
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-5 z-30">
+      {/* Mobile bottom nav — pb scales to keep tap targets clear of the
+          iPhone home indicator when installed as a PWA. The 5rem bottom
+          padding on the body element above pairs with this so content
+          doesn't slide under either the nav or the indicator. */}
+      <nav
+        className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-5 z-30"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         <TabLink href="/dashboard" label="Rounds" />
         <TabLink href="/players" label="Players" />
         <TabLink href="/courses" label="Courses" />

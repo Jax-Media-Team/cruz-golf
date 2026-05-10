@@ -1032,7 +1032,9 @@ function GameConfigEditor({
             </div>
           )}
           <div>
-            <label className="label text-xs">Allowance %</label>
+            <label className="label text-xs" title="What % of full handicap players play off. 100% = full strokes. 85% = standard for most member-member formats.">
+              Hcp Allowance %
+            </label>
             <input
               className="input text-sm"
               type="text"
@@ -1104,7 +1106,9 @@ function GameConfigEditor({
     <div className="mt-3 pl-6 grid grid-cols-2 gap-2">
       <Money label="Stake $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
       <div>
-        <label className="label text-xs">Allowance %</label>
+        <label className="label text-xs" title="What % of full handicap players play off. 100% = full strokes. 85% = standard for most member-member formats.">
+              Hcp Allowance %
+            </label>
         <input
               className="input text-sm"
               type="text"

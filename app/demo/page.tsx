@@ -290,7 +290,7 @@ function WagersStage() {
             <span className="font-serif text-2xl text-gold-500">$1</span>
           </li>
           <li className="py-3 flex items-center justify-between">
-            <span className="text-cream-100/85">2-man Best Ball<br /><span className="text-xs text-cream-100/55">$10 · 85% allowance</span></span>
+            <span className="text-cream-100/85">2-man Best Ball<br /><span className="text-xs text-cream-100/55">$10 · 85% hcp allowance</span></span>
             <span className="font-serif text-2xl text-gold-500">$10</span>
           </li>
         </ul>

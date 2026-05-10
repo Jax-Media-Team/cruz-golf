@@ -116,8 +116,20 @@ export function SpectatorView({
           tab={tab}
           onTabChange={setTab}
           alternateContent={
-            <div className="text-slate-500 text-sm py-6 text-center">
-              That tab is only available inside the round dashboard for invitees.
+            // Spectator-mode tabs that don't apply to a public viewer
+            // (skins/team/bets are private settlement detail). The copy
+            // is intentional — "you're watching, not playing" — rather
+            // than the old broken-sounding "tab only available for
+            // invitees" line.
+            <div className="text-cream-100/70 text-sm py-6 px-4 text-center space-y-1">
+              <p className="font-medium text-cream-50">
+                Spectator view · gross + net only
+              </p>
+              <p className="text-xs text-cream-100/55 max-w-sm mx-auto">
+                Skins, teams, and wagers stay inside the group. Sign in
+                from a player&apos;s phone to see their share, or watch the
+                live scores from the Gross / Net tabs above.
+              </p>
             </div>
           }
         />

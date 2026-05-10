@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { WagerAckClient } from "./wagers-client";
+import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
 
 export default async function WagerAckPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,7 +11,7 @@ export default async function WagerAckPage({ params }: { params: Promise<{ id: s
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, courses(name), date, holes")
+    .select("id, group_id, status, courses(name), date, holes")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -43,10 +43,20 @@ export default async function WagerAckPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="space-y-5 max-w-2xl">
+      <RoundBreadcrumb
+        roundId={id}
+        courseName={(round as any).courses?.name ?? null}
+        date={round.date}
+        status={(round as any).status}
+        page="Wagers"
+      />
       <header>
         <p className="h-eyebrow">Confirm the wagers</p>
-        <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>
-        <p className="text-sm text-cream-100/55 mt-1">{round.date} · {round.holes} holes</p>
+        <h1 className="h-display text-3xl text-cream-50 mt-1">
+          {round.holes} holes · ${games?.reduce((s, g: any) => s + (g.stake_cents ?? 0), 0)
+            ? "stakes posted"
+            : "shake on it"}
+        </h1>
       </header>
 
       <p className="text-sm text-cream-100/75">
@@ -60,8 +70,6 @@ export default async function WagerAckPage({ params }: { params: Promise<{ id: s
         myAck={myAck}
         peopleStatus={peopleStatus}
       />
-
-      <Link href={`/rounds/${id}`} className="btn-ghost text-sm">← Back to round</Link>
     </div>
   );
 }
