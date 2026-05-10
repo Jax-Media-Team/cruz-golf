@@ -379,6 +379,7 @@ including the override-always-wins safety property.
 | 0035 | applied | Manual presses: round_presses table + 4 RPCs (fn_open_press / fn_accept_press / fn_decline_press / fn_withdraw_press) with full audit hooks. Settlement integrated into FinalizeView via settleManualPress. Round-page UI renders accept/decline banner + opener withdraw + accepted-press strip + open-press dialog. Press auto-expires after 24h pending. |
 | 0036 | applied | Press hardening per QA agent findings: SELECT...FOR UPDATE row lock on accept/decline/withdraw (fixes race), partition validation in fn_open_press (sides must include every player), hole-range validated against round.holes (fixes 9-hole edge case). Re-creates all 4 press RPCs in full. Idempotent. |
 | 0037 | applied | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
+| 0038 | **awaiting your apply** | The Plantation at Ponte Vedra Beach populated. 6 men's tees (Black 74.3/146, Blue 71.9/132, Green 70.0/126, Gold 67.7/119, Silver 63.9/113, Red 62.1/108), all yardage/par/SI verified from official scorecard (Arnold Palmer 1986, Letsche redesign 2016). Status=verified. Idempotent. |
 
 ---
 

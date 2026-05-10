@@ -138,7 +138,7 @@ Compliant data sources only:
 - ✅ USGA's public Course Rating DB (https://ncrdb.usga.org/) for rating + slope only
 - ❌ **Never** scrape, fabricate, or copy hole-by-hole data without verification
 
-The 13 NE FL priority courses (Ponte Vedra Inn & Club Ocean + Lagoon, Timuquana, Deerwood, Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Sawgrass Stadium + Dye's Valley, San Jose, JGCC, Pablo Creek, The Plantation) are seeded as templates. JGCC + PVIC Ocean + PVIC Lagoon are populated. The other 10 are placeholders waiting for scorecards.
+The 13 NE FL priority courses (Ponte Vedra Inn & Club Ocean + Lagoon, Timuquana, Deerwood, Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Sawgrass Stadium + Dye's Valley, San Jose, JGCC, Pablo Creek, The Plantation) are seeded as templates. Populated + verified: JGCC, PVIC Ocean, PVIC Lagoon, TPC Sawgrass Stadium, Deerwood, Timuquana, The Plantation (7 of 13). Still placeholder: Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Dye's Valley, San Jose, Pablo Creek (6 of 13) — waiting for scorecards.
 
 ---
 
