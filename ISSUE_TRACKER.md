@@ -379,6 +379,7 @@ including the override-always-wins safety property.
 | 0034 | applied | Timuquana Country Club populated. 4 men's tees (Green/Blue/White/Gold), yardage/par/SI verified from scorecard. Rating/slope placeholder 72.0/113 (not printed on card). Status=needs_review. |
 | 0035 | **awaiting your apply** | Manual presses: round_presses table + 4 RPCs (fn_open_press / fn_accept_press / fn_decline_press / fn_withdraw_press) with full audit hooks. Settlement integrated into FinalizeView via settleManualPress. Round-page UI renders accept/decline banner + opener withdraw + accepted-press strip + open-press dialog. Press auto-expires after 24h pending. |
 | 0036 | **awaiting your apply** | Press hardening per QA agent findings: SELECT...FOR UPDATE row lock on accept/decline/withdraw (fixes race), partition validation in fn_open_press (sides must include every player), hole-range validated against round.holes (fixes 9-hole edge case). Re-creates all 4 press RPCs in full. Idempotent. |
+| 0037 | **awaiting your apply** | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
 
 ---
 
