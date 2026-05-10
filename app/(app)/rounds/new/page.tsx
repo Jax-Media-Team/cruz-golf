@@ -5,31 +5,75 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import { courseHandicap, playingHandicap } from "@/lib/handicap";
 import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
 import { GAME_PACKAGES } from "@/lib/presets/game-packages";
+import { GAME_FAMILIES, getFamily, getPreset, type GameFamily } from "@/lib/games/library";
 import type { GameType } from "@/lib/types";
 
-// Games shown in the round-builder UI. Sorted alphabetically by label.
-// CTP/Long drive are intentionally hidden for now (the user found them
-// cluttering the setup; they'll come back as a separate "side bet" mode).
-const GAMES: { type: GameType; label: string; defaults?: any }[] = [
-  { type: "aggregate_gross", label: "Aggregate team (gross)" },
-  { type: "aggregate_net", label: "Aggregate team (net)" },
-  { type: "skins_canadian", label: "Canadian skins", defaults: { skin_mode: "pot", buyin_cents: 2000, escalation: "linear", ties: "carry", require_birdie: true } },
-  { type: "custom", label: "Custom side bet" },
-  { type: "individual_gross", label: "Individual gross" },
-  { type: "individual_net", label: "Individual net" },
-  { type: "match_play", label: "Match play (overall only)" },
-  { type: "nassau", label: "Nassau (front/back/overall)", defaults: { match_play: true, front_stake_cents: 1000, back_stake_cents: 1000, overall_stake_cents: 1000, presses: "none" } },
-  { type: "scramble_gross", label: "Scramble (gross)" },
-  { type: "scramble_net", label: "Scramble (net)" },
-  { type: "six_six_six", label: "6-6-6 (partner rotation, 4 players)", defaults: { match_play: true } },
-  { type: "skins_gross", label: "Skins (gross)", defaults: { skin_mode: "pot", buyin_cents: 2000, ties: "carry", require_birdie: false } },
-  { type: "skins_net", label: "Skins (net)", defaults: { skin_mode: "pot", buyin_cents: 2000, ties: "carry", require_birdie: false } },
-  { type: "best_ball_gross", label: "Two-man best ball (gross)" },
-  { type: "best_ball_net", label: "Two-man best ball (net)" }
-];
+// Every concrete game_type referenced by this page. Derived from the
+// GAME_FAMILIES catalog so adding a new variant in lib/games/library.ts
+// flows here automatically. Order: families first (in catalog order),
+// each family's variants × its modes.
+//
+// Replaced the old flat GAMES array (which had separate "Skins (gross)"
+// and "Skins (net)" entries) with a family-grouped picker. The state
+// shape is still keyed by concrete GameType — only the rendering
+// changed. See lib/games/library.ts for the family/variant/mode model.
+const ALL_GAME_TYPES: GameType[] = (() => {
+  const out = new Set<GameType>();
+  for (const f of GAME_FAMILIES) {
+    for (const v of f.variants) {
+      if (f.hasMode) {
+        out.add(v.resolve("gross"));
+        out.add(v.resolve("net"));
+      } else {
+        out.add(v.resolve(null));
+      }
+    }
+  }
+  return [...out];
+})();
 
 function isSkins(t: GameType) {
   return t === "skins_gross" || t === "skins_net" || t === "skins_canadian";
+}
+
+/** Default config for a freshly-enabled game type. Uses the same defaults
+ *  the library-level catalog declares, so the picker UI stays in sync
+ *  with the in-round games-editor. */
+function defaultConfigFor(t: GameType): Record<string, unknown> {
+  const p = getPreset(t);
+  return (p?.defaults.config as Record<string, unknown>) ?? {};
+}
+
+/** Resolve which concrete game_type a (family, variant, mode) tuple
+ *  refers to. Wraps the family.variants[i].resolve callback with a
+ *  null-safe path. */
+function resolveGameType(
+  family: GameFamily,
+  variantKey: string,
+  mode: "gross" | "net"
+): GameType | null {
+  const v = family.variants.find((x) => x.key === variantKey);
+  if (!v) return null;
+  return v.resolve(family.hasMode ? mode : null);
+}
+
+/** Inverse: given a concrete game_type, find its family + variant + mode.
+ *  Used when a saved preset / package writes a concrete type and we need
+ *  to render the picker with the right family selected. */
+function findFamilyForType(
+  t: GameType
+): { family: GameFamily; variantKey: string; mode: "gross" | "net" | null } | null {
+  for (const f of GAME_FAMILIES) {
+    for (const v of f.variants) {
+      if (f.hasMode) {
+        if (v.resolve("gross") === t) return { family: f, variantKey: v.key, mode: "gross" };
+        if (v.resolve("net") === t) return { family: f, variantKey: v.key, mode: "net" };
+      } else {
+        if (v.resolve(null) === t) return { family: f, variantKey: v.key, mode: null };
+      }
+    }
+  }
+  return null;
 }
 
 export default function NewRoundPage() {
@@ -48,7 +92,12 @@ export default function NewRoundPage() {
   const [pickedPlayers, setPickedPlayers] = useState<{ id: string; tee_id: string; team_id: string | null }[]>([]);
   const [teamCount, setTeamCount] = useState(0);
   const [games, setGames] = useState<Record<GameType, { enabled: boolean; stake_cents: number; allowance_pct: number; config: any }>>(
-    Object.fromEntries(GAMES.map((g) => [g.type, { enabled: false, stake_cents: 1000, allowance_pct: 100, config: g.defaults ?? {} }])) as any
+    Object.fromEntries(
+      ALL_GAME_TYPES.map((t) => [
+        t,
+        { enabled: false, stake_cents: 1000, allowance_pct: 100, config: defaultConfigFor(t) }
+      ])
+    ) as any
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -478,13 +527,15 @@ export default function NewRoundPage() {
       return;
     }
 
-    // 4) Create games.
+    // 4) Create games. Game name comes from the catalog preset (which
+    //    is the same source the in-round games-editor uses), so the
+    //    label "Skins (net)" matches across surfaces.
     const gameRows = (Object.entries(games) as [GameType, any][])
       .filter(([, v]) => v.enabled)
       .map(([type, v]) => ({
         round_id: round.id,
         game_type: type,
-        name: GAMES.find((g) => g.type === type)?.label ?? type,
+        name: getPreset(type)?.label ?? type,
         stake_cents: v.stake_cents,
         allowance_pct: v.allowance_pct,
         config: v.config
@@ -817,32 +868,18 @@ export default function NewRoundPage() {
 
       <section className="card p-4 space-y-2">
         <h2 className="font-serif text-xl text-cream-50">Games</h2>
-        {GAMES.map((g) => {
-          const v = games[g.type];
-          return (
-            <div key={g.type} className="border-t border-cream-100/8 first:border-t-0 py-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={v.enabled}
-                  onChange={(e) =>
-                    setGames((s) => ({ ...s, [g.type]: { ...s[g.type], enabled: e.target.checked } }))
-                  }
-                />
-                <span className="flex-1 font-medium text-cream-50">{g.label}</span>
-              </label>
-              {v.enabled && (
-                <GameConfigEditor
-                  gameType={g.type}
-                  value={v}
-                  onChange={(patch) =>
-                    setGames((s) => ({ ...s, [g.type]: { ...s[g.type], ...patch } }))
-                  }
-                />
-              )}
-            </div>
-          );
-        })}
+        <p className="text-xs text-cream-100/55">
+          Pick a family, then choose Gross / Net inside. Add as many as you
+          like — they all run together on the round.
+        </p>
+        {GAME_FAMILIES.map((family) => (
+          <FamilyGameRow
+            key={family.key}
+            family={family}
+            games={games}
+            setGames={setGames}
+          />
+        ))}
         {/* Second-chance Save Preset button so the user sees it after
             they've actually configured the games, not just at the top
             of Quick Start. */}
@@ -864,6 +901,225 @@ export default function NewRoundPage() {
       <button className="btn-primary w-full sm:w-auto" disabled={busy} onClick={startRound}>
         {busy ? "Starting…" : "Start round"}
       </button>
+    </div>
+  );
+}
+
+// ---------- Family-grouped game picker row ----------
+
+type GameState = Record<
+  GameType,
+  { enabled: boolean; stake_cents: number; allowance_pct: number; config: any }
+>;
+
+/**
+ * One row in the games picker. Renders the family checkbox, a variant
+ * selector if the family has multiple variants (Skins → Standard /
+ * Canadian; Nassau → Nassau / Match Play; Side bets → CTP / Long drive
+ * / Custom), and a Gross / Net toggle when family.hasMode is true.
+ *
+ * State stays keyed by concrete GameType. Toggling Gross↔Net moves the
+ * "enabled" + stake + config from one resolved type to the other so the
+ * downstream startRound() insert flow is unchanged.
+ */
+function FamilyGameRow({
+  family,
+  games,
+  setGames
+}: {
+  family: GameFamily;
+  games: GameState;
+  setGames: React.Dispatch<React.SetStateAction<GameState>>;
+}) {
+  // Pick the currently-enabled (variant, mode) for this family, if any.
+  // We use that as the source of truth for "is this family on?" and for
+  // the variant + mode controls.
+  const activeEntry = (() => {
+    for (const v of family.variants) {
+      const candidates: Array<{ type: GameType; mode: "gross" | "net" | null }> = family.hasMode
+        ? [
+            { type: v.resolve("gross"), mode: "gross" },
+            { type: v.resolve("net"), mode: "net" }
+          ]
+        : [{ type: v.resolve(null), mode: null }];
+      for (const c of candidates) {
+        if (games[c.type]?.enabled) {
+          return { variantKey: v.key, mode: c.mode, type: c.type };
+        }
+      }
+    }
+    return null;
+  })();
+
+  const enabled = activeEntry !== null;
+  // Default variant + mode for the first-enable. Resolved live so the
+  // variant/mode UI tracks the user's choice across renders.
+  const variantKey = activeEntry?.variantKey ?? family.defaultVariant;
+  const mode: "gross" | "net" =
+    activeEntry?.mode ?? family.defaultMode ?? "net";
+
+  function setEnabled(next: boolean) {
+    setGames((s) => {
+      const out = { ...s };
+      // Disable every concrete type this family resolves to.
+      for (const v of family.variants) {
+        if (family.hasMode) {
+          out[v.resolve("gross")] = { ...out[v.resolve("gross")], enabled: false };
+          out[v.resolve("net")] = { ...out[v.resolve("net")], enabled: false };
+        } else {
+          const t = v.resolve(null);
+          out[t] = { ...out[t], enabled: false };
+        }
+      }
+      if (next) {
+        const target = resolveGameType(family, variantKey, mode);
+        if (target) {
+          out[target] = {
+            ...out[target],
+            enabled: true,
+            // Carry through stake from the existing slot if any, else
+            // fall back to the catalog default.
+            config:
+              Object.keys(out[target].config ?? {}).length > 0
+                ? out[target].config
+                : defaultConfigFor(target)
+          };
+        }
+      }
+      return out;
+    });
+  }
+
+  function setVariant(nextVariant: string) {
+    if (!enabled) return;
+    const oldType = activeEntry!.type;
+    const newType = resolveGameType(family, nextVariant, mode);
+    if (!newType || newType === oldType) return;
+    setGames((s) => {
+      const carry = s[oldType];
+      return {
+        ...s,
+        [oldType]: { ...s[oldType], enabled: false },
+        [newType]: {
+          ...s[newType],
+          enabled: true,
+          stake_cents: carry.stake_cents,
+          allowance_pct: carry.allowance_pct,
+          // Reset config to the new variant's defaults — variants can
+          // have very different configs (e.g. Canadian skins requires
+          // birdie). Carrying old config could land bad data.
+          config: defaultConfigFor(newType)
+        }
+      };
+    });
+  }
+
+  function setMode(nextMode: "gross" | "net") {
+    if (!enabled || !family.hasMode) return;
+    const oldType = activeEntry!.type;
+    const newType = resolveGameType(family, variantKey, nextMode);
+    if (!newType || newType === oldType) return;
+    setGames((s) => {
+      const carry = s[oldType];
+      return {
+        ...s,
+        [oldType]: { ...s[oldType], enabled: false },
+        [newType]: {
+          ...s[newType],
+          enabled: true,
+          stake_cents: carry.stake_cents,
+          allowance_pct: carry.allowance_pct,
+          // Same config — gross↔net flip doesn't change config shape.
+          config: carry.config
+        }
+      };
+    });
+  }
+
+  const activeType = activeEntry?.type;
+  const v = activeType ? games[activeType] : null;
+
+  return (
+    <div className="border-t border-cream-100/8 first:border-t-0 py-2">
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span className="flex-1">
+          <span className="font-medium text-cream-50">{family.label}</span>
+          <span className="block text-[11px] text-cream-100/55 mt-0.5">
+            {family.short}
+          </span>
+        </span>
+      </label>
+
+      {enabled && (
+        <div className="mt-2 pl-6 space-y-3">
+          {/* Variant selector — only shown if multiple variants exist. */}
+          {family.variants.length > 1 && (
+            <div>
+              <label className="label text-xs">Variant</label>
+              <select
+                className="input text-sm"
+                value={variantKey}
+                onChange={(e) => setVariant(e.target.value)}
+              >
+                {family.variants.map((v) => (
+                  <option key={v.key} value={v.key}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Gross / Net mode toggle — only if family has it. */}
+          {family.hasMode && (
+            <div role="group" aria-label="Gross or Net">
+              <label className="label text-xs">Mode</label>
+              <div className="inline-flex rounded-md border border-cream-100/15 overflow-hidden text-xs">
+                {(["gross", "net"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={`px-3 py-1.5 ${
+                      mode === m
+                        ? "bg-gold-500 text-brand-900 font-medium"
+                        : "text-cream-100/85 hover:bg-brand-900/60"
+                    }`}
+                  >
+                    {m === "gross" ? "Gross" : "Net"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-cream-100/55 mt-1">
+                {mode === "gross"
+                  ? "Lowest raw score wins; no handicap strokes applied."
+                  : "Handicap strokes evened out — most member-member play uses net."}
+              </p>
+            </div>
+          )}
+
+          {/* Existing config editor — keyed off the resolved concrete
+              game_type so Nassau / Skins / 6-6-6 each get their custom
+              editor. */}
+          {activeType && v && (
+            <GameConfigEditor
+              gameType={activeType}
+              value={v}
+              onChange={(patch) =>
+                setGames((s) => ({
+                  ...s,
+                  [activeType]: { ...s[activeType], ...patch }
+                }))
+              }
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
