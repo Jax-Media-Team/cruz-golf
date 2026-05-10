@@ -78,8 +78,23 @@ export function FinalizeView({
   async function finalize() {
     setBusy(true);
     setErr(null);
-    // Wipe prior settlements for this round, then write new ones.
-    await sb.from("settlements").delete().eq("round_id", roundId);
+
+    // Three steps; any failure must surface and abort. If we silently
+    // continued past a failed step, the round could end up with stale
+    // settlements (delete failed) or with status="live" but settlements
+    // already written (round update failed).
+
+    // 1. Wipe prior settlements for this round.
+    {
+      const { error } = await sb.from("settlements").delete().eq("round_id", roundId);
+      if (error) {
+        setBusy(false);
+        setErr(`Couldn't clear prior settlements: ${error.message}`);
+        return;
+      }
+    }
+
+    // 2. Insert new settlements (if any flows).
     if (flows.length > 0) {
       const { error } = await sb.from("settlements").insert(
         flows.map((f) => ({
@@ -87,16 +102,33 @@ export function FinalizeView({
           from_round_player_id: f.from,
           to_round_player_id: f.to,
           amount_cents: f.amount_cents,
-          breakdown: lines.map((l) => ({ game: l.game, from: l.perPlayer.get(f.from) ?? 0, to: l.perPlayer.get(f.to) ?? 0 }))
+          breakdown: lines.map((l) => ({
+            game: l.game,
+            from: l.perPlayer.get(f.from) ?? 0,
+            to: l.perPlayer.get(f.to) ?? 0
+          }))
         }))
       );
       if (error) {
         setBusy(false);
-        setErr(error.message);
+        setErr(`Couldn't save settlement: ${error.message}`);
         return;
       }
     }
-    await sb.from("rounds").update({ status: "finalized", finalized_at: new Date().toISOString() }).eq("id", roundId);
+
+    // 3. Flip round status to "finalized".
+    {
+      const { error } = await sb
+        .from("rounds")
+        .update({ status: "finalized", finalized_at: new Date().toISOString() })
+        .eq("id", roundId);
+      if (error) {
+        setBusy(false);
+        setErr(`Couldn't lock the round: ${error.message}`);
+        return;
+      }
+    }
+
     setBusy(false);
     router.push(`/rounds/${roundId}`);
   }

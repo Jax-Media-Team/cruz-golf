@@ -34,20 +34,19 @@ export default async function LeaderboardsPage() {
   const roundIds = (rounds ?? []).map((r: any) => r.id);
   const safeIds = roundIds.length > 0 ? roundIds : ["00000000-0000-0000-0000-000000000000"];
 
-  const [{ data: rps }, { data: scores }, { data: settlements }, { data: courseHoles }] = await Promise.all([
+  // Round players + settlements in parallel. Scores depend on round_player
+  // ids so they require a second round-trip after this completes.
+  const [{ data: rps }, { data: settlements }] = await Promise.all([
     sb
       .from("round_players")
-      .select("id, round_id, player_id, team_id, course_handicap, playing_handicap, players(display_name), course_tees(course_holes(hole_number, par, stroke_index))")
+      .select(
+        "id, round_id, player_id, team_id, course_handicap, playing_handicap, players(display_name), course_tees(course_holes(hole_number, par, stroke_index))"
+      )
       .in("round_id", safeIds),
-    sb
-      .from("scores")
-      .select("round_player_id, hole_number, gross")
-      .in("round_player_id", safeIds.length > 0 ? [] : []),
     sb
       .from("settlements")
       .select("round_id, from_round_player_id, to_round_player_id, amount_cents")
-      .in("round_id", safeIds),
-    sb.from("course_holes").select("tee_id, hole_number, par, stroke_index")
+      .in("round_id", safeIds)
   ]);
 
   // Pull scores by round_player_id (separate query because we need rp ids first)

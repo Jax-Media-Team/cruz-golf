@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { JgccQuickAdd } from "./jgcc-quick-add";
+import { TemplateCard } from "./template-card";
 
 export default async function CoursesPage() {
   const sb = await supabaseServer();
@@ -12,6 +13,30 @@ export default async function CoursesPage() {
     .eq("group_id", groupId ?? "")
     .is("deleted_at", null)
     .order("name");
+
+  // Pull template courses (community library). Defensive: the is_template
+  // column lands in migration 0020; if the migration hasn't been applied
+  // to this env yet we silently ignore the column-missing error.
+  let templates: Array<{ id: string; name: string; city: string | null; state: string | null; tee_count: number }> = [];
+  try {
+    const { data, error } = await sb
+      .from("courses")
+      .select("id, name, city, state, course_tees(id)")
+      .eq("is_template", true)
+      .is("deleted_at", null)
+      .order("name");
+    if (!error && data) {
+      templates = data.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        city: t.city,
+        state: t.state,
+        tee_count: (t.course_tees ?? []).length
+      }));
+    }
+  } catch {
+    /* migration not yet applied — show no templates */
+  }
 
   const hasJgcc = !!courses?.find((c: any) =>
     (c.name as string).toLowerCase().includes("jacksonville golf")
@@ -31,6 +56,34 @@ export default async function CoursesPage() {
       </header>
 
       {!hasJgcc && groupId && <JgccQuickAdd groupId={groupId} />}
+
+      {/* Community library — templates anyone in the platform can clone.
+          Cloned courses become normal courses inside your group, fully
+          editable from there. Hidden when no templates exist. */}
+      {templates.length > 0 && (
+        <section className="space-y-2">
+          <p className="h-eyebrow text-gold-400">Course library</p>
+          <p className="text-xs text-cream-100/55">
+            Clone any of these into your group. You&apos;ll get a fresh copy
+            you can edit independently.
+          </p>
+          <div className="space-y-2">
+            {templates
+              // Hide templates whose name already exists in this group's library
+              .filter(
+                (t) =>
+                  !courses?.some(
+                    (c: any) =>
+                      (c.name as string).toLowerCase() ===
+                      t.name.toLowerCase()
+                  )
+              )
+              .map((t) => (
+                <TemplateCard key={t.id} template={t} />
+              ))}
+          </div>
+        </section>
+      )}
 
       {(!courses || courses.length === 0) && (
         <div className="card p-8 text-center text-cream-100/70 space-y-2">
