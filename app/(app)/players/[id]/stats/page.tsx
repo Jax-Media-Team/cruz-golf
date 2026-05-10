@@ -6,6 +6,7 @@ import { strokesPerHole } from "@/lib/handicap";
 import { formatHi } from "@/lib/handicap-format";
 import { VenmoQR } from "@/components/VenmoQR";
 import { PlayerProfileEditor } from "./profile-editor";
+import { RivalryShareButton } from "./rivalry-share";
 import {
   buildPartnerSignals,
   buildRivalrySignals,
@@ -464,7 +465,19 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
                   key={`${r.player_a_id}|${r.player_b_id}`}
                   className="py-2 flex items-baseline justify-between gap-3"
                 >
-                  <span className="text-cream-50 truncate">{opponentName}</span>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="text-cream-50 truncate">{opponentName}</span>
+                    {r.rounds_together >= 3 && (
+                      <RivalryShareButton
+                        playerAId={player.id}
+                        playerBId={isA ? r.player_b_id : r.player_a_id}
+                        playerAName={player.display_name}
+                        playerBName={opponentName}
+                        myWins={myWins}
+                        theirWins={theirWins}
+                      />
+                    )}
+                  </span>
                   <div className="text-right shrink-0">
                     <div className="text-cream-50 tabular-nums">
                       {myWins}-{theirWins}
