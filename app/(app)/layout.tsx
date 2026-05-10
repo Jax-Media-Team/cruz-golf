@@ -76,17 +76,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen flex flex-col pb-20 sm:pb-0">
       <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 min-h-[120px] sm:min-h-[160px]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 flex items-center justify-between gap-4 min-h-[140px] sm:min-h-[200px]">
           <Link
             href="/dashboard"
             className="flex items-center shrink-0"
             aria-label="Cruz Golf — home"
           >
             <span className="hidden sm:inline-flex">
-              <BrandLockup iconHeight={180} />
+              <BrandLockup iconHeight={225} />
             </span>
             <span className="sm:hidden inline-flex">
-              <BrandLockup iconHeight={108} />
+              <BrandLockup iconHeight={135} />
             </span>
           </Link>
           <nav className="hidden sm:flex items-center gap-1">

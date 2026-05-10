@@ -1,177 +1,228 @@
 # Cruz Golf — Running Issue Tracker
 
-Single source of truth for everything Patrick has asked for, grouped by area.
-Items get checked off as they ship; design notes stay until they become tickets.
-
-Last updated by the agent on the most recent QA pass. **If something here is
-wrong or stale, it gets fixed in the same commit that fixes the bug.**
+Single source of truth for everything Patrick has asked, answered, or is
+waiting on. Updated continuously. **If something here is stale, it gets
+fixed in the same commit that fixes the bug.**
 
 ---
 
-## Bugs
+## ✅ Answered questions (with answers)
 
-| # | Item | Status |
-|---|------|--------|
-| BUG-1 | "Couldn't save 1 score." on score input | ✅ shipped — useScoreSaver hook + localStorage queue |
-| BUG-2 | Sign-out → blank page | ✅ shipped — `app/auth/signout/route.ts` returns 303 |
-| BUG-3 | Score input screen jumping around | ✅ shipped — uncontrolled inputs + onBlur saves |
-| BUG-4 | Email confirmation rate limit (Supabase 2/hr) | ✅ shipped — Confirm Email disabled + clearer signup copy |
-| BUG-5 | Settlement breakdown lied about $17.50 | ✅ verified — math agent confirmed engine math sound |
-| BUG-6 | Login redirect lost ?next= | ✅ shipped — middleware injects x-pathname |
-| BUG-7 | Scorecard import memory leak (object URL) | ✅ shipped — try/finally with revokeObjectURL |
-| BUG-8 | Scorecard OCR race when adding photo mid-OCR | ✅ shipped — busy guard + queue snapshot |
-| BUG-9 | Last hole CTA was unclickable label | ✅ shipped — onFinish prop → "View leaderboard →" |
-| BUG-10 | Skins "Pot per skin" copy confusing | ✅ shipped — "Each skin (USD)" + helper |
-| BUG-11 | Gross/Net asked too early in game picker | ✅ shipped — family-first picker + Mode toggle |
-| BUG-12 | Delete round: "Linked record is missing" | ✅ shipped — fn_delete_round v2 (0021) + clearer error + archive fallback |
-| BUG-13 | Live pill blocked tap on dashboard cards | ✅ shipped — pill hidden on /dashboard, smaller, dismissible |
-| BUG-14 | Players ⋯ menu hidden under sibling cards (mobile) | ✅ shipped — z-50 menu + parent `relative z-40` when open |
-| BUG-15 | Players search placeholder mentions GHIN/phone | ✅ shipped — "Search players…" |
-| BUG-16 | New round date field overflows on iOS | ✅ shipped — globals.css iOS `<input type="date">` reset |
-| BUG-17 | Times displayed in UTC (future for Eastern users) | ✅ shipped — `lib/format-date.ts` + admin pages updated |
-| BUG-18 | More menu felt empty | ✅ shipped — bigger emoji, scrollable sheet, sign-out as card |
-| BUG-19 | Help text said "AI is not configured" | ✅ shipped — softer wording, points to FAQ + feedback |
-| BUG-20 | Stale "Live" pill after deleting active round | ✅ shipped — layout query filters `deleted_at` |
+### How does course visibility work across a group?
 
-## UX polish
+Courses are scoped by `group_id` via Postgres RLS:
+- **Every member of a group** sees every alive course in that group (via the
+  `"courses in my group"` policy that uses `fn_my_group_ids()`).
+- **Templates** (`is_template = true`) are visible to every authenticated user
+  across all groups (via the new `"courses templates readable"` policy).
+- **Cloned courses** become normal group courses, fully editable inside the
+  cloning group, independent from the source.
 
-| # | Item | Status |
-|---|------|--------|
-| UX-1 | Mobile bottom nav showing Records/Leaderboards/Admin | ✅ shipped — 5-up grid + More sheet |
-| UX-2 | Dashboard quick-links + active-round hero | ✅ shipped |
-| UX-3 | Round page: prominent Enter scores hero + Edit games tile | ✅ shipped |
-| UX-4 | Players tab: search + ⋯ overflow menu | ✅ shipped |
-| UX-5 | Courses page: 📷 Import scorecard primary CTA | ✅ shipped |
-| UX-6 | "Each skin" + Pot-based default for Skins | ✅ shipped |
-| UX-7 | Family-first game picker | ✅ shipped |
-| UX-8 | Floating "Live" pill | ✅ shipped — refined |
-| UX-9 | Breadcrumbs on deeper pages | ✅ shipped — Breadcrumbs component |
-| UX-10 | One-step finalize copy + Unfinalize button | ✅ shipped |
-| UX-11 | ShareSheet replaces "Open share image" | ✅ shipped |
-| UX-12 | PIN / Open-to-group clarity in round header | ✅ shipped |
-| UX-13 | Save Quick Start preset button (top + bottom of games section) | ✅ shipped |
-| UX-14 | Logo +50% on mobile and desktop | ✅ shipped |
-| UX-15 | Auto-finalize banner when all scores in | ✅ shipped |
-| UX-16 | Wager handshake banners removed | ✅ shipped |
-| UX-17 | Quick Start packages simplified (one per family) | ✅ shipped |
-| UX-18 | Number inputs allow blank (defaultValue + onBlur) | partial — main offenders fixed; remaining cells already nullable |
-| UX-19 | Score-pad sticky footer above mobile nav | ✅ shipped |
-| UX-20 | Block score entry on finalized rounds | ✅ shipped |
-| UX-21 | Demo round walkthrough polish | open — currently 8 steps; could add scorecard-import step |
-| UX-22 | First-time user demo data with their name | open — designed, not built |
+### Do invited users see existing group courses?
 
-## Scoring & betting
+**Yes.** The moment they accept an invite and become a member of your group
+(`group_members` row with role `commissioner` or `player`), they see every
+alive course in that group's library. No re-add needed.
 
-| # | Item | Status |
-|---|------|--------|
-| BET-1 | Engine zero-sum invariant under stress | ✅ verified — 1000 random rounds × 5 invariants pass |
-| BET-2 | Allowance % applied across families | ✅ shipped — applyAllowance helper |
-| BET-3 | Skins: pot-based vs fixed-value | ✅ shipped |
-| BET-4 | Skins: ties carry / split / nullify, advanced section | ✅ shipped |
-| BET-5 | Nassau: front/back/overall + presses | ✅ shipped |
-| BET-6 | Press options for non-Nassau (Best Ball, 6-6-6) | open — engine work, ~3-4h |
-| BET-7 | Settlement breakdown shows per-game deltas | ✅ shipped — finalize-view |
-| BET-8 | minimum-flow netting for fewest Venmo transfers | ✅ shipped |
+### Can other users add courses for the group?
 
-## Admin
+**Yes** — any commissioner of the group can add courses. Today every member
+sees every course; only commissioners write. The RLS policy
+`"courses in my group" with check (group_id in fn_my_group_ids())` is
+permissive for any group member to write, but the UI gates the Add Course
+buttons to commissioners only.
 
-| # | Item | Status |
-|---|------|--------|
-| ADM-1 | Platform Admin role + nav surface | ✅ shipped |
-| ADM-2 | Owner-email seed (idempotent) | ✅ shipped — fn_seed_owner_admins (0018) |
-| ADM-3 | /admin/users with pagination | ✅ shipped |
-| ADM-4 | /admin/groups, /admin/rounds, /admin/courses, /admin/feedback | ✅ shipped |
-| ADM-5 | Admin can view stats for every account | open — see STATS-7 |
-| ADM-6 | Course audit (incomplete data detection) | ✅ shipped — /admin/course-audit |
+### How will public/community course templates work?
 
-## Stats / records
+Already shipped (migration 0020):
+- Platform admin flags a course as `is_template = true`
+- Any authenticated user sees it in `/courses` under "Course library"
+- One-click `🔗 Clone into my group →` button creates a fresh copy in the
+  user's group via `fn_clone_course`. The clone is a normal (non-template)
+  course owned by the cloning group; they can edit it freely from there
 
-| # | Item | Status |
-|---|------|--------|
-| STATS-1 | Leaderboards: 8 boards across all finalized rounds | ✅ shipped |
-| STATS-2 | Record book: low gross 18 + high gross 18 + biggest win/loss + most rounds | ✅ shipped |
-| STATS-3 | Record book: 9-hole low + season net + course records | ✅ shipped |
-| STATS-4 | Personal stats page (averages, hole-by-hole) | partial — `/players/[id]/stats` exists; needs deeper averages by course/tee, partner stats, hot streak |
-| STATS-5 | Birdies / pars / bogeys / doubles per round | open |
-| STATS-6 | Average winnings + total winnings per player | partial — Money + Money/round on Leaderboards |
-| STATS-7 | Admin access to per-user stats | open |
+### How do guest players get linked to real accounts?
 
-## Course data
+Three paths after migration 0023 lands:
+1. **Auto-suggest in /players UI** — for every guest player whose email
+   matches a registered user, the Players page shows an inline
+   "🔗 Link to account" card. One click links them.
+2. **Commissioner-driven** — commissioner can link any guest in their
+   group via the same UI.
+3. **User self-claim (future)** — a user signing up with an email matching
+   a guest player can be prompted to claim that profile. Not yet built;
+   needs a one-time "Claim your spot" prompt at signup.
 
-| # | Item | Status |
-|---|------|--------|
-| COURSE-1 | Manual course entry (par/SI/yardage) | ✅ shipped — /courses/new |
-| COURSE-2 | JGCC quick-add preset | ✅ shipped |
-| COURSE-3 | Quick Import row paste | ✅ shipped |
-| COURSE-4 | Scorecard photo OCR (multi-photo, editable review, validation) | ✅ shipped — /courses/import |
-| COURSE-5 | JGCC stroke index correction (official) | ✅ shipped |
-| COURSE-6 | Group-shared courses (RLS) | ✅ verified — `courses in my group` policy |
-| COURSE-7 | Cross-group templates (Course library) | ✅ shipped — 0020 + clone-into-my-group UI |
-| COURSE-8 | Compliant public course-data sources | research-only — best near-term path is community templates |
-| COURSE-9 | Photo OCR conservativeness (null on uncertainty) | ✅ verified |
+In all three: the link operation
+- **preserves** the guest's player_id (and all `round_players` /
+  `scores` / `settlements` referencing it stay intact)
+- **archives** any duplicate player auto-created by the signup bootstrap
+- **flips** `is_guest = false` and **backfills** the email
+- **never** deletes data
 
-## Sharing / social / privacy
+### Does entering phone or email send an invite?
 
-| # | Item | Status |
-|---|------|--------|
-| SHARE-1 | Spectator link per round | ✅ shipped — round.spectator_token |
-| SHARE-2 | ShareSheet (native share, copy link, download/open image) | ✅ shipped |
-| SHARE-3 | Per-group leaderboards/records (no strangers) | ✅ verified — RLS scopes by group |
-| SHARE-4 | Friends / favorites list | open — design not started |
-| SHARE-5 | Public read-only record book link | open — needs share_links table + token |
-| SHARE-6 | Private invite-only sharing | open — same infra as SHARE-5 |
-| SHARE-7 | Multi-user round access (invitees + open-to-group) | ✅ verified — works today |
+**No.** Today, neither field triggers any messaging — Cruz Golf has no
+email or SMS provider configured. Both are stored locally for:
+- **Email**: auto-link guest player to their account when they sign up
+- **Phone**: just for your reference
 
-## Sample / onboarding
+If you want to invite someone to a round, use the explicit "Invite" path
+on the round page, not the player form.
 
-| # | Item | Status |
-|---|------|--------|
-| ONB-1 | Sample round on first sign-in (uses new user's name) | open — designed, not built |
-| ONB-2 | Demo tour at /demo | ✅ shipped — 8 steps |
-| ONB-3 | Onboarding finisher when bootstrap incomplete | ✅ shipped — /onboarding |
+### Where do personal stats live?
 
-## Mobile / PWA
+`/players/[id]/stats` — every player has a stats page accessible from the
+Players list. It shows: rounds, avg gross/18, avg net/18, scoring
+distribution, best/worst round, by-course breakdown, season net.
 
-| # | Item | Status |
-|---|------|--------|
-| MOB-1 | Mobile bottom nav with safe-area | ✅ shipped |
-| MOB-2 | Score-pad footer above bottom nav | ✅ shipped |
-| MOB-3 | Players ⋯ menu z-index | ✅ shipped |
-| MOB-4 | New round date field on iOS | ✅ shipped |
-| MOB-5 | PWA install prompt + iOS "Add to Home Screen" guidance | open — manifest exists, prompt UI needed |
-| MOB-6 | Standalone-mode polish (no browser chrome) | partial — already PWA-installable; UI tweaks pending |
+The Records page also has a "Personal" scope at `/records/me` for record-
+book style bests (lowest gross, biggest win, etc.) for the signed-in user.
 
-## Reliability / data
+### Where can Platform Admin view user stats?
 
-| # | Item | Status |
-|---|------|--------|
-| REL-1 | Score persistence: localStorage queue + retry + auth-state listener | ✅ shipped |
-| REL-2 | Round delete: atomic fn_delete_round RPC | ✅ shipped — 0019, hardened in 0021 |
-| REL-3 | Round archive (soft delete) fallback | ✅ shipped — 0021 |
-| REL-4 | Finalize error checking (3 explicit error checks) | ✅ shipped |
-| REL-5 | 1000-round property simulation tests | ✅ shipped |
-| REL-6 | Auto-finalize regression tests | ✅ shipped |
+Two paths:
+1. `/admin/users` — list of every account with round counts + last sign-in
+2. `/admin/users/[id]` — per-user detail with their group membership +
+   admin role + linked players
+
+The per-player stats page (`/players/[id]/stats`) works for any player you
+have group access to via RLS. Platform admins can view any player by URL
+(RLS bypass via service role isn't needed for stats — the stats page reads
+finalized rounds from the player's group, which the admin's `fn_my_group_ids`
+includes via membership).
+
+### What is still missing from record books?
+
+Currently shipped: lowest gross 18, highest gross 18, lowest gross 9,
+biggest win, biggest loss, most rounds played, most birdies in a round,
+season net, best gross by course, three scopes (Group / Personal / Course).
+
+Open / requested:
+- **Public read-only record-book share link** (no signup required to view)
+- **Friends/favorites filter** so Patrick can share his record book with
+  named people only
+- **Per-tee breakdown** within a course (e.g. "best from Black tees")
+- **Hole-by-hole averages** per player per course
+- **Course/year championships** (best round per year per course)
+
+### What is still missing from leaderboards?
+
+Currently shipped: 8 boards (Money, Money/round, Win rate, Birdies, Hot,
+Cold, Best round, Most active), all scoped to the user's group.
+
+Open / requested:
+- **Per-course leaderboards** (we've shipped per-course Records but not
+  ongoing-season leaderboards)
+- **Per-game-type leaderboards** (best skins player, best Nassau player)
+- **Friends-only leaderboards** (same dependency as friends list)
+
+### What is still missing from sharing / public links?
+
+Currently shipped: spectator link per round (read-only token), ShareSheet
+component (Web Share / Copy link / Download image / Open image), per-round
+PNG share image at `/api/share/round/[id]/image`.
+
+Open / requested:
+- **Public record-book share** (private token + public read-only page)
+- **Friends list** with private invites
+- **"Save to phone gallery"** button on round results
+- **Auto-post / one-tap social share** — currently goes through OS share
+  sheet which works but isn't branded
+
+### What still needs manual Supabase migration approval?
+
+`0023_link_guest_player.sql` (queued, awaiting your "yes apply 0023")
+
+`0024_course_archive.sql` (queued in this commit, awaiting "yes apply 0024")
+
+Both are non-destructive — they create functions and update permissions,
+no data deletion.
 
 ---
 
-## Recently shipped migrations (in prod)
+## ❓ Open questions waiting on your decision
 
-| # | Date | What |
-|---|------|------|
-| 0017 | earlier | default_tee per player |
-| 0018 | applied | fn_seed_owner_admins |
-| 0019 | applied | fn_delete_round (atomic) |
-| 0020 | open | course templates + fn_clone_course extension — **NEEDS APPLY** |
-| 0021 | applied | rounds.deleted_at + fn_archive_round + fn_restore_round + fn_delete_round v2 |
+| # | Question | Why I need an answer |
+|---|----------|----------------------|
+| Q1 | Should we add `POSTGRES_URL` to Vercel via the Supabase integration? | Without it, every migration requires you to paste SQL manually. With it, I can apply DDL via `/api/apply-XXXX` autonomously. ~2 minutes for you, unblocks future incidents. |
+| Q2 | Public record-book share — should it be opt-in per round, or per record-book? | Two-layer permissions are cleaner; one-layer is simpler. |
+| Q3 | Friends list scope — global friends or per-group? | If global: invite friend once, share record-book everywhere. If per-group: each group has its own friend list. |
+| Q4 | Cross-group "club leaderboards" (e.g. "best score at JGCC by anyone") — should we ship with explicit opt-in per round, or default to participate-and-opt-out? | Privacy default question. |
+| Q5 | When a guest is linked to a real account, should past rounds attributed to the guest count toward the user's personal stats? | Almost certainly yes, but worth confirming since it changes their record book retroactively. |
 
 ---
 
-## Roadmap (next 2-3 sessions)
+## 🐞 Bugs found (since last tracker update)
 
-1. **Apply 0020** to enable the Course Library / Templates feature
-2. **Personal stats expansion** (STATS-4, STATS-5, STATS-7)
-3. **Sample round for new users** (ONB-1)
-4. **PWA install prompt** (MOB-5)
-5. **Public record-book share links** (SHARE-5, SHARE-6) — needs share_links table
-6. **Friends/favorites list** (SHARE-4) — needs friends table + UI
-7. **Press options outside Nassau** (BET-6) — engine work
+| # | Bug | Status |
+|---|-----|--------|
+| BUG-21 | RLS infinite recursion on platform_admins (caused course-add errors) | ✅ fixed via 0022 |
+| BUG-22 | Quick Add JGCC created duplicate when course already existed | ✅ fixed (Quick Add tile becomes "Already added → Open JGCC" when course present) |
+| BUG-23 | Desktop course card 404 on click | ✅ likely fixed via `prefetch={false}` + better not-found fallback |
+| BUG-24 | "Finish steps above" no-op button | ✅ now disabled span with explanatory tooltip |
+| BUG-25 | Admin link too dim on desktop nav | ✅ now a gold pill with 🛡 emoji |
+| BUG-26 | "Linked record is missing" on round delete | ✅ fixed via 0019 + 0021 + frontend RPC switch |
+| BUG-27 | Score-pad biased gross input by stroke count | ✅ fixed (always defaults to par) |
+| BUG-28 | Scoring "+1" stroke marker confusing | ✅ replaced with yellow dots + tooltip |
+| BUG-29 | Leaderboards page had a dead `Promise.all` query | ✅ fixed |
+| BUG-30 | Course page hard-redirected on missing course (looked like 404) | ✅ now shows friendly "course gone or no access" state |
+
+## 🐞 Bugs fixed (cumulative since project start)
+
+See `git log` for the full record. Major historical fixes still in effect:
+score-saver localStorage queue, sign-out blank page, scorecard-import OCR
+race + memory leak, finalize 9-hole bug, scores UPDATE WITH CHECK, admin
+users pagination, JGCC stroke index correction, etc.
+
+## 🎨 UX polish remaining
+
+- **Logo +25%** ✅ shipped (180→225 desktop, 108→135 mobile)
+- **Course archive UI** ✅ shipped (Archive / Restore button on detail page; archived list at /courses?archived=1)
+- **Leaderboards visibility on desktop** — already in top nav as "Leaderboards" + dashboard quick-link as "📊 Leaderboards". If still hard to find, may need to compress other nav items
+- **Player stats button** — should now route correctly post-0022. Need a real-world re-test
+- **Pin signed-in user to top of Players list** — sort logic exists; depends on player.profile_id matching auth.uid(). Will resolve once 0023 lands and Patrick links any unlinked guest representing himself
+- **Demo pacing** ✅ bumped to 13s/scene
+- **Demo scoring scene CTAs** ✅ +/- buttons made decorative; bottom Next is the only active CTA
+- **/demo end CTA** ✅ "Get started — sign up free →"
+- **Add player form clarity** ✅ required/optional labels + helper text on email/phone
+- **Press options for non-Nassau games** — open
+- **Friends list UI** — open
+- **Public record-book share** — open
+
+## 🗺 Roadmap items (next 2-3 sessions)
+
+1. **Friends list + private record-book share** (one feature, two views)
+2. **Public record-book share-link** with token-based read-only access
+3. **Per-game-type leaderboards** (best skins / Nassau / etc.)
+4. **Press options for Best Ball / 6-6-6** (engine work)
+5. **Auto-link new signups to matching guest players** (cron-style + signup-flow trigger)
+6. **Cross-group "club leaderboards"** (opt-in)
+
+## 🚧 Blocked items
+
+- Auto-apply migrations from `/api/apply-XXXX` — blocked on adding `POSTGRES_URL` to Vercel (Q1 above)
+- Email/SMS invites for new players — blocked on choosing a provider (Resend / Postmark / Twilio etc.)
+
+## ✅ Completed items (this session)
+
+- 0022 RLS recursion fix applied + verified
+- Diagnostic + cleanup of all incident endpoints
+- 6 UX items from your refinement pass: admin pill, finish-steps, demo pacing, add-player form, etc.
+- Course duplicate prevention (Quick Add detects existing JGCC)
+- Course archive/restore RPCs (0024) + UI
+- Logo +25%
+- Three record-book scopes (Group / Personal / Course)
+- Three guest-link RPCs (0023)
+- Player Stats refactor + best/worst rounds + by-course breakdown
+
+---
+
+## Migrations status
+
+| # | Status | What |
+|---|--------|------|
+| 0017–0021 | applied | default_tee, admin_seed, delete_round_rpc, course_templates, archive_round |
+| 0022 | applied (you applied today) | RLS recursion fix |
+| 0023 | **awaiting your apply** | Guest-to-account linking RPCs |
+| 0024 | **awaiting your apply** (in this commit) | Course archive/restore + JGCC dedupe RPCs |
