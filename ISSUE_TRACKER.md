@@ -76,6 +76,33 @@ These guide every decision. When in doubt, re-read.
 
 ---
 
+## 🔄 Round lifecycle (ships with 0025)
+
+Patrick (2026-05-10): "I do NOT think rounds should auto-finalize/close
+at midnight. That creates too many trust and reliability risks."
+
+State machine:
+  draft → live → pending_finalization → finalized
+                          ↑
+                          └─── still editable; commissioner can resume
+
+| Stage | Editable? | Settlements? | Visible where |
+|-------|-----------|--------------|---------------|
+| draft | yes | no | Drafts bucket on /dashboard |
+| live | yes | no | "Live now" bucket on /dashboard, ActiveRoundPill, Clubhouse strip |
+| pending_finalization | YES (still editable) | no | "Awaiting finalization" bucket on /dashboard, NOT in live signals |
+| finalized | no (unfinalize first) | yes | "Recently finalized" bucket on /dashboard |
+
+Transitions:
+  - live → pending: `fn_mark_round_pending(round_id)` — commissioner-only
+  - pending → live: `fn_resume_round(round_id)` — commissioner-only
+  - any → finalized: existing finalize flow
+  - finalized → live: existing UnfinalizeButton
+
+NO time-driven auto-transitions ship with this migration. Optional
+opt-in heuristics (no edits for X hrs + all scored + no unresolved
+wagers) are queued in the engine-work table.
+
 ## 🚨 Critical bugs
 
 | # | Item | Status |
@@ -261,6 +288,8 @@ read-only path; the admin banner is the only difference.
 | 0022 | applied | RLS recursion fix (platform_admins / feedback / courses-templates-admin-write) |
 | 0023 | applied | guest-to-account linking RPCs |
 | 0024 | applied | course archive + JGCC dedupe RPCs |
+| 0025 | **awaiting your apply** | round lifecycle: 'pending_finalization' status + fn_mark_round_pending + fn_resume_round |
+| 0026 | **awaiting your apply** | course library v2: verification_status + submitted_by + admin RPCs + 13 NE FL priority course shells (placeholder status) + JGCC template stub |
 
 ---
 
@@ -352,6 +381,9 @@ In rough priority order. Each gets its own QA sweep + regression tests.
 |---|------|--------------------------|
 | PRESS-ALL-GAMES | Make presses a first-class capability for Nassau, Best Ball, 6-6-6, team games, Ryder Cup formats — not Nassau-only | The press model lives inside `lib/games/nassau.ts` only. Generalizing it means a `lib/games/press.ts` that any game module can opt into, plus settlement-time aggregation across press chains for non-Nassau game types. Probably a 1-day refactor with new property tests. |
 | GROSS-NET-MIXED | Replace separate "Gross Skins" + "Net Skins" entries with one "Skins" + a Gross/Net/Mixed toggle inside setup. Same for any game that has gross/net variants today. | Touches the GAMES registry, the rounds/new game-picker UI, the games-editor mid-round, the settlement engine's per-game mode handling, and the type system. Worth doing carefully so simulation tests don't regress. |
+| COURSE-LIBRARY-V2-DATA | The 13 NE FL priority courses are seeded as placeholders only (name/city/state). Real tee/rating/slope/hole data needs to come from publicly available scorecards, club PDFs, or community-submitted OCR | Compliant ingestion only. Per Patrick: no scraping, no TOS-risk, no fabricated rating/slope numbers. The infrastructure (verification_status, admin RPCs, OCR import pipeline) is shipped — fill happens via admin moderation as data lands. |
+| COURSE-MULTI-TEE-EVOLUTION | Long-term, courses need: combo tees, gender-specific ratings, custom local rules, temporary reroutes, course revisions over time | Current model: course_tees + course_holes. Multi-tee combos and revision history would need a versioning layer or `effective_from` columns. Worth designing carefully before implementing. |
+| ROUND-AUTO-PENDING | Optional opt-in heuristic to move rounds to pending: all holes scored AND no edits for X hrs AND no unresolved wagers, with commissioner override always available | Patrick explicitly DOES NOT want hard midnight closures. Any auto-rule must be conservative + reversible. Audit trail required. |
 
 ---
 

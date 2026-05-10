@@ -24,6 +24,13 @@ export type RawTemplate = {
   city: string | null;
   state: string | null;
   course_tees?: Array<{ id: string }> | null;
+  /** Library trust signal. See migration 0026. */
+  verification_status?:
+    | "verified"
+    | "community"
+    | "needs_review"
+    | "placeholder"
+    | null;
 };
 
 export type TemplateCardData = {
@@ -32,6 +39,11 @@ export type TemplateCardData = {
   city: string | null;
   state: string | null;
   tee_count: number;
+  verification_status:
+    | "verified"
+    | "community"
+    | "needs_review"
+    | "placeholder";
 };
 
 /** Split group courses into alive vs. archived buckets. */
@@ -65,7 +77,8 @@ export function filterTemplates(
       name: t.name,
       city: t.city,
       state: t.state,
-      tee_count: (t.course_tees ?? []).length
+      tee_count: (t.course_tees ?? []).length,
+      verification_status: t.verification_status ?? "community"
     }));
 }
 

@@ -51,12 +51,25 @@ export default async function CoursesPage({
   try {
     const { data, error } = await sb
       .from("courses")
-      .select("id, name, city, state, course_tees(id)")
+      .select("id, name, city, state, verification_status, course_tees(id)")
       .eq("is_template", true)
       .is("deleted_at", null)
       .order("name");
     if (!error && data) {
       templates = filterTemplates(data as any, (courses ?? []) as any);
+    } else if (error) {
+      // Fallback for envs that haven't applied 0026 yet — re-query
+      // without verification_status. Lets the page render rather than
+      // 500-ing during the rolling migration.
+      const fallback = await sb
+        .from("courses")
+        .select("id, name, city, state, course_tees(id)")
+        .eq("is_template", true)
+        .is("deleted_at", null)
+        .order("name");
+      if (!fallback.error && fallback.data) {
+        templates = filterTemplates(fallback.data as any, (courses ?? []) as any);
+      }
     }
   } catch {
     /* migration not yet applied — show no templates */

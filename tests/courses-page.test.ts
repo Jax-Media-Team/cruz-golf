@@ -74,7 +74,8 @@ describe("filterTemplates", () => {
         name: "Pebble Beach",
         city: "Pebble Beach",
         state: "CA",
-        tee_count: 3
+        tee_count: 3,
+        verification_status: "community"
       }
     ]);
   });
@@ -158,6 +159,40 @@ describe("filterTemplates", () => {
     const out = filterTemplates([tmpl], []);
     expect(out[0].city).toBeNull();
     expect(out[0].state).toBeNull();
+  });
+
+  it("threads verification_status through to the rendered card data", () => {
+    const tmpls: RawTemplate[] = [
+      {
+        id: "t1",
+        name: "Pebble",
+        city: null,
+        state: null,
+        course_tees: [],
+        verification_status: "verified"
+      },
+      {
+        id: "t2",
+        name: "Stub",
+        city: null,
+        state: null,
+        course_tees: [],
+        verification_status: "placeholder"
+      },
+      {
+        // Defensive: old envs without the 0026 migration may return
+        // rows without verification_status. Default to "community".
+        id: "t3",
+        name: "Legacy",
+        city: null,
+        state: null,
+        course_tees: []
+      }
+    ];
+    const out = filterTemplates(tmpls, []);
+    expect(out.find((t) => t.id === "t1")?.verification_status).toBe("verified");
+    expect(out.find((t) => t.id === "t2")?.verification_status).toBe("placeholder");
+    expect(out.find((t) => t.id === "t3")?.verification_status).toBe("community");
   });
 });
 

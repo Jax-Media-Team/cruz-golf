@@ -5,6 +5,8 @@ import { RoundView } from "./round-view";
 import { RoundHeaderActions } from "./header-actions";
 import { ClaimBanner } from "./claim-banner";
 import { UnfinalizeButton } from "./unfinalize-button";
+import { MarkPendingButton, ResumeRoundButton } from "./pending-controls";
+import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -97,9 +99,10 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
             </p>
             <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>
           </div>
-          <span className={round.status === "live" ? "pill-live" : round.status === "finalized" ? "pill-final" : "pill-draft"}>
-            {round.status}
-          </span>
+          {(() => {
+            const pill = statusPillFor(round.status as RoundStatus);
+            return <span className={pill.className}>{pill.label}</span>;
+          })()}
         </div>
 
         {/* Games-in-play strip — every game running on this round */}
@@ -134,22 +137,55 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           is opt-in and not surfaced here. Players can still review wagers
           via the "View wagers" tile below if stakes exist. */}
 
-      {allScoresIn && isCommissioner && (
-        <Link
-          href={`/rounds/${id}/finalize`}
-          className="card p-4 flex items-center justify-between gap-3 hover:bg-brand-900/80 transition-colors border border-emerald-400/40 bg-emerald-500/5"
-        >
-          <div>
-            <div className="font-serif text-lg text-cream-50">
-              ✅ All scores entered. Review and finalize?
-            </div>
-            <p className="text-xs text-cream-100/65 mt-0.5">
-              Lock in the round and compute settlements. You can unlock later
-              if anything needs fixing.
+      {/* Pending-finalization banner: round is done playing but not yet
+          locked. Shows BOTH paths — finalize now (write settlements) or
+          resume scoring (back to live). The round stays editable in
+          this state, so the wording avoids any "review-only" language. */}
+      {round.status === "pending_finalization" && isCommissioner && (
+        <div className="card p-4 flex items-start justify-between gap-3 flex-wrap border border-amber-400/30 bg-amber-500/5">
+          <div className="min-w-0">
+            <p className="h-eyebrow text-amber-300">Awaiting finalization</p>
+            <p className="text-sm text-cream-50 mt-1">
+              This round is out of the live bucket but still editable.
+              Finalize when you&apos;re ready to lock settlements, or resume
+              scoring if anything needs fixing.
             </p>
           </div>
-          <span className="pill bg-emerald-500 text-brand-900">Finalize →</span>
-        </Link>
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+            <Link
+              href={`/rounds/${id}/finalize`}
+              className="btn-primary text-xs"
+            >
+              ✅ Finalize now →
+            </Link>
+            <ResumeRoundButton roundId={id} />
+          </div>
+        </div>
+      )}
+
+      {/* All-scores-entered banner — only on live rounds. Pending rounds
+          already show their own banner above. */}
+      {allScoresIn && round.status === "live" && isCommissioner && (
+        <div className="card p-4 flex items-start justify-between gap-3 flex-wrap border border-emerald-400/40 bg-emerald-500/5">
+          <div className="min-w-0">
+            <div className="font-serif text-lg text-cream-50">
+              All scores entered
+            </div>
+            <p className="text-xs text-cream-100/65 mt-0.5">
+              Lock in settlements now, or move it to awaiting finalization
+              and review later. You can unlock either way.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+            <Link
+              href={`/rounds/${id}/finalize`}
+              className="btn-primary text-xs"
+            >
+              ✅ Finalize →
+            </Link>
+            <MarkPendingButton roundId={id} variant="inline" />
+          </div>
+        </div>
       )}
 
       {claimCandidates.length > 0 && (

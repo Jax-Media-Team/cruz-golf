@@ -17,6 +17,34 @@ import Link from "next/link";
  * the pill links to the user's *current* live round from anywhere in
  * the app; the breadcrumb confirms which round you're inside right now.
  */
+export type RoundStatus = "draft" | "live" | "pending_finalization" | "finalized";
+
+/** Human-friendly label + tailwind class pair for any round status.
+ *  Centralized here so the dashboard, breadcrumb, admin views, and
+ *  spectator chrome all read the same way for the same DB state. */
+export function statusPillFor(status: RoundStatus): {
+  label: string;
+  className: string;
+} {
+  switch (status) {
+    case "live":
+      return { label: "live", className: "pill-live" };
+    case "finalized":
+      return { label: "final", className: "pill-final" };
+    case "pending_finalization":
+      // Soft amber rather than green-live or cream-final — visually
+      // signals "not active, not locked, awaiting commissioner."
+      return {
+        label: "awaiting finalization",
+        className:
+          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/30"
+      };
+    case "draft":
+    default:
+      return { label: "draft", className: "pill-draft" };
+  }
+}
+
 export function RoundBreadcrumb({
   roundId,
   courseName,
@@ -32,15 +60,10 @@ export function RoundBreadcrumb({
   roundId: string;
   courseName: string | null;
   date: string;
-  status: "draft" | "live" | "finalized";
+  status: RoundStatus;
   page?: string;
 }) {
-  const statusPill =
-    status === "live"
-      ? "pill-live"
-      : status === "finalized"
-      ? "pill-final"
-      : "pill-draft";
+  const pill = statusPillFor(status);
 
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -64,7 +87,9 @@ export function RoundBreadcrumb({
           )}
         </span>
       </Link>
-      <span className={`${statusPill} text-[10px] shrink-0`}>{status}</span>
+      <span className={`${pill.className} text-[10px] shrink-0`}>
+        {pill.label}
+      </span>
     </div>
   );
 }
