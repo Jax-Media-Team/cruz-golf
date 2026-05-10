@@ -23,6 +23,23 @@ priority bucket per Patrick's framing.
 
 ---
 
+## 📐 Course-data ingestion rule (per Patrick, 2026-05-10)
+
+**One tee per color, men's rating + men's stroke index only.**
+
+When seeding course templates from a scorecard:
+- Black / Gold / Blue / White / Green / Red / etc. → one row each, named by the bare color
+- Use the **men's** rating + slope (the most-played number for member-member groups)
+- Use the **men's** stroke index
+- **Skip** "Ladies'" tee duplicates, combo tees (Blue/White / White/Green), and any speciality tees that just remix existing colors
+- Skip the per-tee gender split — gender lives on individual players via their handicap, not on the tee row
+
+Rationale: cleaner picker, less noise on /rounds/new, and the rating math the engine cares about (course handicap = HI × slope/113) lands the same for 99% of group play. Players who genuinely play from a different tee than they're set up for can still pick any tee at round time.
+
+If a real need surfaces for ladies' ratings (e.g., a specific group plays mixed gender from the same tee with separate ratings), we'll re-add via a per-player override rather than per-tee duplication.
+
+---
+
 ## 🧭 Operating principles
 
 These guide every decision. When in doubt, re-read.
@@ -329,7 +346,8 @@ including the override-always-wins safety property.
 | 0027 | applied | destructive_audit_log table + fn_log_destructive helper + augmented lifecycle RPCs (archive/restore round + course, mark/resume pending, verify, template flag) write audit rows. Append-only by RLS — no UPDATE/DELETE policies. Read access platform-admin-only. |
 | 0028 | applied | JGCC template promotion: populates the placeholder template course with 5 tees + 90 holes from the JGCC preset and bumps verification_status to 'verified'. |
 | 0029 | **awaiting your apply** | audit hooks for the remaining destructive RPCs: fn_delete_round, fn_dedupe_jgcc_in_group, fn_link_guest_to_profile, fn_unlink_player. Same pattern as 0027 — appends a `fn_log_destructive` call to each function. Re-creates each in full; safe to re-run. |
-| 0030 | **awaiting your apply** | Ponte Vedra Inn & Club Ocean (par 71, 9 tees) + Lagoon (par 70, 7 tees) populated from the official PVIC scorecard PDF. Verification status bumped to verified — both fully cloneable. Combo tees (Blue/White, White/Green, Green/Red) NOT modeled (mixed front/back yardages); single-color tees only. |
+| 0030 | applied | Ponte Vedra Inn & Club Ocean (par 71) + Lagoon (par 70) populated from the official PVIC scorecard PDF. Both verified, fully cloneable. |
+| 0031 | **awaiting your apply** | Slim PVIC templates to one tee per color (drops Ladies' duplicates per the new simplification rule). Templates only — user clones are unaffected. |
 
 ---
 
