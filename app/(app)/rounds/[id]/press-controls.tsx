@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -79,6 +79,47 @@ export function PressControls({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
+
+  // Realtime: when ANY player on this round opens / accepts / declines /
+  // withdraws a press, every other viewer's PressControls re-renders
+  // without a manual reload. Mirrors the score-realtime pattern in
+  // round-view.tsx — subscribe to postgres_changes on `round_presses`
+  // filtered to this round, then router.refresh() on any event so the
+  // server-side fetch picks up the new state. router.refresh() is a
+  // soft refresh — RSCs re-run, client state is preserved.
+  //
+  // 60s safety-net refresh covers silent Realtime drops, same as the
+  // score channel. The Supabase SDK auto-reconnects the socket, so
+  // momentary network blips don't break the feed.
+  useEffect(() => {
+    let cancelled = false;
+    const channel = sb
+      .channel(`round-${roundId}-presses`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "round_presses",
+          filter: `round_id=eq.${roundId}`
+        },
+        () => {
+          if (cancelled) return;
+          router.refresh();
+        }
+      )
+      .subscribe();
+    const interval = setInterval(() => {
+      if (!cancelled) router.refresh();
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      sb.removeChannel(channel);
+    };
+    // sb is a stable singleton from supabaseBrowser(); router is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roundId]);
 
   // Bucket presses by my role so the UI shows the right call-to-action.
   // Hide pending presses older than 24h — backend treats them as

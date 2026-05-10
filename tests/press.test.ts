@@ -415,4 +415,115 @@ describe("settleManualPress — DB-driven press lifecycle", () => {
     expect(pots.get("rp-b1")).toBe(-1000);
     expect(pots.get("rp-b2")).toBe(-1000);
   });
+
+  it("two overlapping manual presses settle independently and stack zero-sum", () => {
+    // Real scenario: Patrick + Ben press the back nine for $10. Three holes
+    // later Patrick presses again from hole 14 for $20 because he's pulling
+    // ahead. Both presses run to hole 18 and both should settle on their
+    // own ranges without contaminating each other.
+    const press1: ManualPress = {
+      id: "press-back-nine",
+      segment_label: "Nassau back",
+      start_hole: 10,
+      end_hole: 18,
+      stake_cents: 1000,
+      side_a_rp_ids: ["rp-a"],
+      side_b_rp_ids: ["rp-b"]
+    };
+    const press2: ManualPress = {
+      id: "press-late",
+      segment_label: "Nassau back",
+      start_hole: 14,
+      end_hole: 18,
+      stake_cents: 2000,
+      side_a_rp_ids: ["rp-a"],
+      side_b_rp_ids: ["rp-b"]
+    };
+    // Holes 10-18 outcome: A wins 4, B wins 2, 3 pushes → press1 delta +2.
+    // Holes 14-18 subset: A wins 2, B wins 1, 2 pushes → press2 delta +1.
+    const holes: HoleResult[] = [
+      ...Array.from({ length: 9 }, (_, i) => holeResult(i + 1, "push")),
+      holeResult(10, "a"),
+      holeResult(11, "b"),
+      holeResult(12, "push"),
+      holeResult(13, "a"),
+      holeResult(14, "a"),
+      holeResult(15, "b"),
+      holeResult(16, "push"),
+      holeResult(17, "a"),
+      holeResult(18, "push")
+    ];
+    const s1 = settleManualPress(press1, holes);
+    const s2 = settleManualPress(press2, holes);
+    expect(s1.result_delta).toBe(2);
+    expect(s2.result_delta).toBe(1);
+    const pots = pressPotsBySide([s1, s2], ["rp-a"], ["rp-b"]);
+    // press1: A wins, B pays $10, A gets $10. press2: A wins, B pays $20,
+    // A gets $20. Total: A +30, B -30. Zero-sum.
+    expect(pots.get("rp-a")).toBe(3000);
+    expect(pots.get("rp-b")).toBe(-3000);
+    expect([...pots.values()].reduce((s, v) => s + v, 0)).toBe(0);
+  });
+
+  it("auto-press + manual press on the same segment stack cleanly", () => {
+    // Auto-press fires when A goes 2-down on the front 9. Then mid-round
+    // someone opens a manual press on holes 5-9 for double the stake.
+    // Both feed into the same pressPotsBySide and should compose without
+    // interference.
+    const segmentHoles: HoleResult[] = [
+      holeResult(1, "b"),
+      holeResult(2, "b"), // -2 → auto-press opens at hole 3
+      holeResult(3, "a"),
+      holeResult(4, "b"),
+      holeResult(5, "a"),
+      holeResult(6, "b"),
+      holeResult(7, "a"),
+      holeResult(8, "push"),
+      holeResult(9, "b")
+    ];
+    const auto = detectAutoPresses(segmentHoles, baseOpts);
+    expect(auto).toHaveLength(1);
+    expect(auto[0].trigger_delta).toBe(-2);
+
+    // Manual press: holes 5-9, $20 stake, same A vs B sides.
+    const manual: ManualPress = {
+      id: "manual-1",
+      segment_label: "Nassau front",
+      start_hole: 5,
+      end_hole: 9,
+      stake_cents: 2000,
+      side_a_rp_ids: ["rp-a"],
+      side_b_rp_ids: ["rp-b"]
+    };
+    const settled = settleManualPress(manual, segmentHoles);
+    const pots = pressPotsBySide(
+      [...auto, settled],
+      ["rp-a"],
+      ["rp-b"]
+    );
+    // Whatever the deltas are, the total must be zero-sum and each press
+    // contributes its own stake to the loser pays / winner receives flow.
+    expect([...pots.values()].reduce((s, v) => s + v, 0)).toBe(0);
+  });
+
+  it("guards against malformed sides — empty side returns zero, no division-by-zero", () => {
+    // A press with one side empty shouldn't blow up settlement. The
+    // SECURITY DEFINER RPC rejects this on insert, but the engine must
+    // also be defensive in case bad data sneaks through.
+    const presses = [
+      {
+        label: "Nassau front · manual press",
+        segment_label: "Nassau front",
+        start_hole: 1,
+        end_hole: 9,
+        stake_cents: 1000,
+        trigger_hole: 0,
+        trigger_delta: 0,
+        result_delta: 3
+      }
+    ];
+    const out = pressPotsBySide(presses, ["rp-a"], []);
+    // No B players → press is ignored, A gets nothing.
+    expect(out.get("rp-a")).toBe(0);
+  });
 });

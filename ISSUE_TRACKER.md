@@ -12,17 +12,16 @@
 
 ---
 
-## Latest session highlights (2026-05-10 overnight, commits c82b32a → 77f5cf8)
+## Latest session highlights (2026-05-10, commits c82b32a → 3f01e7c → realtime)
 
-What shipped while you were away:
+What shipped this stretch:
 
-- **Match-play + auto-presses for Best Ball + Aggregate** (engine + UI). Nassau got real presses earlier; this turn extended the same primitive to team games. New `match_play: true` config flips them to hole-by-hole settlement; `presses: 'auto_2_down'` fires when a team is 2 down with 3+ holes left. 9 new regression tests including zero-sum invariant and 3+ team fall-back.
-- **Career money + Last-round signals** in the clubhouse engine. Surfaced in `<ClubhouseStrip>` with restraint thresholds (career money: ≥ 5 rounds AND ≥ $30 netted; last-round: only the freshest finalized round).
-- **/admin/course-library bulk actions.** Multi-select + sticky action bar with Verify / Flag / Community / Placeholder / Untemplate per bucket. Parallel RPC dispatch via `Promise.allSettled`; per-row errors surface inline.
-- **Rivalry share image** at `/api/share/rivalry/image?a=…&b=…` — 1200×630 OG PNG. New `<RivalryShareButton>` on per-rivalry rows in `/players/[id]/stats`, surfaced only when `rounds_together ≥ 3`.
-- **QA agent findings — all 4 fixed:** P0 `ClubhouseRound` type missing `pending_finalization`, P1 admin /rounds Pending filter chip, P2 status pill amber styling across 4 admin pages (centralized via `statusPillFor()`), P2 admin user-detail bucketing (pending now in "Active rounds" instead of "Other rounds played").
+- **Manual presses end-to-end** (commits 2be5809 → db27584 → 3f01e7c). New `round_presses` table, 4 SECURITY DEFINER RPCs (open / accept / decline / withdraw) with destructive-audit-log entries on every state change. Engine: `lib/games/press.ts` `settleManualPress()` pure function + `pressPotsBySide()` zero-sum distributor. UI: `app/(app)/rounds/[id]/press-controls.tsx` with awaiting-me banner / opener withdraw / accepted strip / open-press dialog. Settlement wired into `finalize-view.tsx`. **Hardened in 0036** after a QA agent found a race condition (non-locking SELECT before UPDATE → fixed with SELECT...FOR UPDATE), a partition gap (sides could exclude players → fixed with full-coverage check), and a 9-hole hole-range validation bug (was hardcoded 1–18 → now clamps to round.holes).
+- **PWA shipped** (commit db27584). Vanilla `public/sw.js` with cache-first for static, network-first for HTML, network-only for /api. `<ServiceWorkerRegistration>` registers on production load only. `<OfflineIndicator>` shows a calm amber pill (statement, not exclamation) when navigator.onLine flips false. Score-write resilience already lived in `useScoreSaver`'s localStorage queue — service worker just makes the shell load offline.
+- **Course library expanded:** Timuquana CC + Deerwood CC promoted to **verified** status with real rating/slope per tee (Patrick supplied 2026-05-10). 0037 ran 8 UPDATEs across 8 tees + 2 verification bumps.
+- **Press realtime + integration tests** (current turn). PressControls now subscribes to `postgres_changes` on `round_presses` filtered by round_id and calls `router.refresh()` on every change — opener / acceptor / commissioner all see new state without a manual reload. 60s safety-net refresh covers silent socket drops. Three new tests: overlapping manual presses settling independently, auto-press + manual press composing zero-sum, malformed empty-side defensive guard.
 
-**Tests:** 239/239 passing. **Typecheck:** clean. **Migrations:** all applied through 0031.
+**Tests:** 248/248 passing. **Typecheck:** clean. **Migrations:** all applied through 0037.
 
 ---
 
@@ -377,9 +376,9 @@ including the override-always-wins safety property.
 | 0032 | applied | TPC Sawgrass Stadium (Blue tee, 76.8/155, verified) + Deerwood CC (4 tees, yardage/par/SI verified; rating/slope placeholder, status=needs_review). |
 | 0033 | **awaiting your apply** | Berkeley Hall Club — South Course (Bluffton, SC) seeded as a NEW template. 6 men's tees (Black 74.9/141, Blue 72.8/137, Member 71.1/133, White 70.4/128, Fazio 69.6/126, Green 68.0/124), all printed on card. Status=verified. Patrick confirmed South Course on 2026-05-10. Idempotent. |
 | 0034 | applied | Timuquana Country Club populated. 4 men's tees (Green/Blue/White/Gold), yardage/par/SI verified from scorecard. Rating/slope placeholder 72.0/113 (not printed on card). Status=needs_review. |
-| 0035 | **awaiting your apply** | Manual presses: round_presses table + 4 RPCs (fn_open_press / fn_accept_press / fn_decline_press / fn_withdraw_press) with full audit hooks. Settlement integrated into FinalizeView via settleManualPress. Round-page UI renders accept/decline banner + opener withdraw + accepted-press strip + open-press dialog. Press auto-expires after 24h pending. |
-| 0036 | **awaiting your apply** | Press hardening per QA agent findings: SELECT...FOR UPDATE row lock on accept/decline/withdraw (fixes race), partition validation in fn_open_press (sides must include every player), hole-range validated against round.holes (fixes 9-hole edge case). Re-creates all 4 press RPCs in full. Idempotent. |
-| 0037 | **awaiting your apply** | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
+| 0035 | applied | Manual presses: round_presses table + 4 RPCs (fn_open_press / fn_accept_press / fn_decline_press / fn_withdraw_press) with full audit hooks. Settlement integrated into FinalizeView via settleManualPress. Round-page UI renders accept/decline banner + opener withdraw + accepted-press strip + open-press dialog. Press auto-expires after 24h pending. |
+| 0036 | applied | Press hardening per QA agent findings: SELECT...FOR UPDATE row lock on accept/decline/withdraw (fixes race), partition validation in fn_open_press (sides must include every player), hole-range validated against round.holes (fixes 9-hole edge case). Re-creates all 4 press RPCs in full. Idempotent. |
+| 0037 | applied | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
 
 ---
 
