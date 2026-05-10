@@ -27,6 +27,7 @@ export function ScorecardImportClient({ groupId }: { groupId: string | null }) {
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    if (busy) return; // Don't mutate the queue while OCR is in flight.
     setErr(null);
     const slots = 3 - previews.length;
     if (slots <= 0) {
@@ -48,14 +49,17 @@ export function ScorecardImportClient({ groupId }: { groupId: string | null }) {
   }
 
   async function runOCR() {
-    if (previews.length === 0) return;
+    if (previews.length === 0 || busy) return;
+    // Snapshot the queue at call time so any subsequent additions don't
+    // alter what we send to OCR mid-flight.
+    const snapshot = previews.slice();
     setBusy(true);
     setErr(null);
     try {
       const r = await fetch("/api/course-import-ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrls: previews })
+        body: JSON.stringify({ dataUrls: snapshot })
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? `OCR failed (${r.status})`);
@@ -140,7 +144,8 @@ function CaptureStep({
               <button
                 type="button"
                 onClick={() => onRemove(i)}
-                className="absolute top-1 right-1 rounded bg-black/70 text-cream-50 text-xs px-2 py-1"
+                disabled={busy}
+                className="absolute top-1 right-1 rounded bg-black/70 text-cream-50 text-xs px-2 py-1 disabled:opacity-50"
                 aria-label={`Remove photo ${i + 1}`}
               >
                 Remove
@@ -151,7 +156,8 @@ function CaptureStep({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="aspect-[4/3] rounded-lg border-2 border-dashed border-cream-100/25 hover:border-gold-500 hover:bg-brand-900/40 transition-colors flex flex-col items-center justify-center gap-1 text-cream-100/65"
+              disabled={busy}
+              className="aspect-[4/3] rounded-lg border-2 border-dashed border-cream-100/25 hover:border-gold-500 hover:bg-brand-900/40 transition-colors flex flex-col items-center justify-center gap-1 text-cream-100/65 disabled:opacity-50 disabled:hover:border-cream-100/25 disabled:hover:bg-transparent"
             >
               <span className="text-3xl">📷</span>
               <span className="text-sm">
@@ -729,21 +735,30 @@ function resizeArr<T>(arr: Array<T | null>, n: number): Array<T | null> {
  * Keeps OCR quality high while staying inside the 4 MB-ish per-image limit.
  */
 async function compressToDataUrl(file: File, maxEdge = 1600, quality = 0.85): Promise<string> {
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const i = new Image();
-    i.onload = () => resolve(i);
-    i.onerror = () => reject(new Error("Could not load image."));
-    i.src = URL.createObjectURL(file);
-  });
+  // We createObjectURL to load the image into an HTMLImageElement so we can
+  // measure its natural dimensions, then revoke immediately after — otherwise
+  // the blob is held alive for the lifetime of the page (multi-photo imports
+  // would otherwise pile up tens of MB of phantom blobs).
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Could not load image."));
+      i.src = objectUrl;
+    });
 
-  const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.round(img.naturalWidth * scale);
-  const h = Math.round(img.naturalHeight * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas not supported.");
-  ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL("image/jpeg", quality);
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not supported.");
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", quality);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
