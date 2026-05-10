@@ -3,16 +3,24 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { buildPlayerSheet, leaderboard } from "@/lib/scoring";
 import { Leaderboard, type LeaderboardTab } from "@/components/Leaderboard";
+import { AdminSpectatorBanner } from "@/components/AdminSpectatorBanner";
 import type { CourseHole, RoundPlayer, Score } from "@/lib/types";
 
 export function SpectatorView({
   round,
   rps,
-  scores: initialScores
+  scores: initialScores,
+  adminMode = false,
+  groupName = null
 }: {
   round: any;
   rps: any[];
   scores: Score[];
+  /** True only when the signed-in viewer is a verified Platform Admin and
+   *  the URL had `?adminMode=1`. Pure UI signal — no permission change. */
+  adminMode?: boolean;
+  /** Group name used in the admin banner subject ("Sunday Crew round"). */
+  groupName?: string | null;
 }) {
   const [tab, setTab] = useState<LeaderboardTab>("net");
   const [scores, setScores] = useState<Score[]>(initialScores);
@@ -83,9 +91,18 @@ export function SpectatorView({
     setTimeout(() => setShareNote(null), 2200);
   }
 
+  const courseName = round.courses?.name ?? "Round";
+
   return (
-    <main className="min-h-screen px-4 py-6 sm:py-10">
-      <div className="max-w-3xl mx-auto space-y-4">
+    <main className="min-h-screen">
+      {adminMode && (
+        <AdminSpectatorBanner
+          subject={`${groupName ?? "group"} round at ${courseName}`}
+          context={`${round.date} · ${round.status}`}
+          backHref={`/admin/rounds/${round.id}`}
+        />
+      )}
+      <div className="max-w-3xl mx-auto space-y-4 px-4 py-6 sm:py-10">
         <div className="flex items-center justify-end">
           <button className="btn-secondary text-xs" onClick={copyLink}>
             {shareNote ?? "Share link"}

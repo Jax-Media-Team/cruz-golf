@@ -60,6 +60,16 @@ export default async function AdminOverview() {
     .select("*", { head: true, count: "exact" })
     .eq("status", "finalized");
 
+  // Live rounds right now — the highest-leverage admin observability
+  // surface. Includes spectator_token so we can deep-link straight to the
+  // read-only leaderboard with the admin banner.
+  const { data: liveRoundsList } = await sb
+    .from("rounds")
+    .select("id, date, spectator_token, group_id, course_id, courses(name), groups(name)")
+    .eq("status", "live")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
   // ----- Computed analytics -----
   // Most played courses
   const courseRoundCount = new Map<string, number>();
@@ -161,6 +171,60 @@ export default async function AdminOverview() {
         <Stat label="New feedback" value={feedbackNew.count ?? 0} href="/admin/feedback" accent={!!(feedbackNew.count && feedbackNew.count > 0)} />
         <Stat label="Signed up, never played" value={Math.max(0, profilesNeverPlayed)} />
       </section>
+
+      {/* Live-rounds spectator strip — only renders when something's
+          actually in progress. One tap from /admin to a read-only
+          leaderboard with the admin banner. */}
+      {(liveRoundsList?.length ?? 0) > 0 && (
+        <section className="card p-4 border border-emerald-400/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-lg text-cream-50">
+              🟢 Live right now ({liveRoundsList?.length ?? 0})
+            </h2>
+            <Link href="/admin/rounds?status=live" className="text-xs text-gold-400 underline">
+              All live →
+            </Link>
+          </div>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {(liveRoundsList ?? []).map((r: any) => (
+              <li
+                key={r.id}
+                className="py-2 flex items-center justify-between gap-3 flex-wrap"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/admin/rounds/${r.id}`}
+                    className="text-cream-50 hover:underline truncate block"
+                  >
+                    {r.courses?.name ?? "Course"}
+                    <span className="text-cream-100/55 text-xs ml-2">· {r.date}</span>
+                  </Link>
+                  <div className="text-[11px] text-cream-100/55 truncate">
+                    {r.groups?.name ?? "Group"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {r.spectator_token && (
+                    <Link
+                      href={`/rounds/${r.id}/leaderboard?token=${r.spectator_token}&adminMode=1`}
+                      className="btn-secondary text-xs"
+                      title="Read-only live leaderboard with admin banner"
+                    >
+                      👀 Spectate
+                    </Link>
+                  )}
+                  <Link
+                    href={`/admin/rounds/${r.id}`}
+                    className="btn-ghost text-xs"
+                  >
+                    Inspect →
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card p-4">

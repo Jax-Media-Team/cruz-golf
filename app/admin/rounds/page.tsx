@@ -15,7 +15,7 @@ export default async function AdminRoundsPage({
   let query = sb
     .from("rounds")
     .select(
-      "id, date, status, holes, created_at, group_id, course_id, groups(name), courses(name)"
+      "id, date, status, holes, created_at, group_id, course_id, spectator_token, groups(name), courses(name)"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -82,7 +82,16 @@ export default async function AdminRoundsPage({
                       {r.status}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {r.status === "live" && r.spectator_token && (
+                      <Link
+                        href={`/rounds/${r.id}/leaderboard?token=${r.spectator_token}&adminMode=1`}
+                        className="text-xs text-cream-100/85 hover:text-gold-400 mr-3"
+                        title="Read-only live leaderboard with admin banner"
+                      >
+                        👀 Spectate
+                      </Link>
+                    )}
                     <Link href={`/admin/rounds/${r.id}`} className="text-xs text-gold-400 underline">
                       Open →
                     </Link>

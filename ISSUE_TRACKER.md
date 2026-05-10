@@ -56,6 +56,8 @@ These guide every decision. When in doubt, re-read.
 | 0022-RECURSION | RLS infinite recursion on `platform_admins` blocked all course writes | ✅ fixed (migration 0022 applied) |
 | QUICK-ADD-DUPE | Quick Add JGCC created duplicates when course already existed | ✅ `fn_dedupe_jgcc_in_group` cleans existing dupes (0024 applied); smart dedupe ran for Patrick's group |
 | DUAL-JGCC-RENDER | Two JGCC entries showed on /courses (hero "Already added" tile + same row in YOUR COURSES) | ✅ killed the dual render; three labeled sections; dedup logic in `lib/courses-page.ts` with 18 regression tests (commit 4eb3549) |
+| DUPLICATE-FINALIZE-CTA | Three Finalize entry points on /rounds/[id] (header button + green banner + secondary tile) | ✅ header is round-meta only; banner and tile mutually exclusive (commit 9ec3ade) |
+| FAKE-IMPERSONATION | "View as User →" on /admin/rounds/[id] silently bounced to dashboard (RLS blocked admin from seeing other groups' rounds) and was a confused affordance — Patrick wanted observability, not impersonation | ✅ replaced with "👀 Spectate live →" using existing token-keyed read-only leaderboard + AdminSpectatorBanner; admin-mode flag re-verified server-side via `fn_is_platform_admin()` so it can't be spoofed |
 | DESKTOP-COURSE-404 | Course cards 404'd on desktop click (worked on mobile) | ✅ added `prefetch={false}` + friendly not-found page |
 | ROUND-DELETE-FK | "Linked record is missing" on round delete | ✅ fixed in 0019 + 0021 + frontend RPC switch |
 | FINISH-STEPS-NOOP | Get Started "Finish steps above" button did nothing | ✅ now disabled span with tooltip |
@@ -133,6 +135,27 @@ This is the bucket that separates Cruz Golf from "another scorecard app."
 | PER-TEE-BREAKDOWN | Best score from Black tees vs Gold tees | ⏳ open |
 | PER-GAME-LEADERBOARDS | Best skins player, best Nassau player | ⏳ open |
 | FRIENDS-ONLY-LEADERBOARDS | Filter leaderboards to a named subset | ⏳ open — depends on Friends list |
+
+## 🛡 Admin observability / spectator (NEW bucket)
+
+Patrick's framing (2026-05-10): admin power should be **observability, not
+impersonation**. Spectator surfaces are also product surfaces — they
+double as the foundation for friends watching friends, member-member
+tournaments, Ryder Cup weekends, and trip leaderboards. Same token-keyed
+read-only path; the admin banner is the only difference.
+
+| # | Item | Status |
+|---|------|--------|
+| ADMIN-SPECTATOR-BANNER | Sticky `🛡 Platform Admin · read-only spectator` banner on any leaderboard reached via `?adminMode=1` | ✅ shipped — `components/AdminSpectatorBanner.tsx`, server-verifies admin status |
+| ADMIN-SPECTATE-FROM-ROUND | Replace "View as user →" with "👀 Spectate live →" on /admin/rounds/[id] | ✅ shipped |
+| ADMIN-SPECTATE-FROM-LIST | Inline 👀 Spectate column on /admin/rounds for live rounds | ✅ shipped |
+| ADMIN-SPECTATE-FROM-USER | "Active rounds" section on /admin/users/[id] with Spectate + Inspect buttons | ✅ shipped |
+| ADMIN-SPECTATE-FROM-GROUP | Inline Spectate for live rounds on /admin/groups/[id] | ✅ shipped |
+| ADMIN-LIVE-RIGHT-NOW | "🟢 Live right now" strip on /admin overview with one-tap spectate per round | ✅ shipped |
+| ADMIN-EDIT-MODE | Explicit opt-in admin-mutate mode (separate route, distinct banner color, audit-logged) for the rare case admin needs to fix data | ⏳ open — design needed before any mutate-as-admin path is added |
+| FRIEND-SPECTATOR | Same token-keyed surface, but discoverable from a friends list | ⏳ open — depends on Friends list (FRIENDS-LIST below) |
+| TRIP-SPECTATOR | Multi-round trip view with rolling leaderboard | ⏳ open — depends on GOLF-TRIP-ARCHIVES |
+| MEMBER-MEMBER-SPECTATE | Bracket view of a tournament with live status across foursomes | ⏳ open — depends on RYDER-CUP-HISTORY |
 
 ## 🔗 Sharing / virality
 

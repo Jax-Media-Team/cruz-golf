@@ -24,11 +24,33 @@ export default async function AdminUserDetail({
     sb.from("group_members").select("group_id, player_id, role, groups(id, name, owner_id)").eq("profile_id", id),
     sb
       .from("round_players")
-      .select("round_id, course_handicap, playing_handicap, rounds(id, date, status, courses(name)), players!inner(profile_id)")
+      .select("round_id, course_handicap, playing_handicap, rounds(id, date, status, spectator_token, courses(name), groups(name)), players!inner(profile_id)")
       .eq("players.profile_id", id)
       .order("round_id", { ascending: false }),
     sb.from("players").select("id, group_id, display_name, is_guest, deleted_at").eq("profile_id", id)
   ]);
+
+  // Bucket the user's rounds for the support workflow: live rounds are
+  // the highest-leverage thing an admin needs to spectate when this user
+  // pings them ("the round won't finalize", "scores are wrong", etc).
+  // Drafts come second; finalized rounds are the long tail.
+  type RpRow = {
+    round_id: string;
+    course_handicap: number | null;
+    playing_handicap: number | null;
+    rounds: {
+      id: string;
+      date: string;
+      status: string;
+      spectator_token: string | null;
+      courses: { name: string } | null;
+      groups: { name: string } | null;
+    } | null;
+  };
+  const allRps = (roundPlayers ?? []) as unknown as RpRow[];
+  const liveRps = allRps.filter((rp) => rp.rounds?.status === "live");
+  const draftRps = allRps.filter((rp) => rp.rounds?.status === "draft");
+  const otherRps = allRps.filter((rp) => rp.rounds && rp.rounds.status !== "live" && rp.rounds.status !== "draft");
 
   return (
     <div className="space-y-5">
@@ -119,26 +141,101 @@ export default async function AdminUserDetail({
         )}
       </section>
 
+      {/* Live + draft rounds first — these are the support-workflow targets.
+          Each row links to /admin/rounds/[id] (full admin detail) AND a
+          read-only spectator leaderboard so support can see what the user
+          sees without altering anything. */}
+      {(liveRps.length > 0 || draftRps.length > 0) && (
+        <section className="card p-4 border border-gold-500/30">
+          <h2 className="font-serif text-lg text-cream-50 mb-1">
+            Active rounds ({liveRps.length + draftRps.length})
+          </h2>
+          <p className="text-[11px] text-cream-100/55 mb-2">
+            Live + draft rounds this user is in. Spectate is read-only — it
+            won&apos;t mutate anything.
+          </p>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {[...liveRps, ...draftRps].map((rp) => {
+              const r = rp.rounds!;
+              const courseName = r.courses?.name ?? "Course";
+              const groupName = r.groups?.name ?? "Group";
+              return (
+                <li
+                  key={rp.round_id}
+                  className="py-2 flex items-center justify-between gap-3 flex-wrap"
+                >
+                  <div className="min-w-0">
+                    <div className="text-cream-50 truncate">
+                      {courseName}
+                      <span className="text-cream-100/55 text-xs ml-2">· {r.date}</span>
+                    </div>
+                    <div className="text-[11px] text-cream-100/55 truncate">
+                      {groupName}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={
+                        r.status === "live"
+                          ? "pill-live text-[10px]"
+                          : "pill-draft text-[10px]"
+                      }
+                    >
+                      {r.status}
+                    </span>
+                    {r.spectator_token && (
+                      <Link
+                        href={`/rounds/${rp.round_id}/leaderboard?token=${r.spectator_token}&adminMode=1`}
+                        className="btn-secondary text-xs"
+                        title="Read-only live leaderboard with admin banner"
+                      >
+                        👀 Spectate
+                      </Link>
+                    )}
+                    <Link
+                      href={`/admin/rounds/${rp.round_id}`}
+                      className="btn-ghost text-xs"
+                    >
+                      Inspect →
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="card p-4">
         <h2 className="font-serif text-lg text-cream-50 mb-2">
-          Rounds played ({roundPlayers?.length ?? 0})
+          Rounds played ({allRps.length})
         </h2>
-        {roundPlayers && roundPlayers.length > 0 ? (
+        {allRps.length > 0 ? (
           <ul className="divide-y divide-cream-100/8 text-sm">
-            {roundPlayers.slice(0, 30).map((rp: any) => (
-              <li key={rp.round_id} className="py-2 flex items-center justify-between gap-3">
+            {otherRps.slice(0, 30).map((rp) => (
+              <li
+                key={rp.round_id}
+                className="py-2 flex items-center justify-between gap-3"
+              >
                 <Link
                   href={`/admin/rounds/${rp.round_id}`}
                   className="text-cream-50 hover:underline"
                 >
                   {rp.rounds?.courses?.name ?? "Course"}{" "}
-                  <span className="text-cream-100/55 text-xs">· {rp.rounds?.date}</span>
+                  <span className="text-cream-100/55 text-xs">
+                    · {rp.rounds?.date}
+                  </span>
                 </Link>
                 <span className="text-xs text-cream-100/55 tabular-nums">
                   CH {rp.course_handicap} · PH {rp.playing_handicap}
                 </span>
               </li>
             ))}
+            {otherRps.length === 0 && (
+              <li className="py-2 text-cream-100/55 text-xs">
+                Only active rounds (shown above).
+              </li>
+            )}
           </ul>
         ) : (
           <p className="text-sm text-cream-100/55">No rounds yet.</p>

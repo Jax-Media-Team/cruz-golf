@@ -19,7 +19,7 @@ export default async function AdminGroupDetail({ params }: { params: Promise<{ i
     sb.from("group_members").select("profile_id, player_id, role").eq("group_id", id),
     sb
       .from("rounds")
-      .select("id, date, status, courses(name)")
+      .select("id, date, status, spectator_token, courses(name)")
       .eq("group_id", id)
       .order("date", { ascending: false }),
     sb.from("players").select("id, display_name, profile_id, is_guest, deleted_at, handicap_index").eq("group_id", id),
@@ -80,14 +80,25 @@ export default async function AdminGroupDetail({ params }: { params: Promise<{ i
         <h2 className="font-serif text-lg text-cream-50 mb-2">Rounds ({rounds?.length ?? 0})</h2>
         <ul className="divide-y divide-cream-100/8 text-sm">
           {(rounds ?? []).map((r: any) => (
-            <li key={r.id} className="py-2 flex items-center justify-between gap-3">
-              <Link href={`/admin/rounds/${r.id}`} className="text-cream-50 hover:underline">
+            <li key={r.id} className="py-2 flex items-center justify-between gap-3 flex-wrap">
+              <Link href={`/admin/rounds/${r.id}`} className="text-cream-50 hover:underline min-w-0 truncate">
                 {r.courses?.name ?? "Course"}{" "}
                 <span className="text-cream-100/55 text-xs">· {r.date}</span>
               </Link>
-              <span className={r.status === "live" ? "pill-live text-xs" : r.status === "finalized" ? "pill-final text-xs" : "pill-draft text-xs"}>
-                {r.status}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {r.status === "live" && r.spectator_token && (
+                  <Link
+                    href={`/rounds/${r.id}/leaderboard?token=${r.spectator_token}&adminMode=1`}
+                    className="text-xs text-cream-100/85 hover:text-gold-400"
+                    title="Read-only live leaderboard with admin banner"
+                  >
+                    👀 Spectate
+                  </Link>
+                )}
+                <span className={r.status === "live" ? "pill-live text-xs" : r.status === "finalized" ? "pill-final text-xs" : "pill-draft text-xs"}>
+                  {r.status}
+                </span>
+              </div>
             </li>
           ))}
           {(rounds?.length ?? 0) === 0 && (

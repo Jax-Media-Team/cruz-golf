@@ -2,9 +2,16 @@ import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { SpectatorView } from "./spectator-view";
+import { supabaseServer } from "@/lib/supabase/server";
 
 // Public, token-keyed leaderboard. No auth required. Reads through service role
 // behind the scenes so RLS doesn't block anonymous access.
+//
+// Admin observability path (?adminMode=1): when a Platform Admin reaches
+// this page from /admin, we additionally verify their admin status server-
+// side and render the AdminSpectatorBanner. This is NOT impersonation —
+// the admin's own session is unchanged, the page is read-only by design,
+// and the data path is the same token-keyed public spectator query.
 
 export async function generateMetadata({
   params,
@@ -53,7 +60,7 @@ export default async function PublicLeaderboard({
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string; adminMode?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -68,7 +75,7 @@ export default async function PublicLeaderboard({
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, spectator_token, date, holes, status, courses(name)")
+    .select("id, spectator_token, date, holes, status, group_id, courses(name), groups(name)")
     .eq("id", id)
     .single();
   if (!round || round.spectator_token !== token) redirect("/");
@@ -84,5 +91,33 @@ export default async function PublicLeaderboard({
     .select("round_player_id, hole_number, gross")
     .in("round_player_id", (rps ?? []).map((r: any) => r.id));
 
-  return <SpectatorView round={round as any} rps={rps ?? []} scores={scores ?? []} />;
+  // Admin observability mode: only honored when the *signed-in* user is a
+  // Platform Admin. The flag in the URL alone isn't enough — we re-check
+  // server-side via the admin's own auth context (NOT the service-role
+  // client) so a regular user can't spoof the banner by appending the
+  // query param. If the check fails, we silently fall back to the normal
+  // public spectator surface.
+  let adminMode = false;
+  if (sp.adminMode === "1") {
+    try {
+      const userSb = await supabaseServer();
+      const { data: { user } } = await userSb.auth.getUser();
+      if (user) {
+        const { data: isAdmin } = await userSb.rpc("fn_is_platform_admin");
+        adminMode = !!isAdmin;
+      }
+    } catch {
+      adminMode = false;
+    }
+  }
+
+  return (
+    <SpectatorView
+      round={round as any}
+      rps={rps ?? []}
+      scores={scores ?? []}
+      adminMode={adminMode}
+      groupName={(round as any).groups?.name ?? null}
+    />
+  );
 }

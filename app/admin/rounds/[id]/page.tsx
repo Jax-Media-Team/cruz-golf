@@ -48,7 +48,20 @@ export default async function AdminRoundDetail({ params }: { params: Promise<{ i
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/rounds/${r.id}`} className="btn-ghost text-sm">View as user →</Link>
+          {/* Spectate live: read-only token-keyed leaderboard with the
+              admin banner. Replaces the old "View as user →" which tried
+              to open the round page in the admin's own session — that
+              path was blocked by RLS for any group the admin wasn't a
+              member of, so the link silently bounced to the dashboard.
+              The new path is observability-by-design. */}
+          {r.spectator_token && (
+            <Link
+              href={`/rounds/${r.id}/leaderboard?token=${r.spectator_token}&adminMode=1`}
+              className="btn-secondary text-sm"
+            >
+              👀 Spectate live →
+            </Link>
+          )}
           <Link href="/admin/rounds" className="btn-ghost text-sm">← All rounds</Link>
         </div>
       </header>
