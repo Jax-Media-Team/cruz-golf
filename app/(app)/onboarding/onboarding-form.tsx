@@ -38,10 +38,14 @@ export function OnboardingForm({
     <main className="max-w-md mx-auto py-6">
       <form onSubmit={submit} className="card p-7 space-y-5">
         <div>
-          <p className="h-eyebrow">Finish setup</p>
-          <h1 className="h-display text-3xl text-cream-50 mt-1">One more step</h1>
-          <p className="text-xs text-cream-100/55 mt-1">
-            Signed in as {email}. Tell us your name and you&apos;re in.
+          <p className="h-eyebrow text-gold-400">Welcome</p>
+          <h1 className="h-display text-3xl text-cream-50 mt-1">
+            What should we call you?
+          </h1>
+          <p className="text-xs text-cream-100/65 mt-2 leading-relaxed">
+            Once you&apos;re in, your group&apos;s history starts collecting:
+            rivalries, partner records, course mastery, ledger totals — all
+            keyed to your name across every round you play together.
           </p>
         </div>
         <div>
@@ -50,14 +54,17 @@ export function OnboardingForm({
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Cruz"
+            placeholder="e.g. Patrick"
             required
             autoFocus
           />
+          <p className="text-[11px] text-cream-100/45 mt-1">
+            Signed in as {email}. You can change this later in your profile.
+          </p>
         </div>
         {err && <p className="text-sm text-red-300">{err}</p>}
         <button className="btn-primary w-full" disabled={busy}>
-          {busy ? "Setting up…" : "Finish setup"}
+          {busy ? "Setting up…" : "Take me to the clubhouse →"}
         </button>
       </form>
     </main>

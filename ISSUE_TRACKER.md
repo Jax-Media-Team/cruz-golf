@@ -393,7 +393,10 @@ In rough priority order. Each gets its own QA sweep + regression tests.
    - ✅ Dashboard checklist tone refresh (Set up your group / Pick
      your home course / Add your crew / Tee it up)
    - ⏳ OnboardingTour copy refresh
-   - ⏳ /onboarding finisher copy + flow review
+   - ✅ /onboarding finisher copy refreshed — eyebrow "Welcome",
+     "What should we call you?", body previews what unlocks
+     (rivalries, partner records, course mastery, ledger). CTA:
+     "Take me to the clubhouse →". Group-flavored language.
    - ⏳ Welcome card after first signup
 2. **Current-round navigation clarity** — at any moment, "what do I do
    next" should be a single tap from anywhere
