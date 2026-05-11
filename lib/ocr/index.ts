@@ -21,11 +21,49 @@ const SYSTEM_PROMPT = `You read photos of paper golf scorecards. You will be giv
 Return ONLY JSON with this shape (no prose, no markdown fences):
 { "players": [ { "name": "<one of the provided names>", "scores": [n1, n2, ...] } ] }
 
-Rules:
-- The scores array length MUST equal the number of holes.
-- Use null for any cell that's unreadable, blank, or unclear. Never invent numbers.
-- Match each row to the closest provided name; if you cannot match a row, omit it.
-- Trust digits that are clearly written. If two interpretations are plausible, return null.
+You MUST return the gross score per hole. Real-world scorecards use
+several notations — be aggressive about extracting the gross:
+
+GROSS-VS-NET NOTATIONS — always return the GROSS:
+- "5/4" or "5 / 4" — the LEFT number (5) is gross, right (4) is net. Return 5.
+- "5\\4" — same, left is gross. Return 5.
+- "5 net 4" — gross 5, return 5.
+- "5(4)" or "5 (4)" — gross 5 with net in parens. Return 5.
+- "G 5 / N 4" — gross is labeled. Return 5.
+- Standalone numbers with no annotation are the gross. Return as-is.
+
+SHAPE ANNOTATIONS — ignore the shape, read the number:
+- Circles around a number (typically birdies, sometimes eagles) — return the
+  number inside.
+- Squares / rectangles around a number (typically bogeys / doubles) — return
+  the number inside.
+- Slashes through a number — read the number, ignore the slash.
+- Two concentric circles (eagle) — return the number, not "2".
+
+LAYOUT — handle scorecard structure:
+- Skip columns labeled "OUT", "IN", "TOT", "Total", "Front", "Back",
+  "Subtotal", or any 9-hole summary column. Only return per-hole cells.
+- If the card has front 9 on one side and back 9 on another, return all 18
+  in order 1, 2, ..., 9, 10, ..., 18.
+- Par row, HCP/SI row, Yardage rows — ignore. Only player rows.
+- Some cards have handicap or par columns interleaved (e.g. par row above
+  each hole's score). Use the row labeled with the player's name only.
+
+CONFIDENCE & UNCERTAINTY:
+- The scores array length MUST equal the number of holes (return null for cells you can't read).
+- Use null ONLY when the cell is genuinely blank, smudged beyond recognition,
+  or has multiple equally-plausible interpretations.
+- If a digit is hand-written but legible (even sloppily), READ IT. Players
+  fix typos themselves in the review screen. Returning a best-effort number
+  is more useful than null.
+- Common golf scores are 2-8. If your best read is "11" or "0", it's almost
+  certainly wrong — return null.
+
+ROW MATCHING:
+- Match each row to the closest provided name; first names + last initial are
+  common. If multiple players share a first name, use surrounding hole-count
+  cues from the row to disambiguate.
+- If you can't match a row to any provided name, omit it.
 `;
 
 export const openAIVisionOCR: ScorecardOCR = {

@@ -10,13 +10,21 @@ type Card = {
   status: "uploading" | "parsed" | "failed";
   err?: string;
   rows?: Array<{ name: string; scores: Array<number | null> }>;
+  /** Total non-null cells parsed across all player rows on this card. */
+  score_count?: number;
+  /** Total cells the card SHOULD have (rows × holes). */
+  cells_total?: number;
 };
+
+type CellSource = "db" | "ocr" | "manual" | null;
 
 type GridRow = {
   round_player_id: string;
   name: string;
   /** scores indexed 0..holes-1; null = no value yet */
   scores: Array<number | null>;
+  /** Per-cell provenance — so OCR'd cells can be visually marked for review. */
+  sources: Array<CellSource>;
   /** Where this row's scores came from (filenames). Empty = manual. */
   source_filenames: string[];
 };
@@ -52,6 +60,7 @@ export function UploadView({
       round_player_id: p.round_player_id,
       name: p.name,
       scores: new Array(holes).fill(null),
+      sources: new Array<CellSource>(holes).fill(null),
       source_filenames: []
     }))
   );
@@ -80,12 +89,14 @@ export function UploadView({
           const filled = (data as any[])?.filter((s) => s.round_player_id === row.round_player_id) ?? [];
           if (filled.length === 0) return row;
           const next = [...row.scores];
+          const sources = [...row.sources];
           for (const s of filled) {
             if (s.gross != null && s.hole_number >= 1 && s.hole_number <= holes) {
               next[s.hole_number - 1] = s.gross;
+              sources[s.hole_number - 1] = "db";
             }
           }
-          return { ...row, scores: next };
+          return { ...row, scores: next, sources };
         })
       );
     })();
@@ -116,10 +127,24 @@ export function UploadView({
           const j = await r.json();
           if (!r.ok) throw new Error(j.error ?? "OCR failed");
           const rows = (j.players ?? []) as Array<{ name: string; scores: Array<number | null> }>;
-          setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, status: "parsed", rows } : c)));
+          // Count successfully-parsed cells so the card list can show
+          // "Read 56 of 72 cells" instead of just "Parsed 4 players".
+          const score_count = rows.reduce(
+            (sum, p) => sum + p.scores.filter((s) => s != null).length,
+            0
+          );
+          const cells_total = rows.length * holes;
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === cardId
+                ? { ...c, status: "parsed", rows, score_count, cells_total }
+                : c
+            )
+          );
           // Merge into grid: for each parsed row, find best-matching existing
           // grid row by fuzzy name match. Per-cell overwrite if the OCR cell
-          // has a value.
+          // has a value. Source tracking: cells from OCR are marked so the
+          // grid can highlight them for review.
           setGrid((prev) =>
             prev.map((row) => {
               const match = rows.find((x) => fuzzyMatch(x.name, row.name));
@@ -128,10 +153,20 @@ export function UploadView({
                 const ocrVal = match.scores[idx] ?? null;
                 return ocrVal != null ? ocrVal : existing;
               });
+              const nextSources = row.sources.map((existingSrc, idx) => {
+                const ocrVal = match.scores[idx] ?? null;
+                if (ocrVal != null) return "ocr" as CellSource;
+                return existingSrc;
+              });
               const sources = row.source_filenames.includes(file.name)
                 ? row.source_filenames
                 : [...row.source_filenames, file.name];
-              return { ...row, scores: nextScores, source_filenames: sources };
+              return {
+                ...row,
+                scores: nextScores,
+                sources: nextSources,
+                source_filenames: sources
+              };
             })
           );
         } catch (e: any) {
@@ -192,7 +227,9 @@ export function UploadView({
     }
     if (inserts.length === 0) {
       setBusy(false);
-      setErr("No scores to save.");
+      setErr(
+        "Add at least one score before saving — type values in the grid below, or upload a scorecard photo above."
+      );
       return;
     }
     const { error } = await sb
@@ -210,7 +247,15 @@ export function UploadView({
     setGrid((prev) =>
       prev.map((row, i) =>
         i === rowIdx
-          ? { ...row, scores: row.scores.map((s, j) => (j === holeIdx ? value : s)) }
+          ? {
+              ...row,
+              scores: row.scores.map((s, j) => (j === holeIdx ? value : s)),
+              // Manual edit flips this cell's source to "manual" so the
+              // OCR-highlight goes away after the user touches it.
+              sources: row.sources.map((src, j) =>
+                j === holeIdx ? (value == null ? null : "manual") : src
+              )
+            }
           : row
       )
     );
@@ -274,7 +319,16 @@ export function UploadView({
                     ? "OCR in progress…"
                     : c.status === "failed"
                     ? `Failed: ${c.err ?? ""}`
-                    : `Parsed ${c.rows?.length ?? 0} player${c.rows?.length === 1 ? "" : "s"}`}
+                    : (() => {
+                        const players = c.rows?.length ?? 0;
+                        const cells = c.score_count ?? 0;
+                        const cellsTotal = c.cells_total ?? 0;
+                        if (cells === 0) {
+                          return `Parsed ${players} player${players === 1 ? "" : "s"} · no scores read — fill in below`;
+                        }
+                        const pct = cellsTotal > 0 ? Math.round((cells / cellsTotal) * 100) : 0;
+                        return `Read ${cells} of ${cellsTotal} cells (${pct}%) · review highlighted cells`;
+                      })()}
                 </span>
               </li>
             ))}
@@ -288,6 +342,16 @@ export function UploadView({
           fill scores by hand in the grid below.
         </p>
       </div>
+
+      {grid.some((r) => r.sources.some((s) => s === "ocr")) && (
+        <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85 flex items-center gap-3 flex-wrap">
+          <span className="inline-block w-3 h-3 rounded-sm ring-1 ring-amber-400/60 bg-amber-500/10 shrink-0" />
+          <span>
+            Amber cells came from the scorecard photo. Tap any to review or
+            fix. Cells with a dashed outline are still blank.
+          </span>
+        </div>
+      )}
 
       <div className="card p-2 overflow-x-auto">
         <table className="text-sm">
@@ -314,19 +378,48 @@ export function UploadView({
                       </div>
                     )}
                   </td>
-                  {row.scores.map((v, i) => (
-                    <td key={i} className="p-1">
-                      <input
-                        className="input w-12 px-1 text-center text-sm"
-                        type="number"
-                        inputMode="numeric"
-                        value={v ?? ""}
-                        onChange={(e) =>
-                          setCell(idx, i, e.target.value === "" ? null : parseInt(e.target.value))
-                        }
-                      />
-                    </td>
-                  ))}
+                  {row.scores.map((v, i) => {
+                    // Visual provenance: amber outline on OCR-extracted
+                    // cells so the user knows what to review. db cells
+                    // (loaded from server) are default. manual cells
+                    // (user typed) are default. Empty cells get a faint
+                    // dashed border so missing cells are scannable.
+                    const src = row.sources[i];
+                    const tone =
+                      src === "ocr"
+                        ? "ring-1 ring-amber-400/60 bg-amber-500/10"
+                        : v == null
+                        ? "border border-dashed border-cream-100/15"
+                        : "";
+                    return (
+                      <td key={i} className="p-1">
+                        <input
+                          className={`input w-12 px-1 text-center text-sm ${tone}`}
+                          type="number"
+                          inputMode="numeric"
+                          value={v ?? ""}
+                          title={
+                            src === "ocr"
+                              ? "Read from scorecard photo — review before saving"
+                              : src === "db"
+                              ? "Saved on the server"
+                              : src === "manual"
+                              ? "Hand-entered"
+                              : "Blank — tap to fill"
+                          }
+                          onChange={(e) =>
+                            setCell(
+                              idx,
+                              i,
+                              e.target.value === ""
+                                ? null
+                                : parseInt(e.target.value)
+                            )
+                          }
+                        />
+                      </td>
+                    );
+                  })}
                   <td className="p-2 text-right tabular-nums text-cream-50">
                     {total > 0 ? total : "—"}
                   </td>
