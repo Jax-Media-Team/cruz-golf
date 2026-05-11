@@ -4,17 +4,43 @@
 
 ---
 
-## 🌅 NEXT SESSION START HERE (snapshot 2026-05-10 evening)
+## 🌅 NEXT SESSION START HERE (snapshot 2026-05-11)
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `a9a2723` — *docs(tracker): usability pass — real-round simulation + admin round-detail + docs*
+- **Latest commit on main:** `0da247a` — *feat(live-state): surface live auto-press chain on the round-view*
 - **Branch:** `main` (working tree clean, in sync with origin)
-- **Production URL:** https://cruz-golf.vercel.app — last build state: **success** (Vercel deployment id 4642248168, picked up `a9a2723` at 2026-05-11 01:36 UTC)
-- **Per-commit Vercel preview:** https://cruz-golf-5iwmg98qp-pcruz-jmts-projects.vercel.app
-- **Test suite:** 312/312 passing across 22 test files. Run with `npm test -- --run` from project root.
+- **Production URL:** https://cruz-golf.vercel.app
+- **Test suite:** **446/446 passing across 29 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). One verified scorecard added this evening.
+- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation.
+
+### Recent stretch (2026-05-11)
+
+Patrick directive: "real-world validation pass" — real-round 6-6-6 press
+testing, OCR mobile UX, live match clarity. Shipped:
+
+1. **OCR diagnostics + mobile mapping UX** (`a255ec4`). Each OCR card
+   now exposes a `_debug` payload (raw model text, pre/post-coerce
+   shape). Upload UI renders a per-card diagnostics `<details>` panel
+   with per-row outcomes (`merged` / `unmatched_panel` /
+   `dropped_no_name_no_scores`). Mapping panel restructured for narrow
+   viewports — meta on top, select + Merge/Skip below.
+
+2. **6-6-6 full-round press tests** (`a255ec4`,
+   `tests/six-six-six-full-round.test.ts`). End-to-end pipeline exercise:
+   `settleGame` (6-6-6 + auto-presses) + `settleManualPress` (accepted
+   presses) combined via a `settleAcceptedManualPresses` helper that
+   mirrors `finalize-view.tsx`. Three scenarios cover auto press in
+   seg 1, accepted manual on seg 2, declined/withdrawn/pending presses
+   on seg 3, and partner-rotation isolation.
+
+3. **Live auto-press chain on round-view** (`0da247a`,
+   `lib/games/live-state.ts` + tests). Each `LiveSegment` now carries
+   `auto_presses: LiveAutoPress[]`. The round-view renders an amber
+   dot + status line for each open press ("Press 1 · opened hole 2 ·
+   Pat + Ben up 1 thru 2"), dimming settled presses. Wired for Nassau,
+   6-6-6, and team_match game families.
 
 ### Highest priorities for next session
 

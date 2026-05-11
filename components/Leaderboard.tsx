@@ -1,6 +1,14 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import { BrandLockup } from "./BrandLockup";
 import type { LeaderboardRow } from "@/lib/scoring";
+import {
+  diffPositions,
+  expireMovements,
+  fmtMovement,
+  mergeMovements,
+  type MovementDelta
+} from "@/lib/leaderboard-movement";
 
 export type LeaderboardTab = "gross" | "net" | "skins" | "match" | "bets";
 
@@ -113,12 +121,71 @@ export function Leaderboard({
 
       {/* Body */}
       {isLeaderboardTab ? (
-        <LeaderboardTable rows={rows} mode={mode} onPlayerClick={onPlayerClick} />
+        // key={mode} resets the movement tracker when the user toggles
+        // gross/net — those are different rankings, the deltas don't
+        // carry over.
+        <LeaderboardTable
+          key={mode}
+          rows={rows}
+          mode={mode}
+          onPlayerClick={onPlayerClick}
+        />
       ) : (
         <div className="bg-white p-5">{alternateContent}</div>
       )}
     </section>
   );
+}
+
+/**
+ * Track rank movement across re-renders. On mount, captures the initial
+ * positions WITHOUT generating indicators (no false signals on first
+ * paint). On each subsequent render, computes diffPositions vs the last
+ * snapshot and stores any non-zero movements with a 6s TTL.
+ *
+ * The hook is "live-aware": only score-driven re-renders cause movement.
+ * Tab switches reset the hook because LeaderboardTable is keyed by mode.
+ */
+const MOVEMENT_TTL_MS = 6_000;
+
+function useRowMovement(
+  rows: LeaderboardRow[]
+): Map<string, MovementDelta> {
+  const lastSnapshotRef = useRef<Map<string, number> | null>(null);
+  const [movements, setMovements] = useState<Map<string, MovementDelta>>(
+    new Map()
+  );
+
+  // Capture snapshot + compute incoming deltas
+  useEffect(() => {
+    const next = new Map<string, number>();
+    for (const r of rows) next.set(r.round_player_id, r.position);
+
+    if (lastSnapshotRef.current === null) {
+      // Initial mount — establish baseline, no indicators.
+      lastSnapshotRef.current = next;
+      return;
+    }
+
+    const now = Date.now();
+    const incoming = diffPositions(lastSnapshotRef.current, next, now);
+    lastSnapshotRef.current = next;
+    if (incoming.size > 0) {
+      setMovements((prev) => mergeMovements(prev, incoming));
+    }
+  }, [rows]);
+
+  // Fade old movements out after the TTL — runs while any indicator is
+  // still visible.
+  useEffect(() => {
+    if (movements.size === 0) return;
+    const id = setInterval(() => {
+      setMovements((prev) => expireMovements(prev, Date.now(), MOVEMENT_TTL_MS));
+    }, 1_000);
+    return () => clearInterval(id);
+  }, [movements]);
+
+  return movements;
 }
 
 function LeaderboardTable({
@@ -130,6 +197,7 @@ function LeaderboardTable({
   mode: "gross" | "net";
   onPlayerClick?: (rpId: string) => void;
 }) {
+  const movements = useRowMovement(rows);
   // Mobile cols: Pos · Player · Today · Thru · Net
   // Desktop cols: Pos · Player · Today · Thru · Front · Back · Total · Net
   const mobileGrid =
@@ -158,6 +226,7 @@ function LeaderboardTable({
           {rows.map((r) => {
             const interactive = !!onPlayerClick;
             const under = r.thru > 0 && r.vsPar < 0;
+            const movement = movements.get(r.round_player_id);
             return (
               <li
                 key={r.round_player_id}
@@ -166,7 +235,25 @@ function LeaderboardTable({
                   interactive ? "cursor-pointer hover:bg-gold-300/10 transition-colors" : ""
                 }`}
               >
-                <div className="font-serif text-2xl text-gold-600 tabular-nums">{r.position}</div>
+                <div className="font-serif text-2xl text-gold-600 tabular-nums flex items-baseline gap-1.5">
+                  <span>{r.position}</span>
+                  {movement && movement.delta !== 0 && (
+                    <span
+                      className={`text-[10px] font-sans font-medium tabular-nums transition-opacity ${
+                        movement.delta > 0
+                          ? "text-emerald-600"
+                          : "text-red-500"
+                      }`}
+                      aria-label={
+                        movement.delta > 0
+                          ? `up ${movement.delta} positions`
+                          : `down ${Math.abs(movement.delta)} positions`
+                      }
+                    >
+                      {fmtMovement(movement.delta)}
+                    </span>
+                  )}
+                </div>
                 <div className="min-w-0">
                   <div className="font-serif text-lg sm:text-xl text-slate-900 truncate">{r.display_name}</div>
                 </div>
