@@ -32,15 +32,27 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
   // Manual presses (accepted only) — settled alongside the auto-press
   // chains. Defensive against the table not existing pre-0035.
   let manualPresses: any[] = [];
+  // Pending presses that haven't expired — surfaced as a warning banner
+  // so the commissioner doesn't finalize a round with unanswered
+  // presses (they'd be silently dropped).
+  let pendingPressCount = 0;
   try {
     const { data: presses, error } = await sb
       .from("round_presses")
       .select(
-        "id, game_id, segment_label, start_hole, end_hole, stake_cents, side_a_rp_ids, side_b_rp_ids, status"
+        "id, game_id, segment_label, start_hole, end_hole, stake_cents, side_a_rp_ids, side_b_rp_ids, status, opened_at"
       )
       .eq("round_id", id)
-      .eq("status", "accepted");
-    if (!error && presses) manualPresses = presses;
+      .in("status", ["accepted", "pending"]);
+    if (!error && presses) {
+      manualPresses = presses.filter((p: any) => p.status === "accepted");
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      pendingPressCount = presses.filter(
+        (p: any) =>
+          p.status === "pending" &&
+          new Date(p.opened_at).getTime() >= cutoff
+      ).length;
+    }
   } catch {
     /* table missing — pre-0035 env */
   }
@@ -60,6 +72,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
         scores={scores ?? []}
         games={games ?? []}
         manualPresses={manualPresses}
+        pendingPressCount={pendingPressCount}
         totalHoles={(round.holes as 9 | 18) ?? 18}
         startingHole={round.starting_hole ?? 1}
       />

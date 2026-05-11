@@ -2,6 +2,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { retry } from "@/lib/retry";
+
+// Friendlier error when the RPC fails because the device is offline
+// or the network is flaky. Press accept/decline/withdraw are
+// non-queueable (the 24h expiry window matters + the RPC has business
+// rules like "only side B can accept") so we retry with backoff but
+// don't silently queue. If all retries fail, this message is what
+// the user sees.
+function pressErrorMessage(err: any): string {
+  const raw = err?.message ?? String(err);
+  const lower = raw.toLowerCase();
+  if (
+    typeof navigator !== "undefined" &&
+    !navigator.onLine
+  ) {
+    return "You're offline. Try again when you reconnect.";
+  }
+  if (
+    lower.includes("fetch failed") ||
+    lower.includes("network") ||
+    lower.includes("timeout") ||
+    lower.includes("aborted")
+  ) {
+    return "Couldn't reach the server. Check your connection and try again.";
+  }
+  return raw;
+}
 
 /**
  * Manual-press controls on /rounds/[id].
@@ -148,34 +175,41 @@ export function PressControls({
     return out;
   }, [presses, myRpId, isCommissioner]);
 
-  async function withdraw(pressId: string) {
-    if (!confirm("Withdraw this press?")) return;
+  // Press action helper — wraps the RPC in retry+backoff so a flaky
+  // network blip doesn't surface as an error. Business-rule failures
+  // (wrong side, expired press, etc.) come back as Postgres errors
+  // from the RPC and aren't retryable; the retry helper's predicate
+  // only retries on network-class errors.
+  async function callPressRpc(
+    fn: string,
+    pressId: string,
+    confirmText?: string
+  ) {
+    if (confirmText && !confirm(confirmText)) return;
     setBusy(pressId);
     setErr(null);
-    const { error } = await sb.rpc("fn_withdraw_press", { p_press_id: pressId });
-    setBusy(null);
-    if (error) setErr(error.message);
-    else router.refresh();
+    try {
+      await retry(
+        async () => {
+          const { error } = await sb.rpc(fn, { p_press_id: pressId });
+          if (error) throw error;
+        },
+        { attempts: 3, baseMs: 400 }
+      );
+      router.refresh();
+    } catch (e: any) {
+      setErr(pressErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
   }
 
-  async function accept(pressId: string) {
-    setBusy(pressId);
-    setErr(null);
-    const { error } = await sb.rpc("fn_accept_press", { p_press_id: pressId });
-    setBusy(null);
-    if (error) setErr(error.message);
-    else router.refresh();
-  }
-
-  async function decline(pressId: string) {
-    if (!confirm("Decline this press?")) return;
-    setBusy(pressId);
-    setErr(null);
-    const { error } = await sb.rpc("fn_decline_press", { p_press_id: pressId });
-    setBusy(null);
-    if (error) setErr(error.message);
-    else router.refresh();
-  }
+  const withdraw = (pressId: string) =>
+    callPressRpc("fn_withdraw_press", pressId, "Withdraw this press?");
+  const accept = (pressId: string) =>
+    callPressRpc("fn_accept_press", pressId);
+  const decline = (pressId: string) =>
+    callPressRpc("fn_decline_press", pressId, "Decline this press?");
 
   function nameByRp(rpId: string): string {
     return rps.find((r) => r.id === rpId)?.display_name ?? "Player";
@@ -394,22 +428,29 @@ function OpenPressDialog({
     }
     setBusy(true);
     setErr(null);
-    const { error } = await sb.rpc("fn_open_press", {
-      p_round_id: roundId,
-      p_game_id: gameId || null,
-      p_segment_label: segmentLabel,
-      p_start_hole: startHole,
-      p_end_hole: endHole,
-      p_stake_cents: Math.round(stakeDollars * 100),
-      p_side_a_rp_ids: defaultSideA,
-      p_side_b_rp_ids: defaultSideB
-    });
-    setBusy(false);
-    if (error) {
-      setErr(error.message);
-      return;
+    try {
+      await retry(
+        async () => {
+          const { error } = await sb.rpc("fn_open_press", {
+            p_round_id: roundId,
+            p_game_id: gameId || null,
+            p_segment_label: segmentLabel,
+            p_start_hole: startHole,
+            p_end_hole: endHole,
+            p_stake_cents: Math.round(stakeDollars * 100),
+            p_side_a_rp_ids: defaultSideA,
+            p_side_b_rp_ids: defaultSideB
+          });
+          if (error) throw error;
+        },
+        { attempts: 3, baseMs: 400 }
+      );
+      onOpened();
+    } catch (e: any) {
+      setErr(pressErrorMessage(e));
+    } finally {
+      setBusy(false);
     }
-    onOpened();
   }
 
   const isNassau = games.find((g) => g.id === gameId)?.game_type === "nassau";

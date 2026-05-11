@@ -22,6 +22,7 @@ export function FinalizeView({
   scores,
   games,
   manualPresses = [],
+  pendingPressCount = 0,
   totalHoles = 18,
   startingHole = 1
 }: {
@@ -30,6 +31,9 @@ export function FinalizeView({
   scores: Score[];
   games: any[];
   manualPresses?: ManualPressRow[];
+  /** Pending presses still inside the 24h accept window. Surfaced as a
+   *  warning banner — finalize would silently drop them. */
+  pendingPressCount?: number;
   totalHoles?: 9 | 18;
   startingHole?: number;
 }) {
@@ -237,6 +241,29 @@ export function FinalizeView({
         <p className="h-eyebrow">Settlement</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">Finalize round</h1>
       </header>
+
+      {pendingPressCount > 0 && (
+        <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-1">
+          <p className="h-eyebrow text-amber-300">
+            {pendingPressCount} press{pendingPressCount === 1 ? "" : "es"} still pending
+          </p>
+          <p className="text-sm text-cream-50">
+            Finalizing now drops {pendingPressCount === 1 ? "that press" : "those presses"} —
+            {pendingPressCount === 1 ? " it" : " they"} won&apos;t settle.
+          </p>
+          <p className="text-[11px] text-cream-100/65 leading-snug">
+            Go back to the round page and either get them accepted, or withdraw
+            them so the opener knows. Once finalized, pending presses can&apos;t be
+            recovered without unfinalizing.
+          </p>
+          <Link
+            href={`/rounds/${roundId}`}
+            className="btn-ghost text-xs mt-1 inline-block"
+          >
+            ← Back to round
+          </Link>
+        </div>
+      )}
 
       <SmackTalk moments={recap} />
 
