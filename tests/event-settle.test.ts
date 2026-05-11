@@ -412,6 +412,137 @@ describe("settleEventGame: rejects unsupported game types (Nassau / team / match
   });
 });
 
+describe("buildEventFieldStandings: projected finishes + play status", () => {
+  const event = makeEvent();
+  const round = makeRoundShape("r1");
+  const rps = [
+    rpWithRound("rp-a", "Pat", "r1", "p-pat"),
+    rpWithRound("rp-b", "Ben", "r1", "p-ben"),
+    rpWithRound("rp-c", "Mit", "r1", "p-mit")
+  ];
+
+  it("not_started status when zero holes scored", () => {
+    const out = buildEventFieldStandings({
+      event,
+      rounds: [round],
+      rps,
+      scores: [],
+      event_games: []
+    });
+    // not_started players sink to the bottom — but they still appear.
+    for (const p of out.players) {
+      expect(p.play_status).toBe("not_started");
+      expect(p.thru_holes_total).toBe(0);
+      expect(p.thru_holes_expected).toBe(18);
+      expect(p.projected_gross_if_pars).toBe(72); // par 72 floor
+    }
+  });
+
+  it("live status when partial — and projection assumes pars for remaining", () => {
+    // Pat scored holes 1-9 (front 9): birdied hole 1, par rest → gross 35.
+    // Front-9 par = 4+4+5+3+4+4+5+3+4 = 36. Pat shot 35 = -1.
+    // Projection: total_gross 35 + remaining_par 36 = 71. floor (best case).
+    const patScores: Score[] = JGCC_PARS.slice(0, 9).map((p, i) => ({
+      round_player_id: "rp-a",
+      hole_number: i + 1,
+      gross: i === 0 ? p - 1 : p
+    }));
+    const out = buildEventFieldStandings({
+      event,
+      rounds: [round],
+      rps,
+      scores: patScores,
+      event_games: []
+    });
+    const pat = out.players.find((p) => p.player_id === "p-pat")!;
+    expect(pat.play_status).toBe("live");
+    expect(pat.thru_holes_total).toBe(9);
+    expect(pat.total_gross).toBe(35);
+    expect(pat.projected_gross_if_pars).toBe(71);
+    // Ben + Mit not_started
+    expect(
+      out.players.find((p) => p.player_id === "p-ben")?.play_status
+    ).toBe("not_started");
+  });
+
+  it("finished status when every scheduled hole is scored", () => {
+    // Pat scores all 18 — par every hole.
+    const patScores: Score[] = JGCC_PARS.map((p, i) => ({
+      round_player_id: "rp-a",
+      hole_number: i + 1,
+      gross: p
+    }));
+    const out = buildEventFieldStandings({
+      event,
+      rounds: [round],
+      rps,
+      scores: patScores,
+      event_games: []
+    });
+    const pat = out.players.find((p) => p.player_id === "p-pat")!;
+    expect(pat.play_status).toBe("finished");
+    expect(pat.thru_holes_total).toBe(18);
+    expect(pat.thru_holes_expected).toBe(18);
+    // Projection equals total when nothing's left to play
+    expect(pat.projected_gross_if_pars).toBe(pat.total_gross);
+  });
+
+  it("sort: started players appear before not_started, sinking inactive entries to the bottom", () => {
+    // Mit scored 9 holes at par (=36). Pat & Ben not started.
+    const mitScores: Score[] = JGCC_PARS.slice(0, 9).map((p, i) => ({
+      round_player_id: "rp-c",
+      hole_number: i + 1,
+      gross: p
+    }));
+    const out = buildEventFieldStandings({
+      event,
+      rounds: [round],
+      rps,
+      scores: mitScores,
+      event_games: []
+    });
+    expect(out.players[0].player_id).toBe("p-mit");
+    expect(out.players[0].play_status).toBe("live");
+    expect(out.players.slice(1).every((p) => p.play_status === "not_started")).toBe(
+      true
+    );
+  });
+
+  it("multi-day trip: thru_holes_expected sums across rounds, projection respects it", () => {
+    // 3 rounds for one player, each 18 holes. Pat scored all 18 on day 1
+    // (gross 72), nothing on days 2-3.
+    const day1 = makeRoundShape("d1", { date: "2026-05-01", status: "finalized" });
+    const day2 = makeRoundShape("d2", { date: "2026-05-02", status: "draft" });
+    const day3 = makeRoundShape("d3", { date: "2026-05-03", status: "draft" });
+    const tripRps = [
+      rpWithRound("rp-d1-pat", "Pat", "d1", "p-pat"),
+      rpWithRound("rp-d2-pat", "Pat", "d2", "p-pat"),
+      rpWithRound("rp-d3-pat", "Pat", "d3", "p-pat")
+    ];
+    const patDay1Scores: Score[] = JGCC_PARS.map((p, i) => ({
+      round_player_id: "rp-d1-pat",
+      hole_number: i + 1,
+      gross: p
+    }));
+    const out = buildEventFieldStandings({
+      event: makeEvent({ kind: "trip" }),
+      rounds: [day1, day2, day3],
+      rps: tripRps,
+      scores: patDay1Scores,
+      event_games: []
+    });
+    const pat = out.players.find((p) => p.player_id === "p-pat")!;
+    expect(pat.thru_holes_total).toBe(18);
+    expect(pat.thru_holes_expected).toBe(54);
+    expect(pat.total_gross).toBe(72);
+    // Projection: 72 (gross so far) + 144 (par on 36 remaining holes) = 216.
+    // Par of day 2 + day 3 = 72 * 2 = 144.
+    expect(pat.projected_gross_if_pars).toBe(216);
+    // Live, not finished — still has 36 holes to play.
+    expect(pat.play_status).toBe("live");
+  });
+});
+
 describe("buildEventBundle: per-player money aggregates across event games", () => {
   const event = makeEvent();
   const round = makeRoundShape("r1");

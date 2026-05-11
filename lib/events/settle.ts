@@ -75,8 +75,15 @@ export type EventFieldPlayer = {
   rounds_finalized: number;
   /** Total holes the player has scored across every round they're in. */
   thru_holes_total: number;
+  /** Total holes the player is SCHEDULED to play across the event
+   *  (sum of holes on each of their rounds). Lets the UI show "thru
+   *  X of Y" instead of just "thru X". */
+  thru_holes_expected: number;
   /** Sum of course par for the holes they've scored. */
   par_total_played: number;
+  /** Sum of course par across every scheduled hole, played or not.
+   *  Used for projected-finish-if-pars. */
+  par_total_expected: number;
   /** Sum of gross scores across played holes. */
   total_gross: number;
   /** Sum of net scores across played holes. */
@@ -85,6 +92,21 @@ export type EventFieldPlayer = {
   vs_par_gross: number;
   /** total_net - par_total_played. */
   vs_par_net: number;
+  /** Projected finish assuming the player pars every remaining hole.
+   *  This is the FLOOR on their final score — the best case still
+   *  achievable. Useful for "can Kyle catch Patrick?" type questions.
+   *
+   *  When the player has played every scheduled hole, this equals
+   *  total_gross / total_net. */
+  projected_gross_if_pars: number;
+  projected_net_if_pars: number;
+  /** Status:
+   *   - "finished" — every scheduled hole has a gross score AND every
+   *     round is finalized OR pending_finalization (live but scored)
+   *   - "live" — has scored at least one hole, has holes remaining
+   *   - "not_started" — no holes scored yet on any of their rounds
+   */
+  play_status: "finished" | "live" | "not_started";
 };
 
 export type EventFoursomeStatus = {
@@ -163,9 +185,18 @@ export function buildEventFieldStandings(
     rounds_rostered: number;
     rounds_finalized: number;
     thru_holes_total: number;
+    thru_holes_expected: number;
     par_total_played: number;
+    par_total_expected: number;
     total_gross: number;
     total_net: number;
+    /** Net offset from gross for the holes already played. Used to
+     *  derive net-if-pars (remaining holes contribute par + 0 net
+     *  offset since strokes received apply per-hole and we don't
+     *  re-allocate them for unplayed holes). For projected net we
+     *  add (remaining_par + remaining_strokes_received) — we track
+     *  the strokes-received per remaining hole separately. */
+    remaining_net_par_adjustment: number;
   };
   const byPlayer = new Map<UUID, Acc>();
 
@@ -181,41 +212,74 @@ export function buildEventFieldStandings(
         rounds_rostered: 0,
         rounds_finalized: 0,
         thru_holes_total: 0,
+        thru_holes_expected: 0,
         par_total_played: 0,
+        par_total_expected: 0,
         total_gross: 0,
-        total_net: 0
+        total_net: 0,
+        remaining_net_par_adjustment: 0
       };
       acc.rounds_rostered += 1;
       if (round.status === "finalized") acc.rounds_finalized += 1;
-      // thru_holes_total = total holes the player has actually scored.
-      // sheet.rows includes ALL holes; filter to those with a gross.
       const playedRows = sheet.rows.filter((r) => r.gross != null);
       acc.thru_holes_total += playedRows.length;
-      acc.par_total_played += playedRows.reduce(
-        (s, r) => s + r.par,
-        0
-      );
+      acc.thru_holes_expected += sheet.rows.length;
+      acc.par_total_played += playedRows.reduce((s, r) => s + r.par, 0);
+      acc.par_total_expected += sheet.rows.reduce((s, r) => s + r.par, 0);
       acc.total_gross += sheet.totals.gross;
       acc.total_net += sheet.totals.net;
+      // Net-projection adjustment: for each remaining hole, the
+      // player's projected NET on that hole if they par is
+      // par - strokes_received. We sum (-strokes_received) across
+      // remaining holes; "par-in" net contribution = remaining_par +
+      // this sum.
+      const remainingStrokes = sheet.rows
+        .filter((r) => r.gross == null)
+        .reduce((s, r) => s + r.strokes_received, 0);
+      acc.remaining_net_par_adjustment += -remainingStrokes;
       byPlayer.set(rp.player_id, acc);
     }
   }
 
   const players: EventFieldPlayer[] = [...byPlayer.entries()].map(
-    ([player_id, a]) => ({
-      player_id,
-      display_name: a.display_name,
-      rounds_rostered: a.rounds_rostered,
-      rounds_finalized: a.rounds_finalized,
-      thru_holes_total: a.thru_holes_total,
-      par_total_played: a.par_total_played,
-      total_gross: a.total_gross,
-      total_net: a.total_net,
-      vs_par_gross: a.total_gross - a.par_total_played,
-      vs_par_net: a.total_net - a.par_total_played
-    })
+    ([player_id, a]) => {
+      const remaining_par = a.par_total_expected - a.par_total_played;
+      const projected_gross_if_pars = a.total_gross + remaining_par;
+      const projected_net_if_pars =
+        a.total_net + remaining_par + a.remaining_net_par_adjustment;
+      const play_status: EventFieldPlayer["play_status"] =
+        a.thru_holes_total === 0
+          ? "not_started"
+          : a.thru_holes_total >= a.thru_holes_expected
+          ? "finished"
+          : "live";
+      return {
+        player_id,
+        display_name: a.display_name,
+        rounds_rostered: a.rounds_rostered,
+        rounds_finalized: a.rounds_finalized,
+        thru_holes_total: a.thru_holes_total,
+        thru_holes_expected: a.thru_holes_expected,
+        par_total_played: a.par_total_played,
+        par_total_expected: a.par_total_expected,
+        total_gross: a.total_gross,
+        total_net: a.total_net,
+        vs_par_gross: a.total_gross - a.par_total_played,
+        vs_par_net: a.total_net - a.par_total_played,
+        projected_gross_if_pars,
+        projected_net_if_pars,
+        play_status
+      };
+    }
   );
   players.sort((a, b) => {
+    // Sort by net asc among those who have STARTED. Players who
+    // haven't started yet sink to the bottom — keeps the leaderboard
+    // readable when only some foursomes are out on the course.
+    if (a.play_status === "not_started" && b.play_status !== "not_started")
+      return 1;
+    if (a.play_status !== "not_started" && b.play_status === "not_started")
+      return -1;
     if (a.total_net !== b.total_net) return a.total_net - b.total_net;
     if (a.total_gross !== b.total_gross) return a.total_gross - b.total_gross;
     return a.display_name.localeCompare(b.display_name);

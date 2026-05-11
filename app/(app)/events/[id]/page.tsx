@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/format-date";
 import { AddFoursomeButton } from "./add-foursome-button";
 import { EventLeaderboard } from "@/components/EventLeaderboard";
 import { EventSpectatorLink } from "./event-spectator-link";
+import { EventGamesSection } from "./event-games-section";
 import type { EventRoundShape } from "@/lib/events/settle";
 
 export const dynamic = "force-dynamic";
@@ -196,6 +197,16 @@ export default async function EventHomePage({
           eventGames={(eventGames ?? []) as any}
         />
       )}
+
+      {/* Field games — commissioner-only "+ Add" affordance. Only
+          settles game types the engine supports field-wide (skins +
+          individual stroke). Per-foursome games stay in
+          /rounds/[id]/games. */}
+      <EventGamesSection
+        eventId={id}
+        isCommissioner={isCommissioner}
+        initialGames={(eventGames ?? []) as any}
+      />
 
       {/* Foursomes list */}
       <section className="space-y-2">

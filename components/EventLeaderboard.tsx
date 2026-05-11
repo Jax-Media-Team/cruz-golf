@@ -205,35 +205,106 @@ export function EventLeaderboard({
             No players yet — add foursomes to populate the field.
           </div>
         ) : (
-          <ul className="divide-y divide-slate-100 text-sm">
-            {standings.players.map((p, i) => {
-              const total = tab === "gross" ? p.total_gross : p.total_net;
-              const vsPar =
-                tab === "gross" ? p.vs_par_gross : p.vs_par_net;
-              return (
-                <li
-                  key={p.player_id}
-                  className="px-5 py-3 flex items-center gap-4"
-                >
-                  <span className="text-slate-400 tabular-nums w-7 text-right text-xs">
-                    {i + 1}
+          <>
+            {/* Column headers — sub-table chrome so the "thru" / "+/−" /
+                "total" / "if pars" columns are scannable at the bar. */}
+            <div className="px-5 py-2 flex items-center gap-4 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-100">
+              <span className="w-7 text-right">#</span>
+              <span className="flex-1">Player</span>
+              <span className="w-14 text-right hidden sm:inline">Thru</span>
+              <span className="w-12 text-right">±</span>
+              <span className="w-12 text-right">{tab === "gross" ? "Gross" : "Net"}</span>
+              <span
+                className="w-14 text-right hidden sm:inline"
+                title="Projected finish if the player pars every remaining hole — the floor on their final score"
+              >
+                If pars
+              </span>
+            </div>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {standings.players.map((p, i) => {
+                const total = tab === "gross" ? p.total_gross : p.total_net;
+                const vsPar =
+                  tab === "gross" ? p.vs_par_gross : p.vs_par_net;
+                const projected =
+                  tab === "gross"
+                    ? p.projected_gross_if_pars
+                    : p.projected_net_if_pars;
+                const isLive = p.play_status === "live";
+                const isFinished = p.play_status === "finished";
+                const isNotStarted = p.play_status === "not_started";
+                // Visual cue for "still out there" — small emerald
+                // pulse dot for live players. Finished players get a
+                // calm check; not-started players are subdued.
+                const statusDot = isLive ? (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                    aria-hidden="true"
+                    title="On the course"
+                  />
+                ) : isFinished ? (
+                  <span
+                    className="text-emerald-700 text-xs shrink-0"
+                    aria-hidden="true"
+                    title="Finished"
+                  >
+                    ✓
                   </span>
-                  <span className="text-slate-900 flex-1 min-w-0 truncate">
-                    {p.display_name}
-                  </span>
-                  <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
-                    thru {p.thru_holes_total}
-                  </span>
-                  <span className="text-slate-500 tabular-nums text-sm shrink-0 w-12 text-right">
-                    {p.thru_holes_total > 0 ? fmtVsPar(vsPar) : "—"}
-                  </span>
-                  <span className="text-slate-900 font-serif text-lg tabular-nums shrink-0 w-12 text-right">
-                    {p.thru_holes_total > 0 ? total : "—"}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+                ) : (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"
+                    aria-hidden="true"
+                    title="Not started"
+                  />
+                );
+                return (
+                  <li
+                    key={p.player_id}
+                    className={`px-5 py-3 flex items-center gap-4 ${
+                      isNotStarted ? "opacity-60" : ""
+                    }`}
+                  >
+                    <span className="text-slate-400 tabular-nums w-7 text-right text-xs">
+                      {isNotStarted ? "—" : i + 1}
+                    </span>
+                    <span className="flex items-center gap-2 flex-1 min-w-0">
+                      {statusDot}
+                      <span className="text-slate-900 truncate">
+                        {p.display_name}
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 tabular-nums shrink-0 w-14 text-right hidden sm:inline">
+                      {p.thru_holes_total === 0
+                        ? "—"
+                        : `${p.thru_holes_total}/${p.thru_holes_expected}`}
+                    </span>
+                    <span
+                      className={`tabular-nums text-sm shrink-0 w-12 text-right ${
+                        p.thru_holes_total > 0 && vsPar < 0
+                          ? "text-red-600 font-medium"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {p.thru_holes_total > 0 ? fmtVsPar(vsPar) : "—"}
+                    </span>
+                    <span className="text-slate-900 font-serif text-lg tabular-nums shrink-0 w-12 text-right">
+                      {p.thru_holes_total > 0 ? total : "—"}
+                    </span>
+                    <span
+                      className="text-slate-400 tabular-nums text-xs shrink-0 w-14 text-right hidden sm:inline"
+                      title="Projected finish if all remaining holes are par"
+                    >
+                      {isFinished
+                        ? "—"
+                        : isNotStarted
+                        ? `${projected}`
+                        : projected}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         ))}
 
       {tab === "money" && (
