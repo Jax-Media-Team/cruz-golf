@@ -267,16 +267,53 @@ export function PressControls({
         </div>
       ))}
 
-      {/* Open-press affordance — anyone in the round can open. */}
+      {/* Open-press affordance — anyone in the round can open.
+          Patrick's polish-phase finding: this was previously a tiny
+          btn-ghost text-xs link that was easy to miss, so players
+          didn't realize presses are available on 6-6-6 / Best Ball /
+          Individual rounds. (They are — the engine has never gated
+          presses by game type; the engine even accepts a null game_id
+          for round-level presses.)
+          Now: a full card affordance when there are no presses yet,
+          a smaller but clearly-styled button when presses already
+          exist (so the rest of the press list stays the visual
+          anchor). */}
       {myRpId && !openDialog && (
-        <button
-          type="button"
-          onClick={() => setOpenDialog(true)}
-          className="btn-ghost text-xs"
-          title="Open a manual press"
-        >
-          + Press
-        </button>
+        accepted.length === 0 && mine.length === 0 && awaitingMe.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setOpenDialog(true)}
+            className="card card-hover w-full p-4 flex items-center justify-between gap-3 border border-gold-500/30 hover:bg-brand-900/60 transition-colors text-left"
+            title="Open a manual press"
+          >
+            <div className="min-w-0">
+              <p className="h-eyebrow text-gold-400">Open a press</p>
+              <p className="text-sm text-cream-50 mt-1">
+                Mid-round side bet on any game — Nassau, Best Ball,
+                6-6-6, Individual, all supported.
+              </p>
+              <p className="text-[11px] text-cream-100/55 mt-0.5">
+                The other side has 24h to accept. Auto-expires after.
+              </p>
+            </div>
+            <span
+              className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-full bg-gold-500 text-brand-900 font-serif text-xl shadow-soft"
+              aria-hidden="true"
+            >
+              +
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpenDialog(true)}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/40 hover:bg-gold-500 hover:text-brand-900 transition-colors"
+            title="Open another manual press"
+          >
+            <span aria-hidden="true">+</span>
+            <span>Press</span>
+          </button>
+        )
       )}
 
       {openDialog && myRpId && (
