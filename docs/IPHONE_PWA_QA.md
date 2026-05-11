@@ -8,6 +8,30 @@ what bug to file if something looks wrong.
 
 ---
 
+## Recently changed (test these specifically, 2026-05-11)
+
+These three changes shipped without device verification. **Re-install
+the PWA before testing** — Safari caches `manifest.webmanifest` and
+the viewport meta tag.
+
+1. **Manifest deduplication** — `app/manifest.ts` deleted, only the
+   static `public/manifest.webmanifest` is served. Verify the icon,
+   start_url (should land on `/dashboard`), and orientation (locked
+   to portrait) are right.
+2. **`viewport-fit: cover`** added — the app should now use the FULL
+   screen edge-to-edge on a notch / Dynamic Island iPhone, with the
+   safe-area-inset values applying to the header + bottom nav. If the
+   app letterboxes (black bars top/bottom), the `<meta
+   name="viewport">` tag isn't picking up the new value.
+3. **`maximumScale: 1` removed** — pinch-zoom is now allowed. Verify
+   you CAN double-tap or pinch to zoom on text. If the page locks,
+   the old viewport is cached — force-quit and reopen.
+4. **`themeColor` synced to `#0a1f1a`** — should match the brand-900
+   background. Cold-launching the PWA should NOT flash to a different
+   green tint between the iOS launch screen and the first render.
+
+---
+
 ## Setup — install the app
 
 1. Open Safari → navigate to your production URL (or `npm run dev` + Caddy

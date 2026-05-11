@@ -47,8 +47,19 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  themeColor: "#0d3b2a"
+  // maximumScale dropped 2026-05-11 — the prior value of 1 prevented
+  // pinch-zoom on iOS, which is an accessibility regression. iOS
+  // already auto-zooms on form inputs <16px so the PWA-feel use case
+  // is covered by font-size, not viewport lockdown.
+  // viewportFit: "cover" is REQUIRED for proper notch / Dynamic Island
+  // handling on iPhones with edge-to-edge screens. Without it the app
+  // gets letterboxed and `env(safe-area-inset-*)` returns 0.
+  viewportFit: "cover",
+  // Theme color synced with `public/manifest.webmanifest` (#0a1f1a —
+  // brand-900) so the iOS PWA status-bar tint matches the launch
+  // background and there's no "flash to a different green" on cold
+  // start.
+  themeColor: "#0a1f1a"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
