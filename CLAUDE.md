@@ -8,10 +8,10 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `f28a8c2` — *fix(pwa): viewport-fit cover + drop maxScale lock + dedupe manifests*
+- **Latest commit on main:** `2114d4e` — *chore(tone): strip cartoon emoji from records / leaderboards / stats*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **473/473 passing across 31 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **480/480 passing across 32 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
 - **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation.
 
@@ -89,8 +89,31 @@ testing, OCR mobile UX, live match clarity. Shipped:
    `event_series` model + 5-phase rollout for "events have memory
    over time" (annual Member-Guest, trip history, prior-year
    champion on new event card, Ryder Cup–style cumulative). No
-   implementation yet — waiting for Patrick's go-ahead on which
-   series to seed first.
+   implementation yet — Patrick confirmed JGCC Sunday Crew /
+   member-guest / Pinehurst trip as likely first series candidates
+   but wants to battle-test core workflows first.
+
+9. **OCR client-side preprocessing** (`a0d77d3`,
+   `lib/ocr/preprocess.ts`). Every image goes through
+   `prepareImageForOCR()` before upload:
+   - EXIF auto-rotation (iPhone photos almost always carry rotation
+     metadata; without applying it the model sees a sideways card).
+   - Long-side cap at 2400px (matches OpenAI's detail:"high" tile
+     ceiling — anything larger is server-side downsampled anyway).
+   - JPEG q=0.92 re-encode for ~30% smaller payload.
+   - Fast-path for files <1.5MB (skip canvas, avoid JPEG-of-JPEG).
+   - Graceful fallbacks for older Safari versions.
+   - Pure dimension math testable in isolation (7 cases).
+   - Per-card Remove button + grid progress counter as salvage UX.
+   - Explicitly NOT yet: deskew, brightness/contrast, pencil
+     enhancement. Reserved for the "if simple fix isn't enough"
+     path — each transform is a place to lose information.
+
+10. **Tone cleanup** (`2114d4e`). Stripped cartoon emoji from every
+    records / leaderboards / stats title and empty-state per
+    CLAUDE.md's explicit rule. Kept nav-card glyphs and demo-page
+    mode previews (judgment call — they're chrome, not record
+    celebration).
 
 ### Highest priorities for next session
 
