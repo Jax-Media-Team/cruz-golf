@@ -3,32 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { retry } from "@/lib/retry";
-
-// Friendlier error when the RPC fails because the device is offline
-// or the network is flaky. Press accept/decline/withdraw are
-// non-queueable (the 24h expiry window matters + the RPC has business
-// rules like "only side B can accept") so we retry with backoff but
-// don't silently queue. If all retries fail, this message is what
-// the user sees.
-function pressErrorMessage(err: any): string {
-  const raw = err?.message ?? String(err);
-  const lower = raw.toLowerCase();
-  if (
-    typeof navigator !== "undefined" &&
-    !navigator.onLine
-  ) {
-    return "You're offline. Try again when you reconnect.";
-  }
-  if (
-    lower.includes("fetch failed") ||
-    lower.includes("network") ||
-    lower.includes("timeout") ||
-    lower.includes("aborted")
-  ) {
-    return "Couldn't reach the server. Check your connection and try again.";
-  }
-  return raw;
-}
+import { pressErrorMessage } from "@/lib/press-errors";
 
 /**
  * Manual-press controls on /rounds/[id].
