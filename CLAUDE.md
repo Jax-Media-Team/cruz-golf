@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `2114d4e` — *chore(tone): strip cartoon emoji from records / leaderboards / stats*
+- **Latest commit on main:** `b18cb2b` — *feat(6-6-6,junk): partner-rotation editor + junk engine + design doc*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **480/480 passing across 32 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **506/506 passing across 33 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation.
+- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation. Junk schema designed in `docs/JUNK_DESIGN.md` but NOT yet applied — awaiting go-ahead.
 
 ### Recent stretch (2026-05-11)
 
@@ -114,6 +114,28 @@ testing, OCR mobile UX, live match clarity. Shipped:
     CLAUDE.md's explicit rule. Kept nav-card glyphs and demo-page
     mode previews (judgment call — they're chrome, not record
     celebration).
+
+11. **Admin diagnostics + OCR runbook** (`0be2137`). New
+    `/admin/diagnostics` page reads `process.env` from the same Node
+    runtime the OCR endpoint uses — so what an admin sees there is
+    exactly what the API sees. Required + optional env vars with
+    present/missing badges + last-4 tail hash; live Supabase anon +
+    service-role connectivity probes; feature flags; build/runtime
+    metadata (Vercel env, commit SHA, deployment ID); inline runbook.
+    Upload-page red banner when OCR returns the no-op sentinel. Server
+    log warning when key is missing. `docs/OCR_ENV_RUNBOOK.md`.
+
+12. **6-6-6 partner-rotation editor + junk engine** (`b18cb2b`).
+    Real-world tester ran 6-6-6 and couldn't find where to change
+    teams. Engine always supported `config.rotation` but no UI ever
+    exposed it. Added `SixSixSixRotationEditor` inside
+    TeamMatchPlayConfig — per-segment Side A picker, Side B
+    auto-derives, repeated-pairing warning, reset-to-default. Also
+    shipped the junk side-bet engine (`lib/games/junk.ts`) with 26
+    regression tests covering flat / escalating (3 scopes) / multi-item
+    / zero-sum / interactions / edit-remove / live totals.
+    `docs/JUNK_DESIGN.md` defines the schema + 5-phase rollout;
+    schema NOT yet applied — awaiting go-ahead.
 
 ### Highest priorities for next session
 
