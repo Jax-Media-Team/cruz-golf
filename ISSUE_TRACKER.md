@@ -165,6 +165,12 @@ NO time-driven auto-transitions ship with this migration. Optional
 opt-in heuristics (no edits for X hrs + all scored + no unresolved
 wagers) are queued in the engine-work table.
 
+## 🛠 Known product gaps (no critical bugs — these are real-world UX edges)
+
+| # | Item | Status |
+|---|------|--------|
+| SCRAMBLE-ONE-ENTRY | In real scramble play, typically ONE player records the team's single shared score. The team-game engine (`lib/games/team.ts` line 70-90) currently requires EVERY team member to have a score on every hole — if one player has null, that hole is `incomplete` and the team doesn't settle. Workaround: the `/score-group` page lets the scorer tap the same number into all team members' rows, so the round still settles cleanly. Long-term fix: relax the team-completeness check for scramble specifically (best ball still needs it — each member plays their own ball). | ⏳ flagged 2026-05-11; not yet fixed. 8 scramble regression tests in `tests/scramble.test.ts` document current behavior so any relaxation work is caught. |
+
 ## 🚨 Critical bugs
 
 | # | Item | Status |
