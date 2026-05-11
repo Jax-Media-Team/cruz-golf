@@ -594,3 +594,56 @@ Shifted from features to reliability per Patrick's directive.
   signals. (commit 174b5bf)
 
 **Suite: 272 → 291. Typecheck clean.**
+
+---
+
+## Usability pass — commits 8c8a190 → 6236576
+
+Shifted to real-world usability + admin support workflow.
+
+**Test coverage added (304 → 312, +21 this pass)**
+- `tests/real-round-simulation.test.ts` (13 tests). 8 players at JGCC,
+  skins gross + best ball net, three presses (1 accepted / 1 pending /
+  1 declined), realistic per-player scores. Asserts: zero-sum across
+  the full round, declined/pending contribute $0 (verified by
+  delta-vs-without scenarios), accepted moves the expected $ in the
+  expected direction (Mitch+Kyle won back-nine best-ball-min 5-0-4),
+  minimumFlow compresses 8 players into ≤7 edges, upsert score edits
+  are idempotent, hole-1 birdie edit changes skins outcome
+  deterministically, finalize warning fires when any press pending,
+  audit-log shape contracts documented.
+- `tests/press-errors.test.ts` (8 tests). Offline override, network /
+  timeout / aborted / econnreset / etimedout translations, Postgres
+  business-rule passthrough, string error passthrough, null /
+  undefined / `{}` generic fallback, case-insensitive matchers.
+
+**Bug found + fixed**
+- `pressErrorMessage` returned `"[object Object]"` to users when
+  Supabase handed it an empty `{}` error. Fixed in commit 23768bd to
+  fall back to "Something went wrong. Try again."
+
+**Admin tooling added**
+- `/admin/rounds/[id]` now has a **Manual presses section** showing
+  every press on the round (regardless of status) with status pill,
+  segment + stake + hole range, sides (with player names), opener +
+  timestamp, acceptor/decliner/withdrawer + timestamp, raw press UUID
+  for SQL spelunking, and a cross-link to the audit log. Defensive
+  against pre-0035 envs. (commit 4fc5159) Closes the audit deep-link
+  loop documented in ADMIN_PRESS_DISPUTE_WORKFLOW.md.
+
+**Docs added**
+- `docs/IPHONE_PWA_QA.md` — 9-scenario manual checklist for real-device
+  iPhone PWA testing. Each scenario has expected behavior + failure
+  mode. Covers install, deploy reload, score entry, bottom nav safe-
+  area, active round pill, help button, press notifications, offline /
+  reconnect (4 sub-cases), lifecycle transitions.
+- `docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md` — 7-step walkthrough for a
+  hypothetical press dispute. Includes a reply-template table mapping
+  audit findings to user-facing responses + SQL reference for cases
+  the admin UI doesn't cover.
+
+**Refactor**
+- `lib/press-errors.ts` extracted from press-controls.tsx so the
+  network/offline translator is unit-testable + reusable.
+
+**Suite: 291 → 312. Typecheck: clean. 4 commits.**
