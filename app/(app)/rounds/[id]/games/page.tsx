@@ -66,7 +66,11 @@ export default async function RoundGamesPage({
       .select("id, game_type, name, stake_cents, allowance_pct, config")
       .eq("round_id", id)
       .order("name"),
-    sb.from("round_players").select("id").eq("round_id", id),
+    sb
+      .from("round_players")
+      .select("id, players(display_name)")
+      .eq("round_id", id)
+      .order("created_at", { ascending: true }),
     sb
       .from("scores")
       .select("round_player_id", { count: "exact", head: true })
@@ -112,6 +116,10 @@ export default async function RoundGamesPage({
         <GamesEditor
           roundId={id}
           initialGames={(games as any) ?? []}
+          players={((rps as any) ?? []).map((r: any) => ({
+            id: r.id,
+            display_name: r.players?.display_name ?? "Player"
+          }))}
           hasScores={(scoreCount ?? 0) > 0}
         />
       )}

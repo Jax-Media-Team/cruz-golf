@@ -19,13 +19,22 @@ type Game = {
   config: Record<string, unknown>;
 };
 
+export type RoundPlayerLite = {
+  /** round_player_id */
+  id: string;
+  display_name: string;
+};
+
 export function GamesEditor({
   roundId,
   initialGames,
+  players,
   hasScores
 }: {
   roundId: string;
   initialGames: Game[];
+  /** Round players in seat order. Used by the 6-6-6 rotation editor. */
+  players: RoundPlayerLite[];
   hasScores: boolean;
 }) {
   const sb = supabaseBrowser();
@@ -120,6 +129,7 @@ export function GamesEditor({
           <GameCard
             key={g.id}
             game={g}
+            players={players}
             disabled={busy}
             onPatch={(p) => patchGame(g, p)}
             onRemove={() => removeGame(g)}
@@ -154,11 +164,13 @@ export function GamesEditor({
 
 function GameCard({
   game,
+  players,
   disabled,
   onPatch,
   onRemove
 }: {
   game: Game;
+  players: RoundPlayerLite[];
   disabled: boolean;
   onPatch: (patch: Partial<Game>) => void;
   onRemove: () => void;
@@ -265,6 +277,7 @@ function GameCard({
       {(isTeamGame || isSixSixSix || isMatchPlayGame) && (
         <TeamMatchPlayConfig
           game={game}
+          players={players}
           disabled={disabled}
           onPatch={onPatch}
           gameType={
@@ -531,11 +544,13 @@ function NassauConfig({
  */
 function TeamMatchPlayConfig({
   game,
+  players,
   disabled,
   onPatch,
   gameType = "team"
 }: {
   game: Game;
+  players: RoundPlayerLite[];
   disabled: boolean;
   onPatch: (patch: Partial<Game>) => void;
   /** Adjusts wording + default. 6-6-6 + match_play default to match
@@ -589,6 +604,206 @@ function TeamMatchPlayConfig({
           Match play settles hole by hole. Presses (when on) open
           automatically when one team is 2 down with 3+ holes left.
           Capped at 4 presses per match.
+        </p>
+      )}
+      {gameType === "six_six_six" && (
+        <SixSixSixRotationEditor
+          game={game}
+          players={players}
+          disabled={disabled}
+          onPatch={onPatch}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 6-6-6 partner-rotation editor.
+ *
+ * Real-world feedback from a tester: "we played sixes rotating partners
+ * and I couldn't figure out how to change the teams." Without an editor,
+ * the engine quietly defaults to seat-order pairings:
+ *   Seg 1 (1-6):   players[0] + players[1]  vs  players[2] + players[3]
+ *   Seg 2 (7-12):  players[0] + players[2]  vs  players[1] + players[3]
+ *   Seg 3 (13-18): players[0] + players[3]  vs  players[1] + players[2]
+ *
+ * That's a valid round-robin, but every group has a "best player partners
+ * each weakest in turn" preference and the existing UI hid the pairings
+ * entirely. This editor surfaces them and lets the commissioner swap
+ * partners per segment.
+ *
+ * Constraint: in a 4-player round-robin, every player must be on Side A
+ * exactly once across the 3 segments. We don't enforce that in the UI
+ * (would require a constraint solver) — instead we show the three
+ * segments' pairings, let the commissioner set Side A's two members for
+ * each segment via a dropdown, and auto-derive Side B as "the other two".
+ * If they pick something dumb (same pair in two segments), the engine
+ * still runs — it's just a suboptimal rotation.
+ *
+ * Persists to game.config.rotation = [{ team_a, team_b }, { ... }, ...]
+ * — the exact shape the engine reads in `lib/games/six_six_six.ts`.
+ */
+function SixSixSixRotationEditor({
+  game,
+  players,
+  disabled,
+  onPatch
+}: {
+  game: Game;
+  players: RoundPlayerLite[];
+  disabled: boolean;
+  onPatch: (patch: Partial<Game>) => void;
+}) {
+  const c = (game.config ?? {}) as Record<string, unknown>;
+  const cfgRotation = c.rotation as
+    | Array<{ team_a: [string, string]; team_b: [string, string] }>
+    | undefined;
+
+  // 6-6-6 needs exactly 4 players. Outside that case, render a gentle
+  // hint instead of a broken editor.
+  if (players.length !== 4) {
+    return (
+      <div className="rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-xs text-amber-200">
+        6-6-6 needs exactly 4 players. This round has{" "}
+        <span className="font-medium">{players.length}</span>. Partner
+        rotation will be unavailable until the player count is 4.
+      </div>
+    );
+  }
+
+  // Compute effective rotation — config OR default (seat-order).
+  const ids = players.map((p) => p.id);
+  const defaultRotation: Array<{
+    team_a: [string, string];
+    team_b: [string, string];
+  }> = [
+    { team_a: [ids[0], ids[1]], team_b: [ids[2], ids[3]] },
+    { team_a: [ids[0], ids[2]], team_b: [ids[1], ids[3]] },
+    { team_a: [ids[0], ids[3]], team_b: [ids[1], ids[2]] }
+  ];
+  const effective = cfgRotation ?? defaultRotation;
+  const nameById = new Map(players.map((p) => [p.id, p.display_name]));
+
+  function setSegmentPair(segIdx: number, aPair: [string, string]) {
+    const allIds = new Set(ids);
+    aPair.forEach((id) => allIds.delete(id));
+    const bPair = [...allIds] as [string, string];
+    const next = effective.map((seg, i) =>
+      i === segIdx
+        ? { team_a: aPair, team_b: bPair }
+        : seg
+    );
+    onPatch({ config: { ...c, rotation: next } });
+  }
+
+  function resetToDefault() {
+    onPatch({ config: { ...c, rotation: undefined } });
+  }
+
+  // For the Side A dropdown of a segment, build the list of valid
+  // 2-of-4 pair options. We use a stable representation
+  // (sorted by id) so two equivalent pairs render identically.
+  const allPairs: Array<[string, string]> = [];
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      allPairs.push([ids[i], ids[j]]);
+    }
+  }
+
+  // Validation: across 3 segments, every PAIR appears at most once. A
+  // perfect round-robin uses each of the three possible partnerships.
+  // We don't enforce — golfers customize for real reasons — but flag
+  // if the commissioner picks something most groups wouldn't.
+  const pairKeys = new Set<string>();
+  let pairsDuplicate = false;
+  for (const seg of effective) {
+    const k = [...seg.team_a].sort().join("|");
+    if (pairKeys.has(k)) {
+      pairsDuplicate = true;
+      break;
+    }
+    pairKeys.add(k);
+  }
+
+  return (
+    <div className="rounded-lg border border-cream-100/10 p-3 space-y-3">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <div>
+          <p className="font-medium text-cream-50 text-sm">
+            Partner rotation
+          </p>
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            6-6-6 plays three 6-hole matches, rotating partners each segment.
+            The default rotates seat order. Tap a segment to set the pair.
+          </p>
+        </div>
+        {cfgRotation && (
+          <button
+            type="button"
+            className="btn-ghost text-[11px] text-cream-100/65"
+            onClick={resetToDefault}
+            disabled={disabled}
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+      <ul className="space-y-2">
+        {effective.map((seg, idx) => {
+          const startHole = idx * 6 + 1;
+          const endHole = startHole + 5;
+          const aPairKey = [...seg.team_a].sort().join("|");
+          return (
+            <li
+              key={idx}
+              className="rounded-lg bg-brand-900/30 p-2.5 space-y-2"
+            >
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <span className="text-[11px] uppercase tracking-wider text-cream-100/55">
+                  Seg {idx + 1} · holes {startHole}–{endHole}
+                </span>
+                <span className="text-[11px] text-cream-100/55">
+                  Side B (auto):{" "}
+                  <span className="text-cream-100/85">
+                    {seg.team_b.map((id) => nameById.get(id)).join(" + ")}
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-[11px] text-cream-100/65 shrink-0">
+                  Side A:
+                </label>
+                <select
+                  className="input text-sm flex-1 min-w-0"
+                  value={aPairKey}
+                  onChange={(e) => {
+                    const [a, b] = e.target.value.split("|") as [string, string];
+                    setSegmentPair(idx, [a, b]);
+                  }}
+                  disabled={disabled}
+                >
+                  {allPairs.map((pair) => {
+                    const key = [...pair].sort().join("|");
+                    const labelA = nameById.get(pair[0]) ?? "Player";
+                    const labelB = nameById.get(pair[1]) ?? "Player";
+                    return (
+                      <option key={key} value={key}>
+                        {labelA} + {labelB}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {pairsDuplicate && (
+        <p className="text-[11px] text-amber-200 leading-snug">
+          Heads up: the same pair plays together in more than one segment.
+          That&apos;s legal but means one partnership repeats and another
+          never forms — most groups pick three different pairings.
         </p>
       )}
     </div>
