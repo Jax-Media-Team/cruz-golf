@@ -14,7 +14,24 @@ type TeamConfig = {
 
 /**
  * Best ball: each team's hole score = lowest of its players for that hole.
- * Aggregate: each team's hole score = sum of all players' scores for that hole.
+ *   - Every team member must have a score on every hole (each member
+ *     plays their own ball). If any member's score is missing, the hole
+ *     is incomplete and the team doesn't settle that hole.
+ *
+ * Aggregate: each team's hole score = sum of all players' scores for
+ * that hole. Same completeness requirement as best ball (the sum is
+ * meaningless if a member is missing).
+ *
+ * Scramble: each team's hole score = lowest of its players for that hole,
+ * BUT only one team member needs to record (a real scramble has one shared
+ * shot, so typically one scorer enters for the team). If at least one
+ * member entered a score, the hole settles using min(entered). If every
+ * team member entered the same number (group-score-pad pattern), this
+ * collapses to the same result. This match real golf-group behavior:
+ * "the scorekeeper writes 4 in the team's box; nobody asks each player
+ * to also tick their own card." (SCRAMBLE-ONE-ENTRY in ISSUE_TRACKER.md
+ * resolved.)
+ *
  * mode "gross" or "net" controls which score is used.
  *
  * Two settlement modes (per `cfg.match_play`):
@@ -30,7 +47,7 @@ type TeamConfig = {
  */
 export function settleTeamGame(
   input: GameInput,
-  variant: "best_ball" | "aggregate",
+  variant: "best_ball" | "aggregate" | "scramble",
   mode: "gross" | "net"
 ): GameOutput {
   const out = emptyOutput();
@@ -71,21 +88,36 @@ export function settleTeamGame(
     let complete = true;
     for (const [teamId, playerIds] of teams) {
       const scores: number[] = [];
-      let teamComplete = true;
+      let allMembersScored = true;
       for (const pid of playerIds) {
         const sheet = sheets.get(pid)!;
         const row = sheet.rows.find((r) => r.hole_number === h.hole_number);
         const v = mode === "gross" ? row?.gross : row?.net;
         if (v == null) {
-          teamComplete = false;
+          allMembersScored = false;
         } else {
           scores.push(v);
         }
       }
+      // Completeness depends on the variant:
+      //   - best_ball + aggregate: every team member must record their
+      //     own score (each plays own ball; sum is meaningless if a
+      //     member is missing).
+      //   - scramble: one entry per team is enough — the scorer often
+      //     writes the team's single shared score into just one of the
+      //     player rows. As long as at least one member entered, we can
+      //     settle the hole.
+      const teamComplete =
+        variant === "scramble"
+          ? scores.length > 0
+          : allMembersScored;
       if (!teamComplete) {
         complete = false;
       } else {
-        const teamScore = variant === "best_ball" ? Math.min(...scores) : scores.reduce((a, b) => a + b, 0);
+        const teamScore =
+          variant === "best_ball" || variant === "scramble"
+            ? Math.min(...scores)
+            : scores.reduce((a, b) => a + b, 0);
         teamHoleScores.set(teamId, teamScore);
       }
     }
@@ -200,7 +232,7 @@ function settleStroke(
   perHole: PerHole[],
   teams: Map<UUID, UUID[]>,
   stake: number,
-  variant: "best_ball" | "aggregate",
+  variant: "best_ball" | "aggregate" | "scramble",
   mode: "gross" | "net",
   out: GameOutput,
   totalHoles: number

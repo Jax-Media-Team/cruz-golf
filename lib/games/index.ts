@@ -30,13 +30,15 @@ export function settleGame(input: GameInput): GameOutput {
       out = settleTeamGame(input, "aggregate", "net");
       break;
     case "scramble_gross":
-      // Scramble settles like best ball: each team's hole score = lowest of
-      // its members. In a true scramble all players actually post the same
-      // score (since they hit from the same lie); the engine works either way.
-      out = settleTeamGame(input, "best_ball", "gross");
+      // Scramble: each team's hole score = lowest of its members, AND
+      // only one team member needs to record (real scramble = one
+      // shared shot, typically one scorer per team). The "scramble"
+      // variant in settleTeamGame tolerates partial entry; best_ball
+      // requires every member's own card. See team.ts for the contrast.
+      out = settleTeamGame(input, "scramble", "gross");
       break;
     case "scramble_net":
-      out = settleTeamGame(input, "best_ball", "net");
+      out = settleTeamGame(input, "scramble", "net");
       break;
     case "skins_gross":
       out = settleSkins(input, "gross");

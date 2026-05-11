@@ -125,28 +125,21 @@ describe("scramble: 2v2, identical per-team scores (true scramble pattern)", () 
   });
 });
 
-describe("scramble: differing per-team scores", () => {
-  // ⚠️ PRODUCT GAP found while writing this test:
+describe("scramble: one-entry-per-team semantics (matches real golf-group behavior)", () => {
+  // SCRAMBLE-ONE-ENTRY (resolved 2026-05-11): in real scramble play the
+  // scorer typically writes ONE shared team score per hole — not "each
+  // player records their own card." The engine's "scramble" variant
+  // tolerates partial entry: as long as at least one team member
+  // entered a score, the hole settles using min(entered scores).
   //
-  // The team-game engine currently requires EVERY team member to have a
-  // score on every hole — if one player has null, the hole is treated
-  // as incomplete and the team doesn't settle. This makes sense for
-  // best ball (each member plays their own ball). It does NOT match
-  // real scramble play, where typically ONE player records the team's
-  // single shared score.
-  //
-  // Logged as SCRAMBLE-ONE-ENTRY in ISSUE_TRACKER.md. Until it's
-  // addressed, the scramble UX expectation is that every team member
-  // taps the same number on every hole. The /score-group page
-  // facilitates this (group entry pad shows all 4 players per hole).
-  //
-  // Tests below document CURRENT engine behavior so any regression in
-  // the relaxation work later is caught.
+  // Best ball still requires every member to record (each plays own
+  // ball). The contrast is intentional and tested below in the
+  // best-ball regression block at the bottom of this file.
 
-  it("CURRENT BEHAVIOR: missing team-member scores block settlement (zero-sum + no flow)", () => {
-    // Patrick + Ben on team A. Patrick records every hole. Ben records
-    // NOTHING. Today the engine treats every hole as incomplete →
-    // no money moves. See SCRAMBLE-ONE-ENTRY gap above.
+  it("if only one team member records each hole, the team still settles correctly", () => {
+    // Patrick records every hole for team A. Ben enters nothing —
+    // typical scramble pattern where one player is the scorer.
+    // Same on team B (Mitch is the scorer; Kyle enters nothing).
     const players = [
       makePlayer({ id: "rp-a1", name: "Patrick", team_id: "team-a" }),
       makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
@@ -154,8 +147,9 @@ describe("scramble: differing per-team scores", () => {
       makePlayer({ id: "rp-b2", name: "Kyle", team_id: "team-b" })
     ];
     const patScores = [3, 4, 4, 3, 3, 4, 4, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 5]; // 66
-    const benScores = Array(18).fill(null); // missing
-    const teamBScores = [4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4, 4, 3, 5, 4, 4, 4, 5]; // 73
+    const benScores: (number | null)[] = Array(18).fill(null);
+    const mitScores = [4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4, 4, 3, 5, 4, 4, 4, 5]; // 73
+    const kylScores: (number | null)[] = Array(18).fill(null);
     const scores = [
       ...patScores.map((g, i) => ({
         round_player_id: "rp-a1",
@@ -167,12 +161,12 @@ describe("scramble: differing per-team scores", () => {
         hole_number: i + 1,
         gross: g
       })),
-      ...teamBScores.map((g, i) => ({
+      ...mitScores.map((g, i) => ({
         round_player_id: "rp-b1",
         hole_number: i + 1,
         gross: g
       })),
-      ...teamBScores.map((g, i) => ({
+      ...kylScores.map((g, i) => ({
         round_player_id: "rp-b2",
         hole_number: i + 1,
         gross: g
@@ -188,13 +182,220 @@ describe("scramble: differing per-team scores", () => {
         scores
       })
     );
-    // Engine is conservative: incomplete team data → no settlement.
-    // Zero-sum trivially holds (everyone at 0).
+    // Team A's 66 vs Team B's 73 — Team A wins by 7 strokes.
+    // Both teams settle even though only one player per team entered.
+    expect(sumDeltas(out)).toBe(0);
+    // Each B player loses $10. Pot $20 to A → +$10 each.
+    expect(deltaFor(out, "rp-a1")).toBe(1000);
+    expect(deltaFor(out, "rp-a2")).toBe(1000);
+    expect(deltaFor(out, "rp-b1")).toBe(-1000);
+    expect(deltaFor(out, "rp-b2")).toBe(-1000);
+  });
+
+  it("if Patrick + Ben BOTH record (group-pad pattern), result is identical", () => {
+    // Patrick and Ben both tap the same scores per hole (because the
+    // /score-group pad asks for every player on every hole). The
+    // engine takes min(both), which equals the shared value.
+    const players = [
+      makePlayer({ id: "rp-a1", name: "Patrick", team_id: "team-a" }),
+      makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
+      makePlayer({ id: "rp-b1", name: "Mitch", team_id: "team-b" }),
+      makePlayer({ id: "rp-b2", name: "Kyle", team_id: "team-b" })
+    ];
+    const teamA = [3, 4, 4, 3, 3, 4, 4, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 5];
+    const teamB = [4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4, 4, 3, 5, 4, 4, 4, 5];
+    const scores = makeScores({
+      "rp-a1": teamA,
+      "rp-a2": teamA,
+      "rp-b1": teamB,
+      "rp-b2": teamB
+    });
+    const out = settleGame(
+      makeInput({
+        game: makeGame({
+          game_type: "scramble_gross",
+          stake_cents: 1000
+        }),
+        players,
+        scores
+      })
+    );
+    // Identical settlement to the one-entry version above.
+    expect(sumDeltas(out)).toBe(0);
+    expect(deltaFor(out, "rp-a1")).toBe(1000);
+    expect(deltaFor(out, "rp-a2")).toBe(1000);
+    expect(deltaFor(out, "rp-b1")).toBe(-1000);
+    expect(deltaFor(out, "rp-b2")).toBe(-1000);
+  });
+
+  it("MIXED ENTRY: if Patrick scores 4 and Ben scores 3 on the same hole, team uses 3 (min)", () => {
+    // Reality check: the group-pad lets each player tap any number.
+    // If two team members enter DIFFERENT numbers (one mis-tap), the
+    // engine takes the lower as the team score — same as best ball.
+    // This is the "forgiving" behavior: a fat-finger entry never
+    // inflates the team's score above what was actually recorded.
+    const players = [
+      makePlayer({ id: "rp-a1", name: "Patrick", team_id: "team-a" }),
+      makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
+      makePlayer({ id: "rp-b1", name: "Mitch", team_id: "team-b" }),
+      makePlayer({ id: "rp-b2", name: "Kyle", team_id: "team-b" })
+    ];
+    // Hole 1: pat 4, ben 3 → team A min = 3. Hole 2-18 both at par.
+    const patScores = [...JGCC_PARS]; // pars all 18
+    const benScores = JGCC_PARS.map((p, i) => (i === 0 ? p - 1 : p)); // birdie hole 1
+    const teamB = JGCC_PARS.map((p) => p);
+    const scores = [
+      ...patScores.map((g, i) => ({
+        round_player_id: "rp-a1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...benScores.map((g, i) => ({
+        round_player_id: "rp-a2",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...teamB.map((g, i) => ({
+        round_player_id: "rp-b1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...teamB.map((g, i) => ({
+        round_player_id: "rp-b2",
+        hole_number: i + 1,
+        gross: g
+      }))
+    ];
+    const out = settleGame(
+      makeInput({
+        game: makeGame({
+          game_type: "scramble_gross",
+          stake_cents: 1000
+        }),
+        players,
+        scores
+      })
+    );
+    // Team A shoots 71 (one birdie via min), Team B shoots 72.
+    expect(sumDeltas(out)).toBe(0);
+    expect(deltaFor(out, "rp-a1")).toBeGreaterThan(0);
+    expect(deltaFor(out, "rp-b1")).toBeLessThan(0);
+  });
+
+  it("a hole where NO team member entered → that hole drops, rest still settles", () => {
+    // Real scenario: scorer skipped writing the team's score on hole 7
+    // (got busy walking off the green, forgot). 17 holes are recorded.
+    // The hole 7 drops; the engine settles based on the 17 it has.
+    const players = [
+      makePlayer({ id: "rp-a1", name: "Patrick", team_id: "team-a" }),
+      makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
+      makePlayer({ id: "rp-b1", name: "Mitch", team_id: "team-b" }),
+      makePlayer({ id: "rp-b2", name: "Kyle", team_id: "team-b" })
+    ];
+    // Team A scores: birdie holes 1, 3, 5 (saves 3 strokes); par rest
+    // → 69 over the 17 recorded holes. Hole 7 (par 5) skipped → ignored.
+    const teamA = JGCC_PARS.map((p, i) => {
+      if (i === 6) return null; // hole 7 skipped
+      if (i === 0 || i === 2 || i === 4) return p - 1; // birdie
+      return p;
+    });
+    const teamB = JGCC_PARS.map((p, i) => (i === 6 ? null : p));
+    const scores = [
+      ...teamA.map((g, i) => ({
+        round_player_id: "rp-a1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      // Ben records nothing — pure one-entry-per-team
+      ...Array(18)
+        .fill(null)
+        .map((_, i) => ({
+          round_player_id: "rp-a2",
+          hole_number: i + 1,
+          gross: null as number | null
+        })),
+      ...teamB.map((g, i) => ({
+        round_player_id: "rp-b1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...Array(18)
+        .fill(null)
+        .map((_, i) => ({
+          round_player_id: "rp-b2",
+          hole_number: i + 1,
+          gross: null as number | null
+        }))
+    ];
+    const out = settleGame(
+      makeInput({
+        game: makeGame({
+          game_type: "scramble_gross",
+          stake_cents: 1000
+        }),
+        players,
+        scores
+      })
+    );
+    // Team A has 3 birdies, Team B has none. Across 17 holes A wins.
+    expect(sumDeltas(out)).toBe(0);
+    expect(deltaFor(out, "rp-a1")).toBeGreaterThan(0);
+    expect(deltaFor(out, "rp-b1")).toBeLessThan(0);
+  });
+
+  it("BEST BALL regression: missing member scores still BLOCK settlement (each plays own ball)", () => {
+    // Critical contrast: best ball must NOT inherit scramble's
+    // relaxation. Each best-ball player plays their own ball; if Ben
+    // didn't enter, his ball isn't represented — settling on Patrick
+    // alone would silently misrepresent the team. So best ball stays
+    // strict.
+    const players = [
+      makePlayer({ id: "rp-a1", name: "Patrick", team_id: "team-a" }),
+      makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
+      makePlayer({ id: "rp-b1", name: "Mitch", team_id: "team-b" }),
+      makePlayer({ id: "rp-b2", name: "Kyle", team_id: "team-b" })
+    ];
+    const patScores = [3, 4, 4, 3, 3, 4, 4, 3, 3, 4, 4, 4, 3, 4, 4, 4, 3, 5];
+    const benScores: (number | null)[] = Array(18).fill(null);
+    const teamB = [4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4, 4, 3, 5, 4, 4, 4, 5];
+    const scores = [
+      ...patScores.map((g, i) => ({
+        round_player_id: "rp-a1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...benScores.map((g, i) => ({
+        round_player_id: "rp-a2",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...teamB.map((g, i) => ({
+        round_player_id: "rp-b1",
+        hole_number: i + 1,
+        gross: g
+      })),
+      ...teamB.map((g, i) => ({
+        round_player_id: "rp-b2",
+        hole_number: i + 1,
+        gross: g
+      }))
+    ];
+    const out = settleGame(
+      makeInput({
+        game: makeGame({
+          game_type: "best_ball_gross",
+          stake_cents: 1000
+        }),
+        players,
+        scores
+      })
+    );
+    // Best ball: Ben's missing scores block every hole on team A. No
+    // settlement. (Workaround for real best-ball play: every player
+    // must record their own card.)
     expect(sumDeltas(out)).toBe(0);
     expect(deltaFor(out, "rp-a1")).toBe(0);
-    expect(deltaFor(out, "rp-a2")).toBe(0);
     expect(deltaFor(out, "rp-b1")).toBe(0);
-    expect(deltaFor(out, "rp-b2")).toBe(0);
   });
 
   it("if one member shoots better than another on a hole, team uses the lower", () => {

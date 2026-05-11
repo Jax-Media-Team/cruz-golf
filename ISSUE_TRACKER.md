@@ -169,7 +169,7 @@ wagers) are queued in the engine-work table.
 
 | # | Item | Status |
 |---|------|--------|
-| SCRAMBLE-ONE-ENTRY | In real scramble play, typically ONE player records the team's single shared score. The team-game engine (`lib/games/team.ts` line 70-90) currently requires EVERY team member to have a score on every hole — if one player has null, that hole is `incomplete` and the team doesn't settle. Workaround: the `/score-group` page lets the scorer tap the same number into all team members' rows, so the round still settles cleanly. Long-term fix: relax the team-completeness check for scramble specifically (best ball still needs it — each member plays their own ball). | ⏳ flagged 2026-05-11; not yet fixed. 8 scramble regression tests in `tests/scramble.test.ts` document current behavior so any relaxation work is caught. |
+| SCRAMBLE-ONE-ENTRY | In real scramble play, typically ONE player records the team's single shared score. The team-game engine used to require EVERY team member to have a score on every hole — if one player had null, the hole was `incomplete` and the team didn't settle. | ✅ **Fixed 2026-05-11.** Added `"scramble"` variant to `lib/games/team.ts` that tolerates partial entry: if at least one team member entered a score on a hole, the hole settles using `min(entered)`. Best ball + aggregate stay strict (each member plays own ball, so a missing score = unrepresented ball). Routed `scramble_gross/net` through the new variant in `lib/games/index.ts`. 12 regression tests in `tests/scramble.test.ts` exercise the new behavior + lock in best-ball strictness as a regression check. Help knowledge gained 2 scramble entries explaining the difference. |
 
 ## 🚨 Critical bugs
 

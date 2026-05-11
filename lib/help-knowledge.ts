@@ -72,6 +72,16 @@ export const HELP_ENTRIES: HelpEntry[] = [
     a: "An 18-hole team game where partners rotate every 6 holes — so you team with each other player exactly once. Holes 1–6 with partner A, 7–12 with B, 13–18 with C. Settles like three mini best-ball matches.",
     keywords: ["6-6-6", "six six six", "rotating partners", "round robin"]
   },
+  {
+    q: "How do I score a scramble — do all four players have to enter their score?",
+    a: "No. Scramble is one shared shot per team, so one scorer entering the team's score works fine. The engine takes the lowest entered score on each hole as the team score. If you tap the same number into all four player rows (group-pad pattern), the math is identical. Best ball and aggregate are different — each player plays their own ball, so every player must record on every hole.",
+    keywords: ["scramble", "scramble scoring", "team score", "one scorer", "shared ball"]
+  },
+  {
+    q: "What's the difference between scramble and best ball?",
+    a: "Scramble: every team member hits, you pick the best shot, everyone plays the next shot from that spot. One shared score per hole. Best ball: every team member plays their own ball the whole hole — the team's score is the lowest individual score. In the app: scramble lets one scorer enter for the team; best ball requires every player's own card.",
+    keywords: ["scramble vs best ball", "shared shot", "individual ball", "team format"]
+  },
 
   // ── Presses ──
   {
