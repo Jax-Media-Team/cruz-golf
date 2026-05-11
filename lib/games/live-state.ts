@@ -22,7 +22,42 @@
  */
 import { buildPlayerSheet } from "../scoring";
 import { applyAllowance, holesInPlay } from "./helpers";
+import { detectAutoPresses, type HoleResult } from "./press";
 import type { GameInput, GameType, RoundPlayer, UUID } from "../types";
+
+/**
+ * Live status of a single auto-press chain. Same shape `detectAutoPresses`
+ * returns, plus a live tally over the played holes (so the round-view can
+ * show "Press 1 · Pat+Mit up 1 thru 2" mid-segment).
+ */
+export type LiveAutoPress = {
+  /** Press 1, 2, 3 within the segment. */
+  index: number;
+  /** Trigger hole — where the press opened. */
+  trigger_hole: number;
+  /** First hole the press covers (hole after trigger). */
+  start_hole: number;
+  /** Last hole in the press window (segment end). */
+  end_hole: number;
+  /** Total holes the press will cover when fully played. */
+  total_holes: number;
+  /** Holes inside the press window where both sides have scored. */
+  holes_played: number;
+  /** Holes remaining in the press window. */
+  remaining: number;
+  /** Match-play tally (within the press window only). */
+  a_holes_won: number;
+  b_holes_won: number;
+  pushes: number;
+  /** Positive = A leads in the press, negative = B leads. */
+  a_up: number;
+  /** Same dormie/closed semantics as the parent segment, scoped to the
+   *  press window. Null when the press is fully played or hasn't moved. */
+  dormie_or_closed: "dormie" | "closed_out_by_a" | "closed_out_by_b" | null;
+  /** Settled outcome from `detectAutoPresses`: null = still live, 0 =
+   *  finished tied, positive = A won, negative = B won. */
+  settled_delta: number | null;
+};
 
 export type LiveSide = {
   player_ids: UUID[];
@@ -64,6 +99,12 @@ export type LiveSegment = {
    * Only set when match_play=true and the segment isn't fully played.
    */
   dormie_or_closed: "dormie" | "closed_out_by_a" | "closed_out_by_b" | null;
+  /**
+   * Auto-presses that have fired in this segment, with live tally. Empty
+   * array when `cfg.presses !== "auto_2_down"` or no press has triggered
+   * yet. Index 0 is the first press opened (chronologically).
+   */
+  auto_presses: LiveAutoPress[];
 };
 
 export type LiveMatchState = {
@@ -130,6 +171,75 @@ function labelSide(players: RoundPlayer[], ids: UUID[]): string {
   return ids.map((id) => nameOf(players, id)).join(" + ");
 }
 
+// ===== Auto-press live tally ========================================
+
+/**
+ * Run `detectAutoPresses` on a segment's HoleResult[] and overlay a live
+ * tally on each returned press so the round-view can show in-progress
+ * leads. `holeResults` must be the SEGMENT slice (already trimmed to
+ * segmentStart..segmentEnd), so `start_hole`/`end_hole` come back as
+ * hole numbers from `HoleResult.hole_number`.
+ */
+function liveAutoPressesForSegment(
+  holeResults: HoleResult[],
+  stakeCents: number,
+  segmentLabel: string
+): LiveAutoPress[] {
+  if (holeResults.length === 0) return [];
+  const presses = detectAutoPresses(holeResults, {
+    triggerDown: 2,
+    minRemainingHoles: 3,
+    maxPresses: 4,
+    stakeCents,
+    segmentLabel,
+    segmentStart: 0,
+    segmentEnd: holeResults.length
+  });
+  return presses.map((p, idx) => {
+    const inWindow = holeResults.filter(
+      (h) => h.hole_number >= p.start_hole && h.hole_number <= p.end_hole
+    );
+    const total_holes = inWindow.length;
+    let aWon = 0;
+    let bWon = 0;
+    let pushes = 0;
+    let holes_played = 0;
+    for (const h of inWindow) {
+      if (h.incomplete) continue;
+      holes_played += 1;
+      if (h.a_won) aWon += 1;
+      else if (h.b_won) bWon += 1;
+      else pushes += 1;
+    }
+    const remaining = total_holes - holes_played;
+    const a_up = aWon - bWon;
+    let dormie_or_closed: LiveAutoPress["dormie_or_closed"] = null;
+    if (remaining > 0) {
+      const absLead = Math.abs(a_up);
+      if (absLead > remaining) {
+        dormie_or_closed = a_up > 0 ? "closed_out_by_a" : "closed_out_by_b";
+      } else if (absLead === remaining && absLead > 0) {
+        dormie_or_closed = "dormie";
+      }
+    }
+    return {
+      index: idx + 1,
+      trigger_hole: p.trigger_hole,
+      start_hole: p.start_hole,
+      end_hole: p.end_hole,
+      total_holes,
+      holes_played,
+      remaining,
+      a_holes_won: aWon,
+      b_holes_won: bWon,
+      pushes,
+      a_up,
+      dormie_or_closed,
+      settled_delta: p.result_delta
+    };
+  });
+}
+
 // ===== Nassau (front/back/overall on 18, 1 segment on 9) ============
 
 function buildNassauState(input: GameInput): LiveMatchState | null {
@@ -139,9 +249,11 @@ function buildNassauState(input: GameInput): LiveMatchState | null {
     front_stake_cents?: number;
     back_stake_cents?: number;
     overall_stake_cents?: number;
+    presses?: "none" | "manual" | "auto_2_down";
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
+  const autoPress = matchPlay && cfg.presses === "auto_2_down";
 
   // Determine sides — same rule as settleNassau:
   // teams if present, else first-two players head-to-head.
@@ -199,15 +311,24 @@ function buildNassauState(input: GameInput): LiveMatchState | null {
     let aTotal = 0;
     let bTotal = 0;
     let holes_played = 0;
+    const segHoleResults: HoleResult[] = [];
     for (let i = startIdx; i < endIdx; i++) {
       const a = sideHoleScore(sideAIds, i);
       const b = sideHoleScore(sideBIds, i);
-      if (a == null || b == null) continue;
+      const incomplete = a == null || b == null;
+      segHoleResults.push({
+        hole_number: holes[i]?.hole_number ?? i + 1,
+        a_won: !incomplete && (a as number) < (b as number),
+        b_won: !incomplete && (b as number) < (a as number),
+        push: !incomplete && (a as number) === (b as number),
+        incomplete
+      });
+      if (incomplete) continue;
       holes_played += 1;
-      aTotal += a;
-      bTotal += b;
-      if (a < b) aWon += 1;
-      else if (b < a) bWon += 1;
+      aTotal += a as number;
+      bTotal += b as number;
+      if ((a as number) < (b as number)) aWon += 1;
+      else if ((b as number) < (a as number)) bWon += 1;
       else pushes += 1;
     }
     const total_holes = endIdx - startIdx;
@@ -222,6 +343,9 @@ function buildNassauState(input: GameInput): LiveMatchState | null {
         dormie_or_closed = "dormie";
       }
     }
+    const auto_presses = autoPress
+      ? liveAutoPressesForSegment(segHoleResults, input.game.stake_cents, label)
+      : [];
     return {
       segment_label: label,
       start_hole: holes[startIdx]?.hole_number ?? startIdx + 1,
@@ -238,7 +362,8 @@ function buildNassauState(input: GameInput): LiveMatchState | null {
       a_total: aTotal,
       b_total: bTotal,
       remaining,
-      dormie_or_closed
+      dormie_or_closed,
+      auto_presses
     };
   }
 
@@ -270,9 +395,11 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
     rotation?: Array<{ team_a: [UUID, UUID]; team_b: [UUID, UUID] }>;
     net?: boolean;
     match_play?: boolean;
+    presses?: "none" | "manual" | "auto_2_down";
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
+  const autoPress = matchPlay && cfg.presses === "auto_2_down";
 
   const ids = input.players.map((p) => p.id);
   const rotation =
@@ -313,15 +440,24 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
     let aTotal = 0;
     let bTotal = 0;
     let holes_played = 0;
+    const segHoleResults: HoleResult[] = [];
     for (let i = startIdx; i < endIdx; i++) {
       const a = sideScore(seg.team_a, i);
       const b = sideScore(seg.team_b, i);
-      if (a == null || b == null) continue;
+      const incomplete = a == null || b == null;
+      segHoleResults.push({
+        hole_number: holes[i]?.hole_number ?? i + 1,
+        a_won: !incomplete && (a as number) < (b as number),
+        b_won: !incomplete && (b as number) < (a as number),
+        push: !incomplete && (a as number) === (b as number),
+        incomplete
+      });
+      if (incomplete) continue;
       holes_played += 1;
-      aTotal += a;
-      bTotal += b;
-      if (a < b) aWon += 1;
-      else if (b < a) bWon += 1;
+      aTotal += a as number;
+      bTotal += b as number;
+      if ((a as number) < (b as number)) aWon += 1;
+      else if ((b as number) < (a as number)) bWon += 1;
       else pushes += 1;
     }
     const total_holes = 6;
@@ -336,8 +472,12 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
         dormie_or_closed = "dormie";
       }
     }
+    const segLabel = `Seg ${segIdx + 1} (${startIdx + 1}-${endIdx})`;
+    const auto_presses = autoPress
+      ? liveAutoPressesForSegment(segHoleResults, input.game.stake_cents, segLabel)
+      : [];
     return {
-      segment_label: `Seg ${segIdx + 1} (${startIdx + 1}-${endIdx})`,
+      segment_label: segLabel,
       start_hole: startIdx + 1,
       end_hole: endIdx,
       total_holes,
@@ -352,7 +492,8 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
       a_total: aTotal,
       b_total: bTotal,
       remaining,
-      dormie_or_closed
+      dormie_or_closed,
+      auto_presses
     };
   });
 
@@ -368,8 +509,12 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
 // ===== Best ball / Aggregate / Scramble (single-segment team game) ==
 
 function buildTeamGameState(input: GameInput): LiveMatchState | null {
-  const cfg = (input.game.config ?? {}) as { match_play?: boolean };
+  const cfg = (input.game.config ?? {}) as {
+    match_play?: boolean;
+    presses?: "none" | "manual" | "auto_2_down";
+  };
   const matchPlay = cfg.match_play === true;
+  const autoPress = matchPlay && cfg.presses === "auto_2_down";
   const t = input.game.game_type;
   const isAggregate = t === "aggregate_gross" || t === "aggregate_net";
   const isScramble = t === "scramble_gross" || t === "scramble_net";
@@ -427,15 +572,24 @@ function buildTeamGameState(input: GameInput): LiveMatchState | null {
   let aTotal = 0;
   let bTotal = 0;
   let holes_played = 0;
+  const segHoleResults: HoleResult[] = [];
   for (let i = 0; i < holes.length; i++) {
     const a = sideScore(sideAIds, i);
     const b = sideScore(sideBIds, i);
-    if (a == null || b == null) continue;
+    const incomplete = a == null || b == null;
+    segHoleResults.push({
+      hole_number: holes[i]?.hole_number ?? i + 1,
+      a_won: !incomplete && (a as number) < (b as number),
+      b_won: !incomplete && (b as number) < (a as number),
+      push: !incomplete && (a as number) === (b as number),
+      incomplete
+    });
+    if (incomplete) continue;
     holes_played += 1;
-    aTotal += a;
-    bTotal += b;
-    if (a < b) aWon += 1;
-    else if (b < a) bWon += 1;
+    aTotal += a as number;
+    bTotal += b as number;
+    if ((a as number) < (b as number)) aWon += 1;
+    else if ((b as number) < (a as number)) bWon += 1;
     else pushes += 1;
   }
   const total_holes = holes.length;
@@ -450,6 +604,9 @@ function buildTeamGameState(input: GameInput): LiveMatchState | null {
       dormie_or_closed = "dormie";
     }
   }
+  const auto_presses = autoPress
+    ? liveAutoPressesForSegment(segHoleResults, input.game.stake_cents, input.game.name)
+    : [];
   return {
     game_id: input.game.id,
     game_name: input.game.name,
@@ -472,7 +629,8 @@ function buildTeamGameState(input: GameInput): LiveMatchState | null {
         a_total: aTotal,
         b_total: bTotal,
         remaining,
-        dormie_or_closed
+        dormie_or_closed,
+        auto_presses
       }
     ]
   };
@@ -516,4 +674,52 @@ export function fmtSegmentStatus(s: LiveSegment): string {
   if (diff === 0) return `Tied · ${s.holes_played} played`;
   const leader = diff > 0 ? s.side_a.label : s.side_b.label;
   return `${leader} −${Math.abs(diff)} · ${s.holes_played} played`;
+}
+
+/**
+ * Human-readable status line for a single live auto-press. Examples:
+ *   "Press 1 · opened hole 9 · Pat + Ben up 1 thru 2"
+ *   "Press 1 · opened hole 9 · tied thru 1"
+ *   "Press 1 · dormie · 1 to play"
+ *   "Press 1 · closed out · Pat + Ben 2 & 1"
+ *   "Press 1 · finished — Pat + Ben won 2-0"
+ *   "Press 1 · opened hole 12 · waiting on first scored hole"
+ */
+export function fmtAutoPressStatus(
+  p: LiveAutoPress,
+  sideALabel: string,
+  sideBLabel: string
+): string {
+  const head = `Press ${p.index} · opened hole ${p.trigger_hole}`;
+  // Settled (segment fully played within press window).
+  if (p.settled_delta != null && p.holes_played === p.total_holes) {
+    if (p.settled_delta === 0) {
+      return `Press ${p.index} · finished — tied`;
+    }
+    const winner = p.settled_delta > 0 ? sideALabel : sideBLabel;
+    const score =
+      p.settled_delta > 0
+        ? `${p.a_holes_won}-${p.b_holes_won}`
+        : `${p.b_holes_won}-${p.a_holes_won}`;
+    return `Press ${p.index} · finished — ${winner} won ${score}`;
+  }
+  if (p.dormie_or_closed === "closed_out_by_a") {
+    return `Press ${p.index} · ${sideALabel} closed out · ${Math.abs(p.a_up)} & ${p.remaining}`;
+  }
+  if (p.dormie_or_closed === "closed_out_by_b") {
+    return `Press ${p.index} · ${sideBLabel} closed out · ${Math.abs(p.a_up)} & ${p.remaining}`;
+  }
+  if (p.dormie_or_closed === "dormie") {
+    const leader = p.a_up > 0 ? sideALabel : sideBLabel;
+    return `Press ${p.index} · ${leader} dormie · ${p.remaining} to play`;
+  }
+  if (p.holes_played === 0) {
+    return `${head} · waiting on first scored hole`;
+  }
+  if (p.a_up === 0) {
+    return `${head} · tied thru ${p.holes_played}`;
+  }
+  const leader = p.a_up > 0 ? sideALabel : sideBLabel;
+  const margin = Math.abs(p.a_up);
+  return `${head} · ${leader} up ${margin} thru ${p.holes_played}`;
 }

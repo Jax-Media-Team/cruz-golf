@@ -12,6 +12,7 @@ import {
 import {
   buildLiveMatchState,
   fmtSegmentStatus,
+  fmtAutoPressStatus,
   type LiveMatchState
 } from "@/lib/games/live-state";
 import { Leaderboard, type LeaderboardTab } from "@/components/Leaderboard";
@@ -351,6 +352,36 @@ function MatchPanel({
                     <div className="mt-1 text-sm text-slate-900 font-medium">
                       {fmtSegmentStatus(seg)}
                     </div>
+                    {/* Live auto-press chain inside this segment. Each
+                        entry is its own mini-match opened when a side
+                        went 2 down with 3+ holes left. We show the
+                        same "up X thru Y" / "dormie" / "finished"
+                        language as the segment so players can read it
+                        without thinking. Settled presses dim. */}
+                    {seg.auto_presses.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {seg.auto_presses.map((p) => {
+                          const settled = p.settled_delta != null && p.holes_played === p.total_holes;
+                          return (
+                            <li
+                              key={`${liveState.game_id}-${idx}-press-${p.index}`}
+                              className={`text-xs ${
+                                settled ? "text-slate-500" : "text-amber-700"
+                              }`}
+                            >
+                              {!settled && (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 align-middle" />
+                              )}
+                              {fmtAutoPressStatus(
+                                p,
+                                seg.side_a.label,
+                                seg.side_b.label
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
                 ))}
               </div>

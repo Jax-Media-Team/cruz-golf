@@ -7,7 +7,11 @@
  * dormie/closed-out detection.
  */
 import { describe, it, expect } from "vitest";
-import { buildLiveMatchState, fmtSegmentStatus } from "@/lib/games/live-state";
+import {
+  buildLiveMatchState,
+  fmtSegmentStatus,
+  fmtAutoPressStatus
+} from "@/lib/games/live-state";
 import {
   makeGame,
   makeHoles,
@@ -388,6 +392,220 @@ describe("buildLiveMatchState: team game (best ball / aggregate / scramble)", ()
     expect(seg.b_holes_won).toBe(1);
     expect(seg.a_up).toBe(0);
     expect(fmtSegmentStatus(seg)).toBe("Tied thru 2");
+  });
+});
+
+describe("buildLiveMatchState: live auto-press visibility", () => {
+  const PARS18 = PARS;
+  const players4 = [
+    makePlayer({ id: "rp-pat", name: "Pat" }),
+    makePlayer({ id: "rp-ben", name: "Ben" }),
+    makePlayer({ id: "rp-mit", name: "Mit" }),
+    makePlayer({ id: "rp-kyl", name: "Kyl" })
+  ];
+  const holes = makeHoles(PARS18);
+
+  it("6-6-6 without presses config returns auto_presses=[] on every segment", () => {
+    const state = buildLiveMatchState(
+      makeInput({
+        game: makeGame({
+          game_type: "six_six_six",
+          name: "6-6-6",
+          config: { net: false, match_play: true }
+        }),
+        players: players4,
+        scores: [],
+        course: { holes, par: 72 }
+      })
+    );
+    for (const seg of state!.segments) {
+      expect(seg.auto_presses).toEqual([]);
+    }
+  });
+
+  it("6-6-6 with presses=auto_2_down: press fires when team goes 2 down mid-segment", () => {
+    // Seg 1 (Pat+Ben vs Mit+Kyl): Mit+Kyl birdies holes 1 and 2 → Mit+Kyl
+    // 2-up after hole 2 → press opens at hole 3 (B-direction).
+    // No further scoring → press is live, no holes played yet inside it.
+    const a = [4, 4, 4, 4, 4, 4, ...Array(12).fill(null) as any[]];
+    const b = [4, 4, 4, 4, 4, 4, ...Array(12).fill(null) as any[]];
+    const c = [3, 3, 4, 4, 4, 4, ...Array(12).fill(null) as any[]];
+    const d = [3, 3, 4, 4, 4, 4, ...Array(12).fill(null) as any[]];
+    const state = buildLiveMatchState(
+      makeInput({
+        game: makeGame({
+          game_type: "six_six_six",
+          stake_cents: 500,
+          config: { net: false, match_play: true, presses: "auto_2_down" }
+        }),
+        players: players4,
+        scores: [
+          ...a.map((g, i) => ({ round_player_id: "rp-pat", hole_number: i + 1, gross: g })),
+          ...b.map((g, i) => ({ round_player_id: "rp-ben", hole_number: i + 1, gross: g })),
+          ...c.map((g, i) => ({ round_player_id: "rp-mit", hole_number: i + 1, gross: g })),
+          ...d.map((g, i) => ({ round_player_id: "rp-kyl", hole_number: i + 1, gross: g }))
+        ],
+        course: { holes, par: 72 }
+      })
+    );
+    const seg1 = state!.segments[0];
+    expect(seg1.auto_presses).toHaveLength(1);
+    const press = seg1.auto_presses[0];
+    expect(press.index).toBe(1);
+    expect(press.trigger_hole).toBe(2);
+    expect(press.start_hole).toBe(3);
+    expect(press.end_hole).toBe(6);
+    // Holes 3-6 are pushes — press is tied with 0 remaining
+    expect(press.holes_played).toBe(4);
+    expect(press.remaining).toBe(0);
+    expect(press.a_up).toBe(0);
+    expect(press.settled_delta).toBe(0);
+  });
+
+  it("Nassau with presses=auto_2_down: front press fires at hole 3 trigger; back segment still empty", () => {
+    // Pat birdies holes 1+2, pars 3-6. Mit pars all 6.
+    // Hole 1: Pat 3 vs Mit 4 → A up 1.
+    // Hole 2: Pat 3 vs Mit 4 → A up 2 → press opens at hole 3.
+    // Holes 3-6: all pushes.
+    const players2 = [
+      makePlayer({ id: "rp-a", name: "Pat", team_id: "team-a" }),
+      makePlayer({ id: "rp-b", name: "Mit", team_id: "team-b" })
+    ];
+    const patScores = PARS18.slice(0, 6).map((p, i) => (i < 2 ? p - 1 : p));
+    const mitScores = PARS18.slice(0, 6);
+    const state = buildLiveMatchState(
+      makeInput({
+        game: makeGame({
+          game_type: "nassau",
+          name: "Nassau",
+          stake_cents: 1000,
+          config: { net: false, match_play: true, presses: "auto_2_down" }
+        }),
+        players: players2,
+        scores: [
+          ...patScores.map((g, i) => ({ round_player_id: "rp-a", hole_number: i + 1, gross: g })),
+          ...mitScores.map((g, i) => ({ round_player_id: "rp-b", hole_number: i + 1, gross: g }))
+        ],
+        course: { holes, par: 72 }
+      })
+    );
+    const front = state!.segments.find((s) => s.segment_label === "Nassau front")!;
+    expect(front.auto_presses).toHaveLength(1);
+    expect(front.auto_presses[0].trigger_hole).toBe(2);
+    expect(front.auto_presses[0].start_hole).toBe(3);
+    // Back hasn't started.
+    const back = state!.segments.find((s) => s.segment_label === "Nassau back")!;
+    expect(back.auto_presses).toEqual([]);
+  });
+
+  it("team match-play with presses=auto_2_down: press fires once side B falls 2 down", () => {
+    const players4Teams = [
+      makePlayer({ id: "rp-a1", name: "Pat", team_id: "team-a" }),
+      makePlayer({ id: "rp-a2", name: "Ben", team_id: "team-a" }),
+      makePlayer({ id: "rp-b1", name: "Mit", team_id: "team-b" }),
+      makePlayer({ id: "rp-b2", name: "Kyl", team_id: "team-b" })
+    ];
+    // Team A min wins holes 1+2 (3-4, 3-4).
+    const scores = makeScores({
+      "rp-a1": [3, 3, ...Array(16).fill(null) as any[]],
+      "rp-a2": [4, 4, ...Array(16).fill(null) as any[]],
+      "rp-b1": [4, 4, ...Array(16).fill(null) as any[]],
+      "rp-b2": [4, 4, ...Array(16).fill(null) as any[]]
+    });
+    const state = buildLiveMatchState(
+      makeInput({
+        game: makeGame({
+          game_type: "best_ball_gross",
+          name: "Best Ball",
+          stake_cents: 2000,
+          config: { match_play: true, presses: "auto_2_down" }
+        }),
+        players: players4Teams,
+        scores,
+        course: { holes, par: 72 }
+      })
+    );
+    const seg = state!.segments[0];
+    expect(seg.auto_presses).toHaveLength(1);
+    expect(seg.auto_presses[0].trigger_hole).toBe(2);
+    expect(seg.auto_presses[0].start_hole).toBe(3);
+  });
+
+  it("fmtAutoPressStatus produces readable status lines for each phase", () => {
+    // Live press, side A leading
+    const p1 = {
+      index: 1,
+      trigger_hole: 2,
+      start_hole: 3,
+      end_hole: 6,
+      total_holes: 4,
+      holes_played: 2,
+      remaining: 2,
+      a_holes_won: 1,
+      b_holes_won: 0,
+      pushes: 1,
+      a_up: 1,
+      dormie_or_closed: null,
+      settled_delta: null
+    } as const;
+    expect(fmtAutoPressStatus(p1, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · opened hole 2 · Pat + Ben up 1 thru 2"
+    );
+    // Tied
+    const p2 = { ...p1, a_holes_won: 0, pushes: 2, a_up: 0 } as const;
+    expect(fmtAutoPressStatus(p2, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · opened hole 2 · tied thru 2"
+    );
+    // Dormie
+    const p3 = {
+      ...p1,
+      holes_played: 2,
+      remaining: 2,
+      a_holes_won: 2,
+      pushes: 0,
+      a_up: 2,
+      dormie_or_closed: "dormie" as const
+    };
+    expect(fmtAutoPressStatus(p3, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · Pat + Ben dormie · 2 to play"
+    );
+    // Closed out by A
+    const p4 = { ...p1, holes_played: 3, remaining: 1, a_holes_won: 3, pushes: 0, a_up: 3, dormie_or_closed: "closed_out_by_a" as const };
+    expect(fmtAutoPressStatus(p4, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · Pat + Ben closed out · 3 & 1"
+    );
+    // Settled tied
+    const p5 = { ...p1, holes_played: 4, remaining: 0, a_up: 0, settled_delta: 0 };
+    expect(fmtAutoPressStatus(p5, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · finished — tied"
+    );
+    // Settled with B winning 2-0
+    const p6 = {
+      ...p1,
+      holes_played: 4,
+      remaining: 0,
+      a_holes_won: 0,
+      b_holes_won: 2,
+      pushes: 2,
+      a_up: -2,
+      dormie_or_closed: null,
+      settled_delta: -2
+    } as const;
+    expect(fmtAutoPressStatus(p6, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · finished — Mit + Kyl won 2-0"
+    );
+    // No holes played yet inside the press window
+    const p7 = {
+      ...p1,
+      holes_played: 0,
+      remaining: 4,
+      a_holes_won: 0,
+      pushes: 0,
+      a_up: 0
+    };
+    expect(fmtAutoPressStatus(p7, "Pat + Ben", "Mit + Kyl")).toBe(
+      "Press 1 · opened hole 2 · waiting on first scored hole"
+    );
   });
 });
 
