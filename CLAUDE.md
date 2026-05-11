@@ -8,10 +8,10 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `0da247a` — *feat(live-state): surface live auto-press chain on the round-view*
+- **Latest commit on main:** `7ebf922` — *feat(event-leaderboard): tied positions + rank-movement on the field board*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **446/446 passing across 29 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **468/468 passing across 30 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
 - **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation.
 
@@ -41,6 +41,20 @@ testing, OCR mobile UX, live match clarity. Shipped:
    dot + status line for each open press ("Press 1 · opened hole 2 ·
    Pat + Ben up 1 thru 2"), dimming settled presses. Wired for Nassau,
    6-6-6, and team_match game families.
+
+4. **Rank-movement indicators** (`72822fe`,
+   `lib/leaderboard-movement.ts` + `lib/use-row-movement.ts` + tests).
+   Both the round-level `<Leaderboard>` and `<EventLeaderboard>` now
+   surface ↑n / ↓n indicators next to a position when a player's rank
+   shifts. 6-second TTL, emerald-up / red-down, no animation beyond
+   opacity fade. First paint is always indicator-free (no baseline
+   means no signal). Reset on tab switch via `key={mode}`.
+
+5. **Event leaderboard tied positions** (`7ebf922`,
+   `rankWithTies()`). Two players at the same vs-par score now share a
+   position with a `T` prefix ("T1, T1, 3" instead of "1, 2, 3"). Pure
+   helper, six tests covering no-ties / 2-way / 3-way / empty / single
+   / object-keyFn cases.
 
 ### Highest priorities for next session
 
