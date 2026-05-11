@@ -9,6 +9,11 @@ import {
   type HoleResult,
   type ManualPress
 } from "@/lib/games/press";
+import {
+  buildLiveMatchState,
+  fmtSegmentStatus,
+  type LiveMatchState
+} from "@/lib/games/live-state";
 import { Leaderboard, type LeaderboardTab } from "@/components/Leaderboard";
 import type { CourseHole, RoundGame, RoundPlayer, Score } from "@/lib/types";
 
@@ -142,8 +147,16 @@ export function RoundView({
       alternateContent={
         tab === "skins" ? (
           <SkinsPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
-        ) : tab === "team" ? (
-          <TeamPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
+        ) : tab === "match" ? (
+          <MatchPanel
+            games={games}
+            players={players}
+            scores={scores}
+            holes={holes}
+            totalHoles={totalHoles}
+            startingHole={startingHole}
+            manualPresses={manualPresses}
+          />
         ) : tab === "bets" ? (
           <BetsPanel
             games={games}
@@ -216,13 +229,14 @@ function SkinsPanel({
   );
 }
 
-function TeamPanel({
+function MatchPanel({
   games,
   players,
   scores,
   holes,
   totalHoles,
-  startingHole
+  startingHole,
+  manualPresses = []
 }: {
   games: any[];
   players: RoundPlayer[];
@@ -230,55 +244,168 @@ function TeamPanel({
   holes: CourseHole[];
   totalHoles: 9 | 18;
   startingHole: number;
+  manualPresses?: RoundManualPress[];
 }) {
-  const teamGames = games.filter((g) =>
-    ["best_ball_gross", "best_ball_net", "aggregate_gross", "aggregate_net", "scramble_gross", "scramble_net", "six_six_six"].includes(String(g.game_type))
+  // Patrick's polish-phase finding: the old "Team" tab only listed
+  // cents deltas — it never showed the actual match state ("front:
+  // Pat+Ben up 1 thru 6"). That was the single biggest gameplay-
+  // clarity gap. The Match tab now surfaces live segment-by-segment
+  // state for every match-style game on the round, then shows the
+  // per-player cash deltas below as supporting context.
+  const matchGames = games.filter((g) =>
+    [
+      "nassau",
+      "match_play",
+      "six_six_six",
+      "best_ball_gross",
+      "best_ball_net",
+      "aggregate_gross",
+      "aggregate_net",
+      "scramble_gross",
+      "scramble_net"
+    ].includes(String(g.game_type))
   );
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
-  if (teamGames.length === 0)
-    return <div className="text-slate-500 text-sm py-8 text-center">No team game configured.</div>;
+  if (matchGames.length === 0)
+    return (
+      <div className="text-slate-500 text-sm py-8 text-center">
+        No match-style game on this round.
+        <br />
+        Add Nassau, 6-6-6, Best Ball, Aggregate, or Scramble to see live
+        match state here.
+      </div>
+    );
 
-  const fmt = (c: number) => (c >= 0 ? "+" : "−") + "$" + (Math.abs(c) / 100).toFixed(2);
+  const fmt = (c: number) =>
+    (c >= 0 ? "+" : "−") + "$" + (Math.abs(c) / 100).toFixed(2);
 
   return (
     <div className="space-y-4">
-      {teamGames.map((g) => {
-        const out = settleGame({
+      {matchGames.map((g) => {
+        const gameInput = {
           game: g as RoundGame,
           players,
           scores,
-          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }, totalHoles, startingHole
-        });
-        const rows = [...out.perPlayer.entries()].sort((a, b) => b[1].delta_cents - a[1].delta_cents);
+          course: { holes, par: holes.reduce((s, h) => s + h.par, 0) },
+          totalHoles,
+          startingHole
+        };
+        const out = settleGame(gameInput);
+        const liveState = buildLiveMatchState(gameInput);
+        const rows = [...out.perPlayer.entries()].sort(
+          (a, b) => b[1].delta_cents - a[1].delta_cents
+        );
+
+        // Accepted presses attached to this game (or round-level — no
+        // game_id). Pending presses are surfaced as a count hint so
+        // players know more money may move once accepted.
+        const acceptedPressesOnThisGame = manualPresses.filter(
+          (p) =>
+            p.status === "accepted" &&
+            ((p as any).game_id == null || (p as any).game_id === g.id)
+        );
+        const pendingPressesOnThisGame = manualPresses.filter(
+          (p) =>
+            p.status === "pending" &&
+            ((p as any).game_id == null || (p as any).game_id === g.id)
+        );
+
         return (
-          <div key={g.id} className="rounded-xl border border-slate-200 bg-white">
+          <div
+            key={g.id}
+            className="rounded-xl border border-slate-200 bg-white overflow-hidden"
+          >
+            {/* Game header */}
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
-              <span className="font-serif text-lg text-slate-900">{g.name}</span>
+              <span className="font-serif text-lg text-slate-900">
+                {g.name}
+              </span>
               <StatusPill status={out.status} />
             </div>
-            <ul className="divide-y divide-slate-100 text-sm">
-              {rows.map(([pid, v]) => (
-                <li key={pid} className="px-4 py-3 flex items-center justify-between">
-                  <span className="text-slate-700">{labelByPlayer.get(pid)}</span>
-                  <span
-                    className={`tabular-nums font-medium ${
-                      v.delta_cents > 0
-                        ? "text-emerald-700"
-                        : v.delta_cents < 0
-                        ? "text-red-600"
-                        : "text-slate-500"
-                    }`}
+
+            {/* Live segment-by-segment match state */}
+            {liveState && liveState.segments.length > 0 && (
+              <div className="divide-y divide-slate-100">
+                {liveState.segments.map((seg, idx) => (
+                  <div
+                    key={`${liveState.game_id}-${idx}`}
+                    className="px-4 py-3"
                   >
-                    {fmt(v.delta_cents)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {out.status === "live" && (
-              <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">
-                Updates as remaining holes are scored.
+                    <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                      <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                        {seg.segment_label}
+                      </div>
+                      <div className="text-[11px] text-slate-500 tabular-nums">
+                        {seg.holes_played}/{seg.total_holes}
+                      </div>
+                    </div>
+                    {/* For 6-6-6 + Nassau team play, show the team labels
+                        so the rotating partners are visible per segment. */}
+                    {liveState.variant === "six_six_six" && (
+                      <div className="mt-1 text-xs text-slate-600">
+                        {seg.side_a.label}{" "}
+                        <span className="text-slate-400">vs</span>{" "}
+                        {seg.side_b.label}
+                      </div>
+                    )}
+                    <div className="mt-1 text-sm text-slate-900 font-medium">
+                      {fmtSegmentStatus(seg)}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* Press context for this game — shows accepted + pending */}
+            {(acceptedPressesOnThisGame.length > 0 ||
+              pendingPressesOnThisGame.length > 0) && (
+              <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-600">
+                {acceptedPressesOnThisGame.length > 0 &&
+                  `${acceptedPressesOnThisGame.length} accepted press${acceptedPressesOnThisGame.length === 1 ? "" : "es"} in play`}
+                {acceptedPressesOnThisGame.length > 0 &&
+                  pendingPressesOnThisGame.length > 0 &&
+                  " · "}
+                {pendingPressesOnThisGame.length > 0 &&
+                  `${pendingPressesOnThisGame.length} pending`}
+              </div>
+            )}
+
+            {/* Per-player cash totals — supporting info, not the focus.
+                Collapsed visual weight (smaller text) below the
+                match-state which is now the primary read. */}
+            <details className="border-t border-slate-100">
+              <summary className="cursor-pointer px-4 py-2 text-[11px] uppercase tracking-wider text-slate-500 hover:bg-slate-50 select-none">
+                Per-player projected payouts
+              </summary>
+              <ul className="divide-y divide-slate-100 text-sm">
+                {rows.map(([pid, v]) => (
+                  <li
+                    key={pid}
+                    className="px-4 py-2 flex items-center justify-between"
+                  >
+                    <span className="text-slate-700">
+                      {labelByPlayer.get(pid)}
+                    </span>
+                    <span
+                      className={`tabular-nums font-medium ${
+                        v.delta_cents > 0
+                          ? "text-emerald-700"
+                          : v.delta_cents < 0
+                          ? "text-red-600"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {fmt(v.delta_cents)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {out.status === "live" && (
+                <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">
+                  Updates as remaining holes are scored.
+                </div>
+              )}
+            </details>
           </div>
         );
       })}

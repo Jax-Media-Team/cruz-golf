@@ -2,7 +2,7 @@
 import { BrandLockup } from "./BrandLockup";
 import type { LeaderboardRow } from "@/lib/scoring";
 
-export type LeaderboardTab = "gross" | "net" | "skins" | "team" | "bets";
+export type LeaderboardTab = "gross" | "net" | "skins" | "match" | "bets";
 
 type Props = {
   /** Course or round title shown under the header */
@@ -22,7 +22,12 @@ const TABS: Array<{ key: LeaderboardTab; label: string }> = [
   { key: "gross", label: "Gross" },
   { key: "net", label: "Net" },
   { key: "skins", label: "Skins" },
-  { key: "team", label: "Team" },
+  // "Match" covers Nassau (front/back/overall), 6-6-6 (3 segments),
+  // Best Ball / Aggregate / Scramble (team vs team match state). Was
+  // "Team" — renamed because Nassau can be 1v1 head-to-head and the
+  // user feedback was that the live match state was the biggest
+  // gameplay-clarity gap.
+  { key: "match", label: "Match" },
   { key: "bets", label: "Bets" }
 ];
 

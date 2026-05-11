@@ -112,7 +112,7 @@ export default function DemoRoundPage() {
                 </ul>
               )}
             </div>
-          ) : tab === "team" ? (
+          ) : tab === "match" ? (
             <div className="space-y-2">
               <div className="font-serif text-lg text-slate-900 mb-2">2-man Best Ball (Net)</div>
               <ul className="divide-y divide-slate-100 text-sm">
