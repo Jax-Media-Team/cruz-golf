@@ -69,7 +69,12 @@ export default async function ScoreEntryPage({
         status={round.status as any}
         page={`Score · ${(rp as any).players?.display_name ?? "Player"}`}
       />
-      <ScoreEntry roundId={id} rp={rp as any} existing={existing ?? []} />
+      <ScoreEntry
+        roundId={id}
+        rp={rp as any}
+        existing={existing ?? []}
+        roundStatus={round.status as any}
+      />
     </div>
   );
 }

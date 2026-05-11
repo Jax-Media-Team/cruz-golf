@@ -75,6 +75,7 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
         courseName={courseName}
         rps={(rps as any) ?? []}
         existing={existing ?? []}
+        roundStatus={round.status as any}
       />
     </div>
   );

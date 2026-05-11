@@ -9,11 +9,14 @@ import { SaveStatusBanner } from "@/components/SaveStatusBanner";
 export function ScoreEntry({
   roundId,
   rp,
-  existing
+  existing,
+  roundStatus = "live"
 }: {
   roundId: string;
   rp: any;
   existing: { hole_number: number; gross: number | null }[];
+  /** Eyebrow label only. Score writes are NOT gated here. */
+  roundStatus?: "draft" | "live" | "pending_finalization" | "finalized";
 }) {
   const holes = useMemo(
     () => (rp.course_tees?.course_holes ?? []).slice().sort((a: any, b: any) => a.hole_number - b.hole_number),
@@ -37,7 +40,13 @@ export function ScoreEntry({
     <div className="space-y-4">
       <header className="flex items-center justify-between gap-3">
         <Link href={`/rounds/${roundId}`} className="btn-ghost text-sm">← Back</Link>
-        <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">Live round</span>
+        <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">
+          {roundStatus === "draft"
+            ? "Draft round"
+            : roundStatus === "pending_finalization"
+            ? "Awaiting finalization"
+            : "Live round"}
+        </span>
       </header>
       <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
       <ScorePad

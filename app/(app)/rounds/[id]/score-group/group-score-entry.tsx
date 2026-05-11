@@ -23,12 +23,17 @@ export function GroupScoreEntry({
   roundId,
   courseName,
   rps,
-  existing
+  existing,
+  roundStatus = "live"
 }: {
   roundId: string;
   courseName: string;
   rps: RP[];
   existing: Existing[];
+  /** Used only for the eyebrow label. Score writes are NOT gated here —
+   *  every status except `finalized` (blocked at the page level) is
+   *  editable. Defaults to "live" for backward compat. */
+  roundStatus?: "draft" | "live" | "pending_finalization" | "finalized";
 }) {
   const router = useRouter();
   const saver = useScoreSaver({ roundId });
@@ -97,8 +102,26 @@ export function GroupScoreEntry({
       <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
 
       <div>
-        <p className="h-eyebrow text-gold-400">Live round</p>
+        <p className="h-eyebrow text-gold-400">
+          {roundStatus === "draft"
+            ? "Draft round"
+            : roundStatus === "pending_finalization"
+            ? "Awaiting finalization"
+            : "Live round"}
+        </p>
         <h1 className="h-display text-2xl text-cream-50 mt-1">{courseName}</h1>
+        {roundStatus === "draft" && (
+          <p className="text-[11px] text-cream-100/55 mt-1 leading-snug">
+            This round is still in draft. Scores save normally; flip it to
+            live when you&apos;re ready for it to appear on leaderboards.
+          </p>
+        )}
+        {roundStatus === "pending_finalization" && (
+          <p className="text-[11px] text-cream-100/55 mt-1 leading-snug">
+            Round is awaiting finalization. Still editable — fix any
+            scores here, then return to the round page to finalize.
+          </p>
+        )}
       </div>
 
       {/* Who's playing? */}
