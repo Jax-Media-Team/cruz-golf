@@ -8,10 +8,10 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `7ebf922` — *feat(event-leaderboard): tied positions + rank-movement on the field board*
+- **Latest commit on main:** `f28a8c2` — *fix(pwa): viewport-fit cover + drop maxScale lock + dedupe manifests*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **468/468 passing across 30 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **473/473 passing across 31 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
 - **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation.
 
@@ -55,6 +55,42 @@ testing, OCR mobile UX, live match clarity. Shipped:
    position with a `T` prefix ("T1, T1, 3" instead of "1, 2, 3"). Pure
    helper, six tests covering no-ties / 2-way / 3-way / empty / single
    / object-keyFn cases.
+
+6. **OCR P0 fix** (`8f13eac` + `79faab5`). Real-world card came back
+   "0 scores read" because gpt-4o was regurgitating the player list
+   we passed to it instead of doing pixel work. The diagnostic panel
+   showed the model returning "Patrick Cruz" verbatim when the card
+   had pencil "Cruz (5)". Fixes:
+   - Removed the player list from the OCR prompt entirely. The
+     application's bestMatch fuzzy matcher handles name disambiguation
+     downstream. Hard "no hallucinated names" rule in the prompt.
+   - Added `detail: "high"` so the API stops downsampling — fatal for
+     pencil handwriting on a paper card.
+   - `temperature: 0` for deterministic output.
+   - Auto-retry once when the first pass returns rows-but-no-scores
+     (the "model gave up" failure mode), with a higher temperature
+     and a focused addressing of the failure.
+   - Image thumbnail + Retry button in the diagnostics panel; new
+     debug fields (model, image bytes, called_at, attempts,
+     first_attempt_raw) for traceability.
+
+7. **PWA / iOS audit** (`f28a8c2`). Three issues caught from code:
+   `app/manifest.ts` collided with `public/manifest.webmanifest`
+   (deleted the dynamic route — the static one is more complete).
+   Added `viewport-fit: cover` so iPhones with notches don't
+   letterbox. Dropped `maximumScale: 1` (accessibility — pinch-zoom
+   now allowed). Synced theme color to `#0a1f1a` so PWA cold-start
+   doesn't flash to a different green. `docs/IPHONE_PWA_QA.md`
+   updated with a "Recently changed — re-install before testing"
+   section.
+
+8. **Historical event continuity roadmap** (`8f13eac`,
+   `docs/HISTORICAL_EVENT_CONTINUITY.md`). Defined the
+   `event_series` model + 5-phase rollout for "events have memory
+   over time" (annual Member-Guest, trip history, prior-year
+   champion on new event card, Ryder Cup–style cumulative). No
+   implementation yet — waiting for Patrick's go-ahead on which
+   series to seed first.
 
 ### Highest priorities for next session
 
