@@ -411,6 +411,7 @@ including the override-always-wins safety property.
 | 0037 | applied | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
 | 0038 | applied | The Plantation at Ponte Vedra Beach populated. 6 men's tees (Black 74.3/146, Blue 71.9/132, Green 70.0/126, Gold 67.7/119, Silver 63.9/113, Red 62.1/108), all yardage/par/SI verified from official scorecard (Arnold Palmer 1986, Letsche redesign 2016). Status=verified. Idempotent. |
 | 0039 | applied | Multi-group events Phase 1 schema. New `events` table (group_id, name, kind, dates, spectator_token, commissioner_profile_id, soft-delete via deleted_at). New `event_games` table (field-wide games). New `rounds.event_id` nullable FK. RLS in place + spectator-token read policy. Trigger for events.updated_at. No RPCs, no UI yet — Phase 2 builds those. Idempotent. See `docs/MULTI_GROUP_DESIGN.md` for full plan. |
+| 0040 | **awaiting your apply** | Event lifecycle RPCs with audit hooks. `fn_create_event(group_id, name, kind, starts_on, ends_on)` enforces commissioner role at DB layer + writes `event.create` audit row. `fn_archive_event(event_id)` soft-deletes + writes `event.archive`. `fn_restore_event(event_id)` reverses + writes `event.restore`. All SECURITY DEFINER, idempotent. The /events/new + /events/[id] UI is updated to call these RPCs (with fallback to direct insert for pre-0040 envs). |
 
 ---
 

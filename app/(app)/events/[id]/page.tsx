@@ -6,6 +6,7 @@ import { AddFoursomeButton } from "./add-foursome-button";
 import { EventLeaderboard } from "@/components/EventLeaderboard";
 import { EventSpectatorLink } from "./event-spectator-link";
 import { EventGamesSection } from "./event-games-section";
+import { EventArchiveButton } from "./event-archive-button";
 import type { EventRoundShape } from "@/lib/events/settle";
 
 export const dynamic = "force-dynamic";
@@ -169,6 +170,13 @@ export default async function EventHomePage({
           >
             ← Dashboard
           </Link>
+          {isCommissioner && (
+            <EventArchiveButton
+              eventId={id}
+              eventName={event.name}
+              isArchived={!!event.deleted_at}
+            />
+          )}
         </div>
       </header>
 

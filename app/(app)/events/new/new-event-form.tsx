@@ -59,27 +59,60 @@ export function NewEventForm({
     }
     setBusy(true);
     setErr(null);
-    const { data, error } = await sb
-      .from("events")
-      .insert({
-        group_id: groupId,
-        name: name.trim(),
-        kind,
-        starts_on: startsOn,
-        ends_on: endsOn || null,
-        commissioner_profile_id: userId
-      })
-      .select("id")
-      .single();
+    // Use fn_create_event RPC (migration 0040) so the create writes an
+    // audit-log row + the commissioner check happens at the DB layer.
+    // Falls back to direct insert if the RPC isn't available (pre-0040
+    // env), preserving working create flow.
+    let createdId: string | null = null;
+    try {
+      const { data, error } = await sb.rpc("fn_create_event", {
+        p_group_id: groupId,
+        p_name: name.trim(),
+        p_kind: kind,
+        p_starts_on: startsOn,
+        p_ends_on: endsOn || null
+      });
+      if (error) throw error;
+      createdId = (data as string | null) ?? null;
+    } catch (rpcErr: any) {
+      // If the RPC doesn't exist (pre-0040), fall through to direct insert.
+      if (
+        rpcErr?.code === "42883" ||
+        /function .* does not exist/i.test(rpcErr?.message ?? "")
+      ) {
+        const { data, error } = await sb
+          .from("events")
+          .insert({
+            group_id: groupId,
+            name: name.trim(),
+            kind,
+            starts_on: startsOn,
+            ends_on: endsOn || null,
+            commissioner_profile_id: userId
+          })
+          .select("id")
+          .single();
+        if (error || !data) {
+          setBusy(false);
+          setErr(
+            error?.message ??
+              "Couldn't create event — make sure you're a commissioner of the group."
+          );
+          return;
+        }
+        createdId = data.id;
+      } else {
+        setBusy(false);
+        setErr(rpcErr?.message ?? "Couldn't create event.");
+        return;
+      }
+    }
     setBusy(false);
-    if (error || !data) {
-      setErr(
-        error?.message ??
-          "Couldn't create event — make sure you're a commissioner of the group."
-      );
+    if (!createdId) {
+      setErr("Event was created but no id returned.");
       return;
     }
-    router.push(`/events/${data.id}`);
+    router.push(`/events/${createdId}`);
   }
 
   return (
