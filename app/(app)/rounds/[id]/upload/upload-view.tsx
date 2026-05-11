@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { bestMatch } from "@/lib/ocr/name-match";
 
 type Card = {
   id: string;
@@ -65,6 +66,21 @@ export function UploadView({
     }))
   );
   const [existingByPlayer, setExistingByPlayer] = useState<Record<string, Set<number>>>({});
+  // OCR rows we couldn't auto-match to a round player. Surfaced as a
+  // "Map these rows" panel — the user picks the right player from a
+  // dropdown and the scores merge into the grid. This was the major
+  // dead-end before: rows that didn't fuzzy-match were silently
+  // dropped, so a card with "Pat" couldn't reach "Patrick Cruz".
+  type UnmatchedRow = {
+    id: string;
+    ocr_name: string;
+    scores: Array<number | null>;
+    /** Suggested round_player_id from bestMatch (may be null). */
+    suggested_rp_id: string | null;
+    suggested_score: number; // bestMatch score, 0-100
+    filename: string;
+  };
+  const [unmatched, setUnmatched] = useState<UnmatchedRow[]>([]);
 
   // Pull existing scores once on mount so we can warn if uploads would overwrite.
   useEffect(() => {
@@ -141,14 +157,28 @@ export function UploadView({
                 : c
             )
           );
-          // Merge into grid: for each parsed row, find best-matching existing
-          // grid row by fuzzy name match. Per-cell overwrite if the OCR cell
-          // has a value. Source tracking: cells from OCR are marked so the
-          // grid can highlight them for review.
+          // Merge into grid: for each parsed row, find the best-
+          // scoring matching player via bestMatch (handles
+          // initials, comma-reversed names, nickname → full-name,
+          // etc.). Per-cell overwrite if the OCR cell has a value.
+          // Unmatched rows (no candidate scored > 0) go into the
+          // `unmatched` list with a "Map to:" dropdown — the user
+          // resolves them manually instead of losing the scores.
+          const roundPlayerCandidates = players.map((p) => ({
+            round_player_id: p.round_player_id,
+            name: p.name
+          }));
+          const matchAssignments = new Map<string, number>(); // rp_id → row index
+          rows.forEach((row, rowIdx) => {
+            const best = bestMatch(row.name, roundPlayerCandidates);
+            if (best) matchAssignments.set(best.round_player_id, rowIdx);
+          });
+
           setGrid((prev) =>
             prev.map((row) => {
-              const match = rows.find((x) => fuzzyMatch(x.name, row.name));
-              if (!match) return row;
+              const matchedIdx = matchAssignments.get(row.round_player_id);
+              if (matchedIdx == null) return row;
+              const match = rows[matchedIdx];
               const nextScores = row.scores.map((existing, idx) => {
                 const ocrVal = match.scores[idx] ?? null;
                 return ocrVal != null ? ocrVal : existing;
@@ -169,6 +199,28 @@ export function UploadView({
               };
             })
           );
+
+          // Track unmatched rows for manual mapping. Skip rows that
+          // have zero scores AND no name (pure noise).
+          const matchedRowIndexes = new Set(matchAssignments.values());
+          const newUnmatched: UnmatchedRow[] = [];
+          rows.forEach((row, idx) => {
+            if (matchedRowIndexes.has(idx)) return;
+            const scoreCount = row.scores.filter((s) => s != null).length;
+            if (!row.name && scoreCount === 0) return;
+            const best = bestMatch(row.name, roundPlayerCandidates);
+            newUnmatched.push({
+              id: `${cardId}-${idx}`,
+              ocr_name: row.name || `Row ${idx + 1}`,
+              scores: row.scores,
+              suggested_rp_id: best?.round_player_id ?? null,
+              suggested_score: best?.score ?? 0,
+              filename: file.name
+            });
+          });
+          if (newUnmatched.length > 0) {
+            setUnmatched((prev) => [...prev, ...newUnmatched]);
+          }
         } catch (e: any) {
           setCards((prev) =>
             prev.map((c) => (c.id === cardId ? { ...c, status: "failed", err: e?.message ?? "OCR failed" } : c))
@@ -353,6 +405,129 @@ export function UploadView({
         </div>
       )}
 
+      {unmatched.length > 0 && (
+        <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
+          <div>
+            <p className="h-eyebrow text-amber-300">
+              Map {unmatched.length} row
+              {unmatched.length === 1 ? "" : "s"} to players
+            </p>
+            <p className="text-xs text-cream-100/75 mt-1 leading-snug">
+              The scorecard had these names that didn&apos;t auto-match.
+              Pick the right player and the scores will merge into the
+              grid below. Skip a row to drop it.
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {unmatched.map((u) => {
+              const scoredCells = u.scores.filter((s) => s != null).length;
+              return (
+                <li
+                  key={u.id}
+                  className="rounded-xl border border-cream-100/12 bg-brand-900/30 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="font-medium text-cream-50 text-sm truncate">
+                        &ldquo;{u.ocr_name}&rdquo;
+                      </div>
+                      <p className="text-[11px] text-cream-100/55 mt-0.5">
+                        {scoredCells} score
+                        {scoredCells === 1 ? "" : "s"} parsed · from{" "}
+                        {u.filename}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                      <select
+                        className="input text-sm"
+                        value={u.suggested_rp_id ?? ""}
+                        onChange={(e) => {
+                          const rpId = e.target.value;
+                          setUnmatched((prev) =>
+                            prev.map((row) =>
+                              row.id === u.id
+                                ? { ...row, suggested_rp_id: rpId || null }
+                                : row
+                            )
+                          );
+                        }}
+                      >
+                        <option value="">— pick player —</option>
+                        {players.map((p) => (
+                          <option key={p.round_player_id} value={p.round_player_id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-primary text-xs"
+                        disabled={!u.suggested_rp_id}
+                        onClick={() => {
+                          if (!u.suggested_rp_id) return;
+                          // Merge this row's scores into the target
+                          // grid row.
+                          setGrid((prev) =>
+                            prev.map((row) => {
+                              if (row.round_player_id !== u.suggested_rp_id)
+                                return row;
+                              const nextScores = row.scores.map((existing, idx) => {
+                                const ocrVal = u.scores[idx] ?? null;
+                                return ocrVal != null ? ocrVal : existing;
+                              });
+                              const nextSources = row.sources.map(
+                                (existingSrc, idx) => {
+                                  const ocrVal = u.scores[idx] ?? null;
+                                  if (ocrVal != null) return "ocr" as CellSource;
+                                  return existingSrc;
+                                }
+                              );
+                              const sources = row.source_filenames.includes(u.filename)
+                                ? row.source_filenames
+                                : [...row.source_filenames, u.filename];
+                              return {
+                                ...row,
+                                scores: nextScores,
+                                sources: nextSources,
+                                source_filenames: sources
+                              };
+                            })
+                          );
+                          // Remove the unmatched row from the list.
+                          setUnmatched((prev) =>
+                            prev.filter((row) => row.id !== u.id)
+                          );
+                        }}
+                      >
+                        Merge
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost text-xs text-cream-100/55"
+                        onClick={() =>
+                          setUnmatched((prev) =>
+                            prev.filter((row) => row.id !== u.id)
+                          )
+                        }
+                        title="Drop this row — its scores won't be saved"
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  </div>
+                  {u.suggested_rp_id && u.suggested_score > 0 && (
+                    <p className="text-[11px] text-cream-100/55 mt-1.5">
+                      Suggested above based on name match (
+                      {u.suggested_score}% confidence).
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <div className="card p-2 overflow-x-auto">
         <table className="text-sm">
           <thead>
@@ -448,10 +623,5 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-function fuzzyMatch(a: string, b: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const na = norm(a);
-  const nb = norm(b);
-  if (!na || !nb) return false;
-  return na === nb || na.startsWith(nb) || nb.startsWith(na) || na.includes(nb) || nb.includes(na);
-}
+// fuzzy name matching lives in lib/ocr/name-match.ts (testable in
+// isolation). Use bestMatch / fuzzyMatchScore there for any new code.

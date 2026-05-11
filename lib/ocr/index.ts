@@ -19,10 +19,30 @@ const SYSTEM_PROMPT = `You read photos of paper golf scorecards. You will be giv
 - the number of holes (9 or 18)
 
 Return ONLY JSON with this shape (no prose, no markdown fences):
-{ "players": [ { "name": "<one of the provided names>", "scores": [n1, n2, ...] } ] }
+{ "players": [ { "name": "<exactly as it appears on the card>", "scores": [n1, n2, ...] } ] }
 
-You MUST return the gross score per hole. Real-world scorecards use
-several notations — be aggressive about extracting the gross:
+IMPORTANT: extracting scores is your primary job. Return scores even when
+the name doesn't match the provided list — the application has a manual
+mapping step. Returning [null, null, ...] for every cell because you're
+"unsure" wastes the upload. Read what's actually written.
+
+ROW IDENTIFICATION (don't drop rows):
+- Return one entry per HANDWRITTEN SCORE ROW on the card. If you see 4
+  rows of numbers, return 4 entries.
+- For "name", return the literal text written in that row's leftmost
+  cell. Examples: "Pat", "P. Cruz", "Patrick C", "Cruz, P". Do not
+  reformat or normalize. If the row's name cell is blank, use "Row 1",
+  "Row 2", etc.
+- Do NOT drop a row just because its name doesn't match the provided
+  list — the user maps it themselves.
+
+NUMBERS NEAR NAMES — these are NOT hole scores:
+- Handicap index (e.g. "12.3"), course handicap (e.g. "14"), cart
+  number, starting hole, "guest", a dollar amount — all common cells
+  immediately right of the name. Skip them.
+- Hole scores live UNDER the hole-number column headers (1, 2, ... 18).
+  Use the column headers to align cells. If a number is in a column
+  WITHOUT a hole-number header above it, it's not a score.
 
 GROSS-VS-NET NOTATIONS — always return the GROSS:
 - "5/4" or "5 / 4" — the LEFT number (5) is gross, right (4) is net. Return 5.
@@ -50,20 +70,22 @@ LAYOUT — handle scorecard structure:
   each hole's score). Use the row labeled with the player's name only.
 
 CONFIDENCE & UNCERTAINTY:
-- The scores array length MUST equal the number of holes (return null for cells you can't read).
-- Use null ONLY when the cell is genuinely blank, smudged beyond recognition,
-  or has multiple equally-plausible interpretations.
-- If a digit is hand-written but legible (even sloppily), READ IT. Players
-  fix typos themselves in the review screen. Returning a best-effort number
-  is more useful than null.
-- Common golf scores are 2-8. If your best read is "11" or "0", it's almost
-  certainly wrong — return null.
+- The scores array length MUST equal the number of holes.
+- Use null ONLY when the cell is genuinely blank or smudged beyond
+  recognition.
+- If a digit is hand-written but legible (even sloppily), READ IT. The
+  user fixes typos themselves in the review screen. Returning a
+  best-effort number is more useful than null.
+- Common golf scores are 2-8. If your best read is "11" or "0", it's
+  almost certainly wrong — return null.
+- If the entire scorecard is unreadable to you, return an empty
+  players array, NOT 4 entries with all-null scores.
 
-ROW MATCHING:
-- Match each row to the closest provided name; first names + last initial are
-  common. If multiple players share a first name, use surrounding hole-count
-  cues from the row to disambiguate.
-- If you can't match a row to any provided name, omit it.
+NAME FIDELITY:
+- Return the literal name text from the card. The application
+  fuzzy-matches "Pat" → "Patrick Cruz" and "P. Cruz" → "Patrick Cruz"
+  on its own. Your job is just to faithfully transcribe what's on the
+  card.
 `;
 
 export const openAIVisionOCR: ScorecardOCR = {
