@@ -10,6 +10,15 @@ import { retry } from "../retry";
 export interface ScorecardOCR {
   parse(input: { dataUrl: string; players: string[]; holes: 9 | 18 }): Promise<{
     players: Array<{ name: string; scores: Array<number | null> }>;
+    /** Diagnostic payload — raw text the model returned + any
+     *  pre-coerce shape inspection. Returned to the client so the
+     *  upload UI can surface "where did scores get lost?" when the
+     *  parsed grid comes back empty. Not persisted server-side. */
+    _debug?: {
+      raw_text: string;
+      pre_coerce: any;
+      post_coerce: any;
+    };
   }>;
 }
 
@@ -92,7 +101,17 @@ export const openAIVisionOCR: ScorecardOCR = {
   async parse({ dataUrl, players, holes }) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return { players: players.map((n) => ({ name: n, scores: new Array(holes).fill(null) })) };
+      return {
+        players: players.map((n) => ({
+          name: n,
+          scores: new Array(holes).fill(null)
+        })),
+        _debug: {
+          raw_text: "OPENAI_API_KEY is not set — OCR is a no-op.",
+          pre_coerce: null,
+          post_coerce: null
+        }
+      };
     }
     const body = {
       model: "gpt-4o",
@@ -126,17 +145,38 @@ export const openAIVisionOCR: ScorecardOCR = {
     try {
       parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch {
-      throw new Error("OCR returned malformed JSON");
+      // Surface the unparseable text up to the UI so we can see what
+      // the model actually returned (e.g. wrapping JSON in code fences).
+      return {
+        players: [],
+        _debug: {
+          raw_text: typeof raw === "string" ? raw : JSON.stringify(raw),
+          pre_coerce: null,
+          post_coerce: null
+        }
+      };
     }
-    // Coerce to expected shape.
+    // Coerce to expected shape. Track per-row rejection reasons so the
+    // diagnostics UI can show "row dropped because scores array had
+    // wrong length" etc.
+    const preCoerce = parsed;
     const out = (parsed?.players ?? []).map((p: any) => ({
       name: String(p?.name ?? ""),
       scores: Array.from({ length: holes }, (_, i) => {
         const v = p?.scores?.[i];
-        return typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null;
+        return typeof v === "number" && Number.isFinite(v)
+          ? Math.round(v)
+          : null;
       })
     }));
-    return { players: out };
+    return {
+      players: out,
+      _debug: {
+        raw_text: typeof raw === "string" ? raw : JSON.stringify(raw),
+        pre_coerce: preCoerce,
+        post_coerce: out
+      }
+    };
   }
 };
 

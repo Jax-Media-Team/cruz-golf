@@ -15,6 +15,24 @@ type Card = {
   score_count?: number;
   /** Total cells the card SHOULD have (rows × holes). */
   cells_total?: number;
+  /** Diagnostics from the OCR endpoint (raw model text + pre/post
+   *  coerce shapes). Surfaced in a collapsible panel for "where did
+   *  the scores get lost" debugging. */
+  debug?: {
+    raw_text: string;
+    pre_coerce: any;
+    post_coerce: any;
+  };
+  /** Per-row outcome captured during the merge step — what the score
+   *  count was, who it matched, why it was dropped if unmatched.
+   *  Used by the diagnostics panel so failure modes are legible. */
+  row_outcomes?: Array<{
+    ocr_name: string;
+    scores_parsed: number;
+    matched_to: string | null;
+    match_score: number;
+    outcome: "merged" | "unmatched_panel" | "dropped_no_name_no_scores";
+  }>;
 };
 
 type CellSource = "db" | "ocr" | "manual" | null;
@@ -150,10 +168,15 @@ export function UploadView({
             0
           );
           const cells_total = rows.length * holes;
+          // Capture diagnostics (raw model text + pre/post coerce) so
+          // the UI can surface "where did scores get lost?" when the
+          // grid comes back empty. The API returns _debug on every
+          // call; we just stash it on the card row.
+          const debug = (j._debug ?? undefined) as Card["debug"];
           setCards((prev) =>
             prev.map((c) =>
               c.id === cardId
-                ? { ...c, status: "parsed", rows, score_count, cells_total }
+                ? { ...c, status: "parsed", rows, score_count, cells_total, debug }
                 : c
             )
           );
@@ -202,13 +225,55 @@ export function UploadView({
 
           // Track unmatched rows for manual mapping. Skip rows that
           // have zero scores AND no name (pure noise).
+          // Also build the per-row outcome list for the diagnostics
+          // panel — every row that went through the pipeline gets one
+          // entry so "where did the scores go" is answerable per row.
           const matchedRowIndexes = new Set(matchAssignments.values());
           const newUnmatched: UnmatchedRow[] = [];
+          const rowOutcomes: NonNullable<Card["row_outcomes"]> = [];
           rows.forEach((row, idx) => {
-            if (matchedRowIndexes.has(idx)) return;
             const scoreCount = row.scores.filter((s) => s != null).length;
-            if (!row.name && scoreCount === 0) return;
             const best = bestMatch(row.name, roundPlayerCandidates);
+
+            if (matchedRowIndexes.has(idx)) {
+              // Find which round_player_id this row was assigned to
+              // (the inverse of matchAssignments).
+              let matchedRpId: string | null = null;
+              for (const [rpId, assignedIdx] of matchAssignments) {
+                if (assignedIdx === idx) {
+                  matchedRpId = rpId;
+                  break;
+                }
+              }
+              const matchedRp = players.find(
+                (p) => p.round_player_id === matchedRpId
+              );
+              rowOutcomes.push({
+                ocr_name: row.name || `Row ${idx + 1}`,
+                scores_parsed: scoreCount,
+                matched_to: matchedRp?.name ?? null,
+                match_score: best?.score ?? 0,
+                outcome: "merged"
+              });
+              return;
+            }
+            if (!row.name && scoreCount === 0) {
+              rowOutcomes.push({
+                ocr_name: row.name || `Row ${idx + 1}`,
+                scores_parsed: 0,
+                matched_to: null,
+                match_score: 0,
+                outcome: "dropped_no_name_no_scores"
+              });
+              return;
+            }
+            rowOutcomes.push({
+              ocr_name: row.name || `Row ${idx + 1}`,
+              scores_parsed: scoreCount,
+              matched_to: null,
+              match_score: best?.score ?? 0,
+              outcome: "unmatched_panel"
+            });
             newUnmatched.push({
               id: `${cardId}-${idx}`,
               ocr_name: row.name || `Row ${idx + 1}`,
@@ -221,6 +286,13 @@ export function UploadView({
           if (newUnmatched.length > 0) {
             setUnmatched((prev) => [...prev, ...newUnmatched]);
           }
+          // Stash the per-row outcomes on the card so the diagnostics
+          // panel can render them.
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === cardId ? { ...c, row_outcomes: rowOutcomes } : c
+            )
+          );
         } catch (e: any) {
           setCards((prev) =>
             prev.map((c) => (c.id === cardId ? { ...c, status: "failed", err: e?.message ?? "OCR failed" } : c))
@@ -356,32 +428,101 @@ export function UploadView({
         {cards.length > 0 && (
           <ul className="text-xs space-y-1.5">
             {cards.map((c) => (
-              <li key={c.id} className="flex items-center justify-between gap-3">
-                <span className="text-cream-100/85 truncate">{c.filename}</span>
-                <span
-                  className={
-                    c.status === "uploading"
-                      ? "text-cream-100/55"
+              <li key={c.id} className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-cream-100/85 truncate">{c.filename}</span>
+                  <span
+                    className={
+                      c.status === "uploading"
+                        ? "text-cream-100/55"
+                        : c.status === "failed"
+                        ? "text-red-300"
+                        : "text-emerald-300"
+                    }
+                  >
+                    {c.status === "uploading"
+                      ? "OCR in progress…"
                       : c.status === "failed"
-                      ? "text-red-300"
-                      : "text-emerald-300"
-                  }
-                >
-                  {c.status === "uploading"
-                    ? "OCR in progress…"
-                    : c.status === "failed"
-                    ? `Failed: ${c.err ?? ""}`
-                    : (() => {
-                        const players = c.rows?.length ?? 0;
-                        const cells = c.score_count ?? 0;
-                        const cellsTotal = c.cells_total ?? 0;
-                        if (cells === 0) {
-                          return `Parsed ${players} player${players === 1 ? "" : "s"} · no scores read — fill in below`;
-                        }
-                        const pct = cellsTotal > 0 ? Math.round((cells / cellsTotal) * 100) : 0;
-                        return `Read ${cells} of ${cellsTotal} cells (${pct}%) · review highlighted cells`;
-                      })()}
-                </span>
+                      ? `Failed: ${c.err ?? ""}`
+                      : (() => {
+                          const players = c.rows?.length ?? 0;
+                          const cells = c.score_count ?? 0;
+                          const cellsTotal = c.cells_total ?? 0;
+                          if (cells === 0) {
+                            return `Parsed ${players} player${players === 1 ? "" : "s"} · no scores read — see diagnostics`;
+                          }
+                          const pct = cellsTotal > 0 ? Math.round((cells / cellsTotal) * 100) : 0;
+                          return `Read ${cells} of ${cellsTotal} cells (${pct}%) · review highlighted cells`;
+                        })()}
+                  </span>
+                </div>
+                {/* Diagnostics — collapsible per-card. Patrick asked
+                    to see EXACTLY where scores get lost. We expose:
+                    1) per-row outcomes (merged / mapping panel /
+                       dropped), with match score
+                    2) the raw model text — so a "model returned
+                       all nulls" failure is legible
+                    Always shown for parsed/failed cards; the
+                    diagnostics state is captured on every OCR call.
+                */}
+                {(c.status === "parsed" || c.status === "failed") &&
+                  (c.row_outcomes || c.debug) && (
+                    <details className="text-[11px] text-cream-100/65 pl-3 border-l border-cream-100/10">
+                      <summary className="cursor-pointer hover:text-cream-100/85 select-none">
+                        Diagnostics — what the OCR saw
+                      </summary>
+                      <div className="mt-2 space-y-2 pl-2">
+                        {c.row_outcomes && c.row_outcomes.length > 0 && (
+                          <div>
+                            <p className="font-medium text-cream-100/75">
+                              Per-row outcome ({c.row_outcomes.length})
+                            </p>
+                            <ul className="space-y-1 mt-1">
+                              {c.row_outcomes.map((o, i) => {
+                                const tone =
+                                  o.outcome === "merged"
+                                    ? "text-emerald-300"
+                                    : o.outcome === "unmatched_panel"
+                                    ? "text-amber-300"
+                                    : "text-cream-100/45";
+                                return (
+                                  <li
+                                    key={i}
+                                    className="flex items-start justify-between gap-2"
+                                  >
+                                    <span className="font-mono truncate">
+                                      &ldquo;{o.ocr_name}&rdquo;
+                                    </span>
+                                    <span className={`shrink-0 ${tone}`}>
+                                      {o.scores_parsed} score
+                                      {o.scores_parsed === 1 ? "" : "s"} ·{" "}
+                                      {o.outcome === "merged"
+                                        ? `→ ${o.matched_to} (${o.match_score}%)`
+                                        : o.outcome === "unmatched_panel"
+                                        ? o.match_score > 0
+                                          ? `mapping (${o.match_score}% best)`
+                                          : "mapping (no suggestion)"
+                                        : "dropped — empty row"}
+                                    </span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                        {c.debug?.raw_text && (
+                          <details className="text-[10px] font-mono">
+                            <summary className="cursor-pointer hover:text-cream-100/85">
+                              Raw model output
+                            </summary>
+                            <pre className="mt-1 whitespace-pre-wrap break-all text-cream-100/55 max-h-48 overflow-auto">
+                              {c.debug.raw_text}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    </details>
+                  )}
               </li>
             ))}
           </ul>
@@ -407,16 +548,68 @@ export function UploadView({
 
       {unmatched.length > 0 && (
         <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
-          <div>
-            <p className="h-eyebrow text-amber-300">
-              Map {unmatched.length} row
-              {unmatched.length === 1 ? "" : "s"} to players
-            </p>
-            <p className="text-xs text-cream-100/75 mt-1 leading-snug">
-              The scorecard had these names that didn&apos;t auto-match.
-              Pick the right player and the scores will merge into the
-              grid below. Skip a row to drop it.
-            </p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="h-eyebrow text-amber-300">
+                Map {unmatched.length} row
+                {unmatched.length === 1 ? "" : "s"} to players
+              </p>
+              <p className="text-xs text-cream-100/75 mt-1 leading-snug">
+                The scorecard had these names that didn&apos;t auto-match.
+                Pick the right player and the scores will merge into the
+                grid below. Skip a row to drop it.
+              </p>
+            </div>
+            {unmatched.some((u) => u.suggested_rp_id) && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Merge every row that has a suggested player. Rows
+                  // without a suggestion stay in the panel for manual
+                  // mapping. Useful when the user just wants to
+                  // accept all the bestMatch picks at once.
+                  const toMerge = unmatched.filter(
+                    (u) => u.suggested_rp_id
+                  );
+                  if (toMerge.length === 0) return;
+                  setGrid((prev) =>
+                    prev.map((row) => {
+                      const match = toMerge.find(
+                        (u) => u.suggested_rp_id === row.round_player_id
+                      );
+                      if (!match) return row;
+                      const nextScores = row.scores.map((existing, idx) => {
+                        const ocrVal = match.scores[idx] ?? null;
+                        return ocrVal != null ? ocrVal : existing;
+                      });
+                      const nextSources = row.sources.map(
+                        (existingSrc, idx) => {
+                          const ocrVal = match.scores[idx] ?? null;
+                          if (ocrVal != null) return "ocr" as CellSource;
+                          return existingSrc;
+                        }
+                      );
+                      const sources = row.source_filenames.includes(match.filename)
+                        ? row.source_filenames
+                        : [...row.source_filenames, match.filename];
+                      return {
+                        ...row,
+                        scores: nextScores,
+                        sources: nextSources,
+                        source_filenames: sources
+                      };
+                    })
+                  );
+                  setUnmatched((prev) =>
+                    prev.filter((u) => !u.suggested_rp_id)
+                  );
+                }}
+                className="btn-secondary text-xs shrink-0"
+                title="Apply all suggested matches in one tap"
+              >
+                Merge all suggested
+              </button>
+            )}
           </div>
           <ul className="space-y-2">
             {unmatched.map((u) => {
@@ -424,10 +617,11 @@ export function UploadView({
               return (
                 <li
                   key={u.id}
-                  className="rounded-xl border border-cream-100/12 bg-brand-900/30 p-3"
+                  className="rounded-xl border border-cream-100/12 bg-brand-900/30 p-3 space-y-2"
                 >
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
+                  {/* Top row: OCR name + meta. Always full-width. */}
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-cream-50 text-sm truncate">
                         &ldquo;{u.ocr_name}&rdquo;
                       </div>
@@ -437,36 +631,45 @@ export function UploadView({
                         {u.filename}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap shrink-0">
-                      <select
-                        className="input text-sm"
-                        value={u.suggested_rp_id ?? ""}
-                        onChange={(e) => {
-                          const rpId = e.target.value;
-                          setUnmatched((prev) =>
-                            prev.map((row) =>
-                              row.id === u.id
-                                ? { ...row, suggested_rp_id: rpId || null }
-                                : row
-                            )
-                          );
-                        }}
-                      >
-                        <option value="">— pick player —</option>
-                        {players.map((p) => (
-                          <option key={p.round_player_id} value={p.round_player_id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                    {u.suggested_rp_id && u.suggested_score > 0 && (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/30 shrink-0">
+                        {u.suggested_score}% match
+                      </span>
+                    )}
+                  </div>
+                  {/* Action row: full-width select on mobile, inline
+                      on sm+. Buttons sit below so they don't pinch the
+                      select into a tiny touch target. */}
+                  <div className="flex items-stretch gap-2 flex-col sm:flex-row">
+                    <select
+                      className="input text-sm flex-1 min-w-0"
+                      value={u.suggested_rp_id ?? ""}
+                      onChange={(e) => {
+                        const rpId = e.target.value;
+                        setUnmatched((prev) =>
+                          prev.map((row) =>
+                            row.id === u.id
+                              ? { ...row, suggested_rp_id: rpId || null }
+                              : row
+                          )
+                        );
+                      }}
+                      aria-label="Map this row to a player"
+                    >
+                      <option value="">— pick player —</option>
+                      {players.map((p) => (
+                        <option key={p.round_player_id} value={p.round_player_id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2 shrink-0">
                       <button
                         type="button"
-                        className="btn-primary text-xs"
+                        className="btn-primary text-xs flex-1 sm:flex-none"
                         disabled={!u.suggested_rp_id}
                         onClick={() => {
                           if (!u.suggested_rp_id) return;
-                          // Merge this row's scores into the target
-                          // grid row.
                           setGrid((prev) =>
                             prev.map((row) => {
                               if (row.round_player_id !== u.suggested_rp_id)
@@ -493,17 +696,16 @@ export function UploadView({
                               };
                             })
                           );
-                          // Remove the unmatched row from the list.
                           setUnmatched((prev) =>
                             prev.filter((row) => row.id !== u.id)
                           );
                         }}
                       >
-                        Merge
+                        Merge →
                       </button>
                       <button
                         type="button"
-                        className="btn-ghost text-xs text-cream-100/55"
+                        className="btn-ghost text-xs text-cream-100/55 flex-1 sm:flex-none"
                         onClick={() =>
                           setUnmatched((prev) =>
                             prev.filter((row) => row.id !== u.id)
@@ -515,12 +717,6 @@ export function UploadView({
                       </button>
                     </div>
                   </div>
-                  {u.suggested_rp_id && u.suggested_score > 0 && (
-                    <p className="text-[11px] text-cream-100/55 mt-1.5">
-                      Suggested above based on name match (
-                      {u.suggested_score}% confidence).
-                    </p>
-                  )}
                 </li>
               );
             })}
