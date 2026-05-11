@@ -133,6 +133,102 @@ export default async function AdminOverview() {
     /* pre-0035 — table missing */
   }
 
+  // Stale live rounds — rounds in status="live" with no score write in
+  // the last 24h. These are the abandoned-round cases that clutter the
+  // admin "live" view over time. We surface them as a "needs attention"
+  // list so an admin can archive (soft-delete) or finalize them,
+  // depending on whether scoring actually happened. CLAUDE.md is
+  // explicit: NO time-driven auto-transitions. Admin acts manually.
+  type StaleRound = {
+    id: string;
+    date: string;
+    group_id: string | null;
+    course_name: string | null;
+    group_name: string | null;
+    last_score_at: string | null;
+    hours_since_last_score: number | null;
+    total_scores: number;
+  };
+  let staleRounds: StaleRound[] = [];
+  try {
+    const { data: liveRows } = await sb
+      .from("rounds")
+      .select(
+        "id, date, group_id, course_id, courses(name), groups(name)"
+      )
+      .eq("status", "live")
+      .is("deleted_at", null)
+      .order("date", { ascending: true });
+    const liveIdMap = new Map<string, any>();
+    for (const r of (liveRows as any[]) ?? []) liveIdMap.set(r.id, r);
+    if (liveIdMap.size > 0) {
+      // Get the round_player_ids per live round so we can ask scores for
+      // each. We then aggregate max(updated_at) per round.
+      const { data: rpRows } = await sb
+        .from("round_players")
+        .select("id, round_id")
+        .in("round_id", [...liveIdMap.keys()]);
+      const rpToRound = new Map<string, string>();
+      for (const rp of (rpRows as any[]) ?? []) rpToRound.set(rp.id, rp.round_id);
+      const allRpIds = [...rpToRound.keys()];
+      const scoresByRound = new Map<
+        string,
+        { count: number; max_updated_at: string | null }
+      >();
+      if (allRpIds.length > 0) {
+        const { data: scoreRows } = await sb
+          .from("scores")
+          .select("round_player_id, updated_at")
+          .in("round_player_id", allRpIds);
+        for (const s of (scoreRows as any[]) ?? []) {
+          const rid = rpToRound.get(s.round_player_id);
+          if (!rid) continue;
+          const cur = scoresByRound.get(rid) ?? {
+            count: 0,
+            max_updated_at: null
+          };
+          cur.count += 1;
+          if (
+            !cur.max_updated_at ||
+            s.updated_at > cur.max_updated_at
+          ) {
+            cur.max_updated_at = s.updated_at;
+          }
+          scoresByRound.set(rid, cur);
+        }
+      }
+      const now = Date.now();
+      const STALE_HOURS = 24;
+      for (const [rid, r] of liveIdMap.entries()) {
+        const stats = scoresByRound.get(rid) ?? {
+          count: 0,
+          max_updated_at: null
+        };
+        const ageHours = stats.max_updated_at
+          ? (now - new Date(stats.max_updated_at).getTime()) / 3_600_000
+          : (now - new Date(r.date).getTime()) / 3_600_000;
+        if (ageHours < STALE_HOURS) continue;
+        staleRounds.push({
+          id: rid,
+          date: r.date,
+          group_id: r.group_id,
+          course_name: r.courses?.name ?? null,
+          group_name: r.groups?.name ?? null,
+          last_score_at: stats.max_updated_at,
+          hours_since_last_score: Math.floor(ageHours),
+          total_scores: stats.count
+        });
+      }
+      // Show the oldest first.
+      staleRounds.sort(
+        (a, b) =>
+          (b.hours_since_last_score ?? 0) - (a.hours_since_last_score ?? 0)
+      );
+    }
+  } catch {
+    /* fall through — panel just hides */
+  }
+
   // ----- Computed analytics -----
   // Most played courses
   const courseRoundCount = new Map<string, number>();
@@ -145,13 +241,32 @@ export default async function AdminOverview() {
     .slice(0, 5)
     .map(([id, n]) => ({ id, name: courseNameById.get(id) ?? "Course", rounds: n }));
 
-  // Rounds by month (last 6 months)
+  // Rounds by month — last 6 calendar months, including zero months so
+  // the chart stays a 6-bar timeline instead of collapsing to one tall
+  // bar when only the current month has data. Each entry is
+  // [yyyy-mm, count, shortLabel] where shortLabel is "May" / "May '26"
+  // — readable instead of the raw "05" that used to ship.
   const monthCounts = new Map<string, number>();
   for (const r of (allRoundsRes.data as any[]) ?? []) {
     const m = r.date?.slice(0, 7);
     if (m) monthCounts.set(m, (monthCounts.get(m) ?? 0) + 1);
   }
-  const recentMonths = [...monthCounts.entries()].sort().slice(-6);
+  const MONTH_SHORT = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+  const now = new Date();
+  const recentMonths: Array<{ key: string; count: number; label: string }> = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label =
+      i === 0
+        ? `${MONTH_SHORT[d.getMonth()]} (this mo)`
+        : MONTH_SHORT[d.getMonth()];
+    recentMonths.push({ key, count: monthCounts.get(key) ?? 0, label });
+  }
+  const totalRecent = recentMonths.reduce((s, r) => s + r.count, 0);
 
   // Game types most played
   const gameTypeCounts = new Map<string, number>();
@@ -340,6 +455,85 @@ export default async function AdminOverview() {
         </section>
       )}
 
+      {/* Stale live rounds — status="live" with no score writes in 24h+.
+          These are abandoned-round candidates. We do NOT auto-transition
+          them (per CLAUDE.md: no time-driven lifecycle). Admin triages:
+          - Has scores → likely real round forgotten; finalize or move
+            to pending so it's out of the live bucket.
+          - No scores → likely a test draft that went live by accident;
+            archive (soft-delete) — kept in audit log, gone from active
+            browsing.
+          24h threshold matches a typical "didn't finish yesterday's
+          round" pattern.  */}
+      {staleRounds.length > 0 && (
+        <section className="card p-4 border border-amber-400/30 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="font-serif text-lg text-cream-50">
+              Stale live rounds ({staleRounds.length})
+            </h2>
+            <Link
+              href="/admin/rounds?status=live"
+              className="text-xs text-gold-400 underline"
+            >
+              All live →
+            </Link>
+          </div>
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Rounds in &quot;live&quot; with no score writes for 24h+. Admin
+            should triage: rounds with scores → finalize or mark pending;
+            rounds with no scores → archive (test drafts that went live).
+            Auto-transitions are deliberately disabled (see CLAUDE.md).
+          </p>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {staleRounds.slice(0, 10).map((r) => {
+              const tone =
+                (r.hours_since_last_score ?? 0) >= 72
+                  ? "text-red-300"
+                  : (r.hours_since_last_score ?? 0) >= 48
+                  ? "text-amber-300"
+                  : "text-cream-100/65";
+              return (
+                <li
+                  key={r.id}
+                  className="py-2 flex items-center justify-between gap-3 flex-wrap"
+                >
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/rounds/${r.id}`}
+                      className="text-cream-50 hover:underline truncate block"
+                    >
+                      {r.course_name ?? "Course"}
+                      <span className="text-cream-100/55 text-xs ml-2">
+                        · {r.date} · {r.total_scores} score
+                        {r.total_scores === 1 ? "" : "s"}
+                      </span>
+                    </Link>
+                    <div className="text-[11px] text-cream-100/55 truncate">
+                      {r.group_name ?? "Group"}
+                    </div>
+                  </div>
+                  <div
+                    className={`text-xs tabular-nums ${tone} shrink-0`}
+                  >
+                    {r.hours_since_last_score === null
+                      ? "—"
+                      : r.hours_since_last_score >= 24
+                      ? `${Math.floor(r.hours_since_last_score / 24)}d idle`
+                      : `${r.hours_since_last_score}h idle`}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {staleRounds.length > 10 && (
+            <p className="text-[11px] text-cream-100/55 pt-1">
+              + {staleRounds.length - 10} more — view all live rounds for
+              full list.
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card p-4">
           <h2 className="font-serif text-lg text-cream-50 mb-2">Most played courses</h2>
@@ -385,19 +579,64 @@ export default async function AdminOverview() {
       </section>
 
       <section className="card p-4">
-        <h2 className="font-serif text-lg text-cream-50 mb-2">Rounds by month</h2>
-        {recentMonths.length === 0 ? (
-          <p className="text-xs text-cream-100/55">No rounds yet.</p>
+        <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="font-serif text-lg text-cream-50">
+            Rounds by month
+          </h2>
+          <p className="text-[11px] text-cream-100/55 tabular-nums">
+            {totalRecent} round{totalRecent === 1 ? "" : "s"} · last 6 months
+          </p>
+        </div>
+        {totalRecent === 0 ? (
+          <p className="text-xs text-cream-100/55">
+            No rounds finalized in the last 6 months.
+          </p>
         ) : (
-          <div className="flex items-end gap-3 h-24">
-            {recentMonths.map(([m, n]) => {
-              const max = Math.max(...recentMonths.map(([, x]) => x));
-              const h = Math.max(8, (n / max) * 80);
+          <div className="flex items-end gap-3 h-28">
+            {recentMonths.map(({ key, count, label }) => {
+              const max = Math.max(
+                1,
+                ...recentMonths.map((r) => r.count)
+              );
+              // Zero months show a 4px stub line so the timeline reads
+              // as continuous instead of "no data". Bars scale to
+              // 80px max so a single big month doesn't dominate.
+              const h = count === 0 ? 4 : Math.max(10, (count / max) * 80);
+              const isCurrent = label.includes("this mo");
               return (
-                <div key={m} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="text-[10px] text-cream-100/55 tabular-nums">{n}</div>
-                  <div className="w-full bg-gold-500/40 rounded" style={{ height: `${h}px` }} />
-                  <div className="text-[10px] text-cream-100/45">{m.slice(5)}</div>
+                <div
+                  key={key}
+                  className="flex-1 flex flex-col items-center gap-1 min-w-0"
+                  title={`${count} round${count === 1 ? "" : "s"} in ${label.replace(" (this mo)", "")}`}
+                >
+                  <div
+                    className={`text-[10px] tabular-nums ${
+                      count > 0
+                        ? "text-cream-100/85"
+                        : "text-cream-100/30"
+                    }`}
+                  >
+                    {count}
+                  </div>
+                  <div
+                    className={`w-full rounded ${
+                      count === 0
+                        ? "bg-cream-100/8"
+                        : isCurrent
+                        ? "bg-gold-500"
+                        : "bg-gold-500/40"
+                    }`}
+                    style={{ height: `${h}px` }}
+                  />
+                  <div
+                    className={`text-[10px] truncate w-full text-center ${
+                      isCurrent
+                        ? "text-gold-400 font-medium"
+                        : "text-cream-100/55"
+                    }`}
+                  >
+                    {label}
+                  </div>
                 </div>
               );
             })}
