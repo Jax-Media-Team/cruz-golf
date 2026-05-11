@@ -103,12 +103,18 @@ export function HelpButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        // Mobile: position above the bottom nav AND above the
-        // ActiveRoundPill so they don't overlap (pill is at bottom:
-        // calc(5rem + safe-area) ~= 80-114px; help button needs to
-        // clear that). 9rem + safe-area lands above the pill.
-        // Desktop: bottom-6 since neither nav nor pill is there.
-        className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-gold-500 text-brand-900 font-serif text-2xl shadow-soft active:scale-95 transition-transform"
+        // Help sits in the true bottom-right corner — just above the
+        // mobile bottom nav and inset slightly so the home-indicator
+        // safe-area is cleared on installed iPhone PWA. We deliberately
+        // overlap the ActiveRoundPill's column: when the pill is
+        // visible (rare — only when there's a live round AND the user
+        // is on a page that's not /dashboard or /rounds/[id]), the
+        // pill's z-40 wins over help's z-30 and covers it. The pill is
+        // dismissable per-session via its × button; help then
+        // reappears. On all other pages help is the only thing in the
+        // corner — which is what "consistently bottom-right" means.
+        // Desktop: bottom-6 / right-6 (no nav, no pill collisions).
+        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-gold-500 text-brand-900 font-serif text-2xl shadow-soft active:scale-95 transition-transform"
         aria-label="Help"
         title="Help"
       >

@@ -39,7 +39,10 @@ export function MobileMoreMenu({ isPlatformAdmin }: { isPlatformAdmin: boolean }
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="py-3 text-center text-sm font-medium text-cream-100/80 active:bg-brand-900"
+        // Matches the TabLink class spec in app/(app)/layout.tsx so all
+        // 5 slots in the mobile bottom nav have identical tap target
+        // height + label sizing.
+        className="py-3.5 px-1 text-center text-[13px] font-medium text-cream-100/85 active:bg-brand-900/60 truncate"
         aria-label="More menu"
       >
         More

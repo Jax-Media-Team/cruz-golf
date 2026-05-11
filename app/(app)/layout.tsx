@@ -137,7 +137,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
           </Link>
           <nav className="hidden sm:flex items-center gap-1">
-            <Link href="/dashboard" className="btn-ghost text-sm">Rounds</Link>
+            <Link href="/dashboard" className="btn-ghost text-sm">Clubhouse</Link>
             <Link href="/leaderboards" className="btn-ghost text-sm">Leaderboards</Link>
             <Link href="/records" className="btn-ghost text-sm">Records</Link>
             <Link href="/players" className="btn-ghost text-sm">Players</Link>
@@ -162,12 +162,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Mobile bottom nav — pb scales to keep tap targets clear of the
           iPhone home indicator when installed as a PWA. The 5rem bottom
           padding on the body element above pairs with this so content
-          doesn't slide under either the nav or the indicator. */}
+          doesn't slide under either the nav or the indicator.
+          Tap target sizing: py-3.5 (~14px vertical) + text-[13px] gives
+          ~44pt minimum-tappable height per Apple HIG once safe-area is
+          accounted for. Labels are short enough to fit on a 360px-wide
+          viewport (5 cols = 72px each) without truncation. */}
       <nav
         className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-5 z-30"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <TabLink href="/dashboard" label="Rounds" />
+        <TabLink href="/dashboard" label="Clubhouse" />
         <TabLink href="/players" label="Players" />
         <TabLink href="/courses" label="Courses" />
         <TabLink href="/leaderboards" label="Boards" />
@@ -189,8 +193,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 }
 
 function TabLink({ href, label }: { href: string; label: string }) {
+  // py-3.5 + text-[13px] keeps the tap target ≥44pt on iPhone after
+  // safe-area-inset-bottom is layered on by the parent nav. The
+  // tracking + truncate keep "Clubhouse" / "Leaderboards" abbreviations
+  // from wrapping on a 360px viewport.
   return (
-    <Link href={href} className="py-3 text-center text-sm font-medium text-cream-100/80">
+    <Link
+      href={href}
+      className="py-3.5 px-1 text-center text-[13px] font-medium text-cream-100/85 active:bg-brand-900/60 truncate"
+    >
       {label}
     </Link>
   );
