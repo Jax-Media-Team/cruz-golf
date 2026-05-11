@@ -94,11 +94,20 @@ export default async function DashboardPage() {
     | null = null;
   if (hasRounds && groupId) {
     const [{ data: chRounds }, { data: chRps }, { data: chSettles }] = await Promise.all([
+      // Archive vs delete (per Patrick's polish spec):
+      //   - Archive = deleted_at set; round STAYS in stats/records/
+      //     clubhouse history because it really happened.
+      //   - Delete (via fn_delete_round) = row gone forever; for bad
+      //     starts, test rounds, accidental creation.
+      // So we deliberately do NOT filter by `deleted_at IS NULL` here.
+      // The engine only counts finalized rounds (status filter is
+      // applied inside lib/clubhouse.ts), so archived non-finalized
+      // rounds (e.g. abandoned test drafts that got archived) still
+      // don't pollute the signals.
       sb
         .from("rounds")
         .select("id, date, status, holes, spectator_token, course_id, courses(name)")
         .eq("group_id", groupId)
-        .is("deleted_at", null)
         .order("date", { ascending: false })
         .limit(500),
       sb
