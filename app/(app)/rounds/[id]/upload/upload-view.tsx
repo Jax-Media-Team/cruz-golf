@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { bestMatch } from "@/lib/ocr/name-match";
+import { prepareImageForOCR, type PrepareImageResult } from "@/lib/ocr/preprocess";
 
 type Card = {
   id: string;
@@ -51,6 +52,10 @@ type Card = {
    *  the Retry button after one attempt and surface "retry count" in
    *  the diagnostics panel. */
   retry_count?: number;
+  /** Client-side preprocessing diagnostic — source size, scaling
+   *  applied, output bytes. Surfaced in the diagnostics panel so
+   *  "did EXIF rotation apply / was it downscaled?" is answerable. */
+  preprocess?: PrepareImageResult;
 };
 
 type CellSource = "db" | "ocr" | "manual" | null;
@@ -338,9 +343,33 @@ export function UploadView({
     await Promise.all(
       list.map(async (file, i) => {
         const cardId = newCards[i].id;
-        const dataUrl = await fileToDataUrl(file);
-        await runOcrOnCard(cardId, file.name, dataUrl);
+        // Client-side preprocessing: EXIF auto-rotate + cap long-side
+        // at 2400px. iPhone photos are typically 4032px wide and
+        // rotated — without this, gpt-4o either sees a sideways
+        // image OR pays for downsampling its own server-side. The
+        // preprocess metadata lands on the card for diagnostics.
+        const prep = await prepareImageForOCR(file);
+        setCards((prev) =>
+          prev.map((c) =>
+            c.id === cardId ? { ...c, preprocess: prep } : c
+          )
+        );
+        await runOcrOnCard(cardId, file.name, prep.dataUrl);
       })
+    );
+  }
+
+  /**
+   * Drop a card from the list — and any unmatched rows it produced.
+   * The grid itself is NOT touched: if the user already merged some
+   * OCR'd cells into the grid and then changes their mind about the
+   * card, the cells they edited stay. They can clear individual cells
+   * manually. This matches the "salvage, don't lose work" principle.
+   */
+  function removeCard(cardId: string) {
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
+    setUnmatched((prev) =>
+      prev.filter((u) => !u.id.startsWith(`${cardId}-`))
     );
   }
 
@@ -493,15 +522,17 @@ export function UploadView({
             {cards.map((c) => (
               <li key={c.id} className="space-y-1">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-cream-100/85 truncate">{c.filename}</span>
+                  <span className="text-cream-100/85 truncate flex-1 min-w-0">
+                    {c.filename}
+                  </span>
                   <span
-                    className={
+                    className={`shrink-0 ${
                       c.status === "uploading"
                         ? "text-cream-100/55"
                         : c.status === "failed"
                         ? "text-red-300"
                         : "text-emerald-300"
-                    }
+                    }`}
                   >
                     {c.status === "uploading"
                       ? "OCR in progress…"
@@ -518,6 +549,17 @@ export function UploadView({
                           return `Read ${cells} of ${cellsTotal} cells (${pct}%) · review highlighted cells`;
                         })()}
                   </span>
+                  {c.status !== "uploading" && (
+                    <button
+                      type="button"
+                      onClick={() => removeCard(c.id)}
+                      className="shrink-0 text-cream-100/45 hover:text-red-300 transition-colors px-1.5"
+                      aria-label={`Remove ${c.filename} from upload list`}
+                      title="Remove this card. Already-merged cells stay in the grid below — you can clear them manually if you don't want them."
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 {/* Diagnostics — collapsible per-card. Patrick asked
                     to see EXACTLY where scores get lost. We expose:
@@ -576,6 +618,35 @@ export function UploadView({
                                     {(c.debug.data_url_bytes / 1024).toFixed(0)}{" "}
                                     KB
                                   </span>
+                                </p>
+                              )}
+                              {c.preprocess && (
+                                <p className="text-cream-100/60">
+                                  Preprocess:{" "}
+                                  <span className="font-mono text-cream-100/85">
+                                    {c.preprocess.reencoded
+                                      ? `${c.preprocess.source_w}×${c.preprocess.source_h}`
+                                      : "raw"}
+                                  </span>
+                                  {c.preprocess.scaled && (
+                                    <span className="text-cream-100/85">
+                                      {" "}
+                                      →{" "}
+                                      <span className="font-mono">
+                                        {c.preprocess.output_w}×
+                                        {c.preprocess.output_h}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {c.preprocess.reencoded ? (
+                                    <span className="text-emerald-300/85 ml-1">
+                                      · EXIF-rotated
+                                    </span>
+                                  ) : (
+                                    <span className="text-cream-100/45 ml-1">
+                                      · small file, passthrough
+                                    </span>
+                                  )}
                                 </p>
                               )}
                               {c.debug?.called_at && (
@@ -873,6 +944,50 @@ export function UploadView({
           </ul>
         </div>
       )}
+
+      {/* Grid-level progress counter — answers "am I done?" at a
+          glance. Counts non-null cells across every row, divided by
+          the total number of cells expected (rows × holes). Shows
+          green when complete, amber-ish when partial. */}
+      {(() => {
+        const filled = grid.reduce(
+          (sum, r) => sum + r.scores.filter((s) => s != null).length,
+          0
+        );
+        const total = grid.length * holes;
+        if (total === 0) return null;
+        const pct = Math.round((filled / total) * 100);
+        const done = filled === total;
+        const empty = filled === 0;
+        return (
+          <div className="card px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
+                  done
+                    ? "bg-emerald-400"
+                    : empty
+                    ? "bg-cream-100/30"
+                    : "bg-amber-400"
+                }`}
+                aria-hidden="true"
+              />
+              <span className="text-cream-100/85 tabular-nums">
+                {filled} of {total} cells filled
+              </span>
+              <span className="text-cream-100/55">·</span>
+              <span className="text-cream-100/55 tabular-nums">{pct}%</span>
+            </div>
+            <span className="text-cream-100/55 text-[11px]">
+              {done
+                ? "Ready to save"
+                : empty
+                ? "Type scores below, or upload a card above"
+                : "Tap any empty cell to fill — partial saves are fine"}
+            </span>
+          </div>
+        );
+      })()}
 
       <div className="card p-2 overflow-x-auto">
         <table className="text-sm">
