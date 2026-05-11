@@ -16,7 +16,7 @@ export function UpdateToast() {
 
   return (
     <div
-      className="fixed bottom-20 sm:bottom-6 left-4 z-30 max-w-xs rounded-2xl border border-cream-100/15 bg-brand-900/95 backdrop-blur shadow-soft px-4 py-3"
+      className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 left-4 z-30 max-w-xs rounded-2xl border border-cream-100/15 bg-brand-900/95 backdrop-blur shadow-soft px-4 py-3"
       role="status"
     >
       <div className="flex items-start gap-3">

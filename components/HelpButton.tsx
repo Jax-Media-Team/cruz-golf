@@ -103,7 +103,12 @@ export function HelpButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-gold-500 text-brand-900 font-serif text-2xl shadow-soft active:scale-95 transition-transform"
+        // Mobile: position above the bottom nav AND above the
+        // ActiveRoundPill so they don't overlap (pill is at bottom:
+        // calc(5rem + safe-area) ~= 80-114px; help button needs to
+        // clear that). 9rem + safe-area lands above the pill.
+        // Desktop: bottom-6 since neither nav nor pill is there.
+        className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 right-4 sm:right-6 z-30 w-12 h-12 rounded-full bg-gold-500 text-brand-900 font-serif text-2xl shadow-soft active:scale-95 transition-transform"
         aria-label="Help"
         title="Help"
       >
