@@ -1201,16 +1201,41 @@ function GameConfigEditor({
   }
 
   if (gameType === "match_play") {
+    const cfgMP = value.config ?? {};
+    const matchPlayMP = cfgMP.match_play !== false; // default true (it's match play)
     return (
-      <div className="mt-3 pl-6 grid grid-cols-2 gap-2">
-        <Money label="Stake $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
-        <div>
-          <label className="label text-xs">Format</label>
-          <select className="input text-sm" value={value.config.match_play === false ? "stroke" : "match"} onChange={(e) => setConfig({ match_play: e.target.value === "match" })}>
-            <option value="match">Match play</option>
-            <option value="stroke">Stroke play</option>
-          </select>
+      <div className="mt-3 pl-6 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Money label="Stake $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
+          <div>
+            <label className="label text-xs">Format</label>
+            <select className="input text-sm" value={matchPlayMP ? "match" : "stroke"} onChange={(e) => setConfig({ match_play: e.target.value === "match" })}>
+              <option value="match">Match play</option>
+              <option value="stroke">Stroke play</option>
+            </select>
+          </div>
         </div>
+        {matchPlayMP && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-xs">Presses</label>
+              <select
+                className="input text-sm"
+                value={cfgMP.presses ?? "none"}
+                onChange={(e) => setConfig({ presses: e.target.value })}
+              >
+                <option value="none">None</option>
+                <option value="auto_2_down">Auto-press at 2 down</option>
+              </select>
+            </div>
+          </div>
+        )}
+        {matchPlayMP && cfgMP.presses === "auto_2_down" && (
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Auto-presses fire when one side goes 2-down with 3+ holes
+            left. Capped at 4 presses.
+          </p>
+        )}
       </div>
     );
   }
@@ -1342,18 +1367,40 @@ function GameConfigEditor({
   }
 
   if (gameType === "six_six_six") {
+    const cfg666 = value.config ?? {};
+    const matchPlay666 = cfg666.match_play !== false; // default true
     return (
-      <div className="mt-3 pl-6 grid grid-cols-2 gap-2">
-        <Money label="Stake per segment $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
-        <div>
-          <label className="label text-xs">Format</label>
-          <select className="input text-sm" value={value.config.match_play === false ? "stroke" : "match"} onChange={(e) => setConfig({ match_play: e.target.value === "match" })}>
-            <option value="match">Match play (best ball, 6 holes)</option>
-            <option value="stroke">Stroke play (best-ball total)</option>
-          </select>
+      <div className="mt-3 pl-6 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Money label="Stake per segment $" cents={value.stake_cents} onChange={(c) => onChange({ stake_cents: c })} />
+          <div>
+            <label className="label text-xs">Format</label>
+            <select className="input text-sm" value={matchPlay666 ? "match" : "stroke"} onChange={(e) => setConfig({ match_play: e.target.value === "match" })}>
+              <option value="match">Match play (best ball, 6 holes)</option>
+              <option value="stroke">Stroke play (best-ball total)</option>
+            </select>
+          </div>
         </div>
-        <p className="col-span-2 text-xs text-cream-100/55">
+        {matchPlay666 && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-xs">Presses</label>
+              <select
+                className="input text-sm"
+                value={cfg666.presses ?? "none"}
+                onChange={(e) => setConfig({ presses: e.target.value })}
+              >
+                <option value="none">None</option>
+                <option value="auto_2_down">Auto-press at 2 down</option>
+              </select>
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-cream-100/55 leading-snug">
           Holes 1–6: AB vs CD · 7–12: AC vs BD · 13–18: AD vs BC. 4 players required.
+          {matchPlay666 && cfg666.presses === "auto_2_down" && (
+            <> Auto-presses fire per segment when a side goes 2-down with 3+ holes left.</>
+          )}
         </p>
       </div>
     );

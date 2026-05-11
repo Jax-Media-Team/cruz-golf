@@ -171,6 +171,12 @@ function GameCard({
     game.game_type === "best_ball_net" ||
     game.game_type === "aggregate_gross" ||
     game.game_type === "aggregate_net";
+  // 6-6-6 + match_play also support cfg.match_play + cfg.presses
+  // through the same TeamMatchPlayConfig block. Nassau has its own
+  // dedicated config (front/back/overall stakes + presses) so it's
+  // excluded here.
+  const isSixSixSix = game.game_type === "six_six_six";
+  const isMatchPlayGame = game.game_type === "match_play";
 
   return (
     <div className="card p-4 space-y-3">
@@ -256,7 +262,20 @@ function GameCard({
       </div>
 
       {isNassau && <NassauConfig game={game} disabled={disabled} onPatch={onPatch} />}
-      {isTeamGame && <TeamMatchPlayConfig game={game} disabled={disabled} onPatch={onPatch} />}
+      {(isTeamGame || isSixSixSix || isMatchPlayGame) && (
+        <TeamMatchPlayConfig
+          game={game}
+          disabled={disabled}
+          onPatch={onPatch}
+          gameType={
+            isSixSixSix
+              ? "six_six_six"
+              : isMatchPlayGame
+              ? "match_play"
+              : "team"
+          }
+        />
+      )}
 
       <div className="flex justify-end">
         <button
@@ -513,14 +532,22 @@ function NassauConfig({
 function TeamMatchPlayConfig({
   game,
   disabled,
-  onPatch
+  onPatch,
+  gameType = "team"
 }: {
   game: Game;
   disabled: boolean;
   onPatch: (patch: Partial<Game>) => void;
+  /** Adjusts wording + default. 6-6-6 + match_play default to match
+   *  play; team games (best ball / aggregate) default to stroke. */
+  gameType?: "team" | "six_six_six" | "match_play";
 }) {
   const c = (game.config ?? {}) as Record<string, unknown>;
-  const matchPlay = c.match_play === true;
+  // 6-6-6 + match_play default to match-play if cfg unset; team games
+  // default to stroke.
+  const defaultsToMatch = gameType !== "team";
+  const matchPlay =
+    c.match_play === undefined ? defaultsToMatch : c.match_play === true;
   const presses = (c.presses as string) ?? "none";
 
   return (
