@@ -1,14 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
 import { BrandLockup } from "./BrandLockup";
 import type { LeaderboardRow } from "@/lib/scoring";
-import {
-  diffPositions,
-  expireMovements,
-  fmtMovement,
-  mergeMovements,
-  type MovementDelta
-} from "@/lib/leaderboard-movement";
+import { fmtMovement } from "@/lib/leaderboard-movement";
+import { useRowMovement } from "@/lib/use-row-movement";
+import { useMemo } from "react";
 
 export type LeaderboardTab = "gross" | "net" | "skins" | "match" | "bets";
 
@@ -137,56 +132,6 @@ export function Leaderboard({
   );
 }
 
-/**
- * Track rank movement across re-renders. On mount, captures the initial
- * positions WITHOUT generating indicators (no false signals on first
- * paint). On each subsequent render, computes diffPositions vs the last
- * snapshot and stores any non-zero movements with a 6s TTL.
- *
- * The hook is "live-aware": only score-driven re-renders cause movement.
- * Tab switches reset the hook because LeaderboardTable is keyed by mode.
- */
-const MOVEMENT_TTL_MS = 6_000;
-
-function useRowMovement(
-  rows: LeaderboardRow[]
-): Map<string, MovementDelta> {
-  const lastSnapshotRef = useRef<Map<string, number> | null>(null);
-  const [movements, setMovements] = useState<Map<string, MovementDelta>>(
-    new Map()
-  );
-
-  // Capture snapshot + compute incoming deltas
-  useEffect(() => {
-    const next = new Map<string, number>();
-    for (const r of rows) next.set(r.round_player_id, r.position);
-
-    if (lastSnapshotRef.current === null) {
-      // Initial mount — establish baseline, no indicators.
-      lastSnapshotRef.current = next;
-      return;
-    }
-
-    const now = Date.now();
-    const incoming = diffPositions(lastSnapshotRef.current, next, now);
-    lastSnapshotRef.current = next;
-    if (incoming.size > 0) {
-      setMovements((prev) => mergeMovements(prev, incoming));
-    }
-  }, [rows]);
-
-  // Fade old movements out after the TTL — runs while any indicator is
-  // still visible.
-  useEffect(() => {
-    if (movements.size === 0) return;
-    const id = setInterval(() => {
-      setMovements((prev) => expireMovements(prev, Date.now(), MOVEMENT_TTL_MS));
-    }, 1_000);
-    return () => clearInterval(id);
-  }, [movements]);
-
-  return movements;
-}
 
 function LeaderboardTable({
   rows,
@@ -197,7 +142,12 @@ function LeaderboardTable({
   mode: "gross" | "net";
   onPlayerClick?: (rpId: string) => void;
 }) {
-  const movements = useRowMovement(rows);
+  const positions = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.round_player_id, r.position);
+    return m;
+  }, [rows]);
+  const movements = useRowMovement(positions);
   // Mobile cols: Pos · Player · Today · Thru · Net
   // Desktop cols: Pos · Player · Today · Thru · Front · Back · Total · Net
   const mobileGrid =

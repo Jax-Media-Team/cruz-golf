@@ -7,6 +7,11 @@ import {
   type EventBundleInput,
   type EventRoundShape
 } from "@/lib/events/settle";
+import {
+  fmtMovement,
+  rankWithTies
+} from "@/lib/leaderboard-movement";
+import { useRowMovement } from "@/lib/use-row-movement";
 import type {
   CourseHole,
   EventGame,
@@ -205,106 +210,12 @@ export function EventLeaderboard({
             No players yet — add foursomes to populate the field.
           </div>
         ) : (
-          <>
-            {/* Column headers — sub-table chrome so the "thru" / "+/−" /
-                "total" / "if pars" columns are scannable at the bar. */}
-            <div className="px-5 py-2 flex items-center gap-4 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-100">
-              <span className="w-7 text-right">#</span>
-              <span className="flex-1">Player</span>
-              <span className="w-14 text-right hidden sm:inline">Thru</span>
-              <span className="w-12 text-right">±</span>
-              <span className="w-12 text-right">{tab === "gross" ? "Gross" : "Net"}</span>
-              <span
-                className="w-14 text-right hidden sm:inline"
-                title="Projected finish if the player pars every remaining hole — the floor on their final score"
-              >
-                If pars
-              </span>
-            </div>
-            <ul className="divide-y divide-slate-100 text-sm">
-              {standings.players.map((p, i) => {
-                const total = tab === "gross" ? p.total_gross : p.total_net;
-                const vsPar =
-                  tab === "gross" ? p.vs_par_gross : p.vs_par_net;
-                const projected =
-                  tab === "gross"
-                    ? p.projected_gross_if_pars
-                    : p.projected_net_if_pars;
-                const isLive = p.play_status === "live";
-                const isFinished = p.play_status === "finished";
-                const isNotStarted = p.play_status === "not_started";
-                // Visual cue for "still out there" — small emerald
-                // pulse dot for live players. Finished players get a
-                // calm check; not-started players are subdued.
-                const statusDot = isLive ? (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
-                    aria-hidden="true"
-                    title="On the course"
-                  />
-                ) : isFinished ? (
-                  <span
-                    className="text-emerald-700 text-xs shrink-0"
-                    aria-hidden="true"
-                    title="Finished"
-                  >
-                    ✓
-                  </span>
-                ) : (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"
-                    aria-hidden="true"
-                    title="Not started"
-                  />
-                );
-                return (
-                  <li
-                    key={p.player_id}
-                    className={`px-5 py-3 flex items-center gap-4 ${
-                      isNotStarted ? "opacity-60" : ""
-                    }`}
-                  >
-                    <span className="text-slate-400 tabular-nums w-7 text-right text-xs">
-                      {isNotStarted ? "—" : i + 1}
-                    </span>
-                    <span className="flex items-center gap-2 flex-1 min-w-0">
-                      {statusDot}
-                      <span className="text-slate-900 truncate">
-                        {p.display_name}
-                      </span>
-                    </span>
-                    <span className="text-[11px] text-slate-500 tabular-nums shrink-0 w-14 text-right hidden sm:inline">
-                      {p.thru_holes_total === 0
-                        ? "—"
-                        : `${p.thru_holes_total}/${p.thru_holes_expected}`}
-                    </span>
-                    <span
-                      className={`tabular-nums text-sm shrink-0 w-12 text-right ${
-                        p.thru_holes_total > 0 && vsPar < 0
-                          ? "text-red-600 font-medium"
-                          : "text-slate-500"
-                      }`}
-                    >
-                      {p.thru_holes_total > 0 ? fmtVsPar(vsPar) : "—"}
-                    </span>
-                    <span className="text-slate-900 font-serif text-lg tabular-nums shrink-0 w-12 text-right">
-                      {p.thru_holes_total > 0 ? total : "—"}
-                    </span>
-                    <span
-                      className="text-slate-400 tabular-nums text-xs shrink-0 w-14 text-right hidden sm:inline"
-                      title="Projected finish if all remaining holes are par"
-                    >
-                      {isFinished
-                        ? "—"
-                        : isNotStarted
-                        ? `${projected}`
-                        : projected}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </>
+          <EventLeaderboardRanked
+            key={tab}
+            players={standings.players}
+            tab={tab}
+            fmtVsPar={fmtVsPar}
+          />
         ))}
 
       {tab === "money" && (
@@ -394,5 +305,189 @@ export function EventLeaderboard({
         — see each round for live press status.
       </div>
     </section>
+  );
+}
+
+/**
+ * Gross/Net body for the event leaderboard. Split into its own component
+ * so we can `key={tab}` it — resetting the rank-movement tracker when
+ * the viewer toggles gross↔net (those rankings differ).
+ *
+ * Adds two readability improvements vs the inline version:
+ *   1. Tied-position semantics ("T1" / "T3") via rankWithTies — real
+ *      tournament-leaderboard behavior. Two players at the same total
+ *      share a position; the next player skips ahead.
+ *   2. Rank-movement indicators (↑n / ↓n) for the first ~6 seconds
+ *      after a score lands and a player's position changes.
+ */
+function EventLeaderboardRanked({
+  players,
+  tab,
+  fmtVsPar
+}: {
+  players: ReturnType<typeof buildEventFieldStandings>["players"];
+  tab: "gross" | "net";
+  fmtVsPar: (n: number) => string;
+}) {
+  // Started players get tie-aware positions; not_started sink to the
+  // bottom with "—".
+  const started = useMemo(
+    () => players.filter((p) => p.play_status !== "not_started"),
+    [players]
+  );
+  const notStarted = useMemo(
+    () => players.filter((p) => p.play_status === "not_started"),
+    [players]
+  );
+  const ranks = useMemo(
+    () =>
+      rankWithTies(started, (p) =>
+        tab === "gross" ? p.vs_par_gross : p.vs_par_net
+      ),
+    [started, tab]
+  );
+
+  // Movement tracking — map player_id to ranked position (1, 2, 3 ...)
+  // among the started cohort.
+  const positions = useMemo(() => {
+    const m = new Map<string, number>();
+    started.forEach((p, i) => m.set(p.player_id, ranks[i]?.position ?? i + 1));
+    return m;
+  }, [started, ranks]);
+  const movements = useRowMovement(positions);
+
+  return (
+    <>
+      {/* Column headers — sub-table chrome so the "thru" / "+/−" /
+          "total" / "if pars" columns are scannable at the bar. */}
+      <div className="px-5 py-2 flex items-center gap-4 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-100">
+        <span className="w-9 text-right">#</span>
+        <span className="flex-1">Player</span>
+        <span className="w-14 text-right hidden sm:inline">Thru</span>
+        <span className="w-12 text-right">±</span>
+        <span className="w-12 text-right">{tab === "gross" ? "Gross" : "Net"}</span>
+        <span
+          className="w-14 text-right hidden sm:inline"
+          title="Projected finish if the player pars every remaining hole — the floor on their final score"
+        >
+          If pars
+        </span>
+      </div>
+      <ul className="divide-y divide-slate-100 text-sm">
+        {started.map((p, i) => {
+          const total = tab === "gross" ? p.total_gross : p.total_net;
+          const vsPar = tab === "gross" ? p.vs_par_gross : p.vs_par_net;
+          const projected =
+            tab === "gross"
+              ? p.projected_gross_if_pars
+              : p.projected_net_if_pars;
+          const isLive = p.play_status === "live";
+          const isFinished = p.play_status === "finished";
+          const rank = ranks[i];
+          const movement = movements.get(p.player_id);
+          const statusDot = isLive ? (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+              aria-hidden="true"
+              title="On the course"
+            />
+          ) : isFinished ? (
+            <span
+              className="text-emerald-700 text-xs shrink-0"
+              aria-hidden="true"
+              title="Finished"
+            >
+              ✓
+            </span>
+          ) : null;
+          return (
+            <li key={p.player_id} className="px-5 py-3 flex items-center gap-4">
+              <span className="tabular-nums w-9 text-right text-xs flex items-baseline justify-end gap-1">
+                <span className="text-slate-400">
+                  {rank?.tied ? "T" : ""}
+                  {rank?.position ?? i + 1}
+                </span>
+                {movement && movement.delta !== 0 && (
+                  <span
+                    className={`text-[9px] font-medium tabular-nums ${
+                      movement.delta > 0
+                        ? "text-emerald-600"
+                        : "text-red-500"
+                    }`}
+                    aria-label={
+                      movement.delta > 0
+                        ? `up ${movement.delta} positions`
+                        : `down ${Math.abs(movement.delta)} positions`
+                    }
+                  >
+                    {fmtMovement(movement.delta)}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-2 flex-1 min-w-0">
+                {statusDot}
+                <span className="text-slate-900 truncate">{p.display_name}</span>
+              </span>
+              <span className="text-[11px] text-slate-500 tabular-nums shrink-0 w-14 text-right hidden sm:inline">
+                {p.thru_holes_total === 0
+                  ? "—"
+                  : `${p.thru_holes_total}/${p.thru_holes_expected}`}
+              </span>
+              <span
+                className={`tabular-nums text-sm shrink-0 w-12 text-right ${
+                  p.thru_holes_total > 0 && vsPar < 0
+                    ? "text-red-600 font-medium"
+                    : "text-slate-500"
+                }`}
+              >
+                {p.thru_holes_total > 0 ? fmtVsPar(vsPar) : "—"}
+              </span>
+              <span className="text-slate-900 font-serif text-lg tabular-nums shrink-0 w-12 text-right">
+                {p.thru_holes_total > 0 ? total : "—"}
+              </span>
+              <span
+                className="text-slate-400 tabular-nums text-xs shrink-0 w-14 text-right hidden sm:inline"
+                title="Projected finish if all remaining holes are par"
+              >
+                {isFinished ? "—" : projected}
+              </span>
+            </li>
+          );
+        })}
+        {notStarted.map((p) => (
+          <li
+            key={p.player_id}
+            className="px-5 py-3 flex items-center gap-4 opacity-60"
+          >
+            <span className="text-slate-400 tabular-nums w-9 text-right text-xs">
+              —
+            </span>
+            <span className="flex items-center gap-2 flex-1 min-w-0">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"
+                aria-hidden="true"
+                title="Not started"
+              />
+              <span className="text-slate-900 truncate">{p.display_name}</span>
+            </span>
+            <span className="text-[11px] text-slate-500 tabular-nums shrink-0 w-14 text-right hidden sm:inline">
+              —
+            </span>
+            <span className="text-slate-500 tabular-nums text-sm shrink-0 w-12 text-right">
+              —
+            </span>
+            <span className="text-slate-500 font-serif text-lg tabular-nums shrink-0 w-12 text-right">
+              —
+            </span>
+            <span
+              className="text-slate-400 tabular-nums text-xs shrink-0 w-14 text-right hidden sm:inline"
+              title="Projected finish if all remaining holes are par"
+            >
+              {tab === "gross" ? p.projected_gross_if_pars : p.projected_net_if_pars}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

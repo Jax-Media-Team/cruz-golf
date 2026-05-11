@@ -11,6 +11,7 @@ import {
   expireMovements,
   fmtMovement,
   mergeMovements,
+  rankWithTies,
   type MovementDelta
 } from "@/lib/leaderboard-movement";
 
@@ -154,6 +155,54 @@ describe("mergeMovements", () => {
     expect(out.get("rp-a")?.delta).toBe(1);
     expect(out.get("rp-b")?.delta).toBe(2);
     expect(out.get("rp-c")?.delta).toBe(3);
+  });
+});
+
+describe("rankWithTies", () => {
+  it("assigns 1, 2, 3, ... when no ties", () => {
+    const sorted = [-3, -1, 0, 2];
+    const out = rankWithTies(sorted, (n) => n);
+    expect(out.map((r) => r.position)).toEqual([1, 2, 3, 4]);
+    expect(out.every((r) => r.tied === false)).toBe(true);
+  });
+
+  it("shares the position among tied entries; next entry skips ahead", () => {
+    // -3, -3, -1, 0, 0, +1
+    // Expected: T1, T1, 3, T4, T4, 6
+    const sorted = [-3, -3, -1, 0, 0, 1];
+    const out = rankWithTies(sorted, (n) => n);
+    expect(out.map((r) => r.position)).toEqual([1, 1, 3, 4, 4, 6]);
+    expect(out.map((r) => r.tied)).toEqual([true, true, false, true, true, false]);
+  });
+
+  it("handles a 3-way tie at the top", () => {
+    // 0, 0, 0, 1, 1, 5
+    // Expected: T1, T1, T1, T4, T4, 6
+    const sorted = [0, 0, 0, 1, 1, 5];
+    const out = rankWithTies(sorted, (n) => n);
+    expect(out.map((r) => r.position)).toEqual([1, 1, 1, 4, 4, 6]);
+    expect(out.map((r) => r.tied)).toEqual([true, true, true, true, true, false]);
+  });
+
+  it("handles an empty array", () => {
+    const out = rankWithTies([], (n: number) => n);
+    expect(out).toEqual([]);
+  });
+
+  it("handles a single entry (not tied)", () => {
+    const out = rankWithTies([5], (n) => n);
+    expect(out).toEqual([{ position: 1, tied: false }]);
+  });
+
+  it("uses keyFn to compare — objects work", () => {
+    const players = [
+      { id: "a", score: -2 },
+      { id: "b", score: -2 },
+      { id: "c", score: 0 }
+    ];
+    const out = rankWithTies(players, (p) => p.score);
+    expect(out.map((r) => r.position)).toEqual([1, 1, 3]);
+    expect(out.map((r) => r.tied)).toEqual([true, true, false]);
   });
 });
 

@@ -105,3 +105,43 @@ export function fmtMovement(delta: number): string {
   if (delta < 0) return `↓${Math.abs(delta)}`;
   return "";
 }
+
+export type RankedPosition = {
+  /** 1-based position. Tied players share the same position. */
+  position: number;
+  /** True when this player is tied with at least one other player. */
+  tied: boolean;
+};
+
+/**
+ * Compute tied-aware leaderboard positions. The input array MUST be
+ * pre-sorted by the same scoring key — this function only walks it
+ * comparing adjacent entries via `keyFn`. Two players with equal keys
+ * share a position; the next player skips ahead by the run length (real
+ * tournament leaderboard semantics — "T1, T1, 3" not "T1, T1, 2").
+ *
+ * The boolean second return marks BOTH players in a tied pair so the
+ * UI can render "T1" instead of "1" when applicable.
+ *
+ * Example: [-3, -3, -1, 0, 0, +1] → positions [1, 1, 3, 4, 4, 6],
+ * tied: [true, true, false, true, true, false].
+ */
+export function rankWithTies<T>(
+  sorted: T[],
+  keyFn: (item: T) => number
+): RankedPosition[] {
+  const out: RankedPosition[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const k = keyFn(sorted[i]);
+    let j = i + 1;
+    while (j < sorted.length && keyFn(sorted[j]) === k) j += 1;
+    const groupSize = j - i;
+    const tied = groupSize > 1;
+    for (let n = i; n < j; n++) {
+      out.push({ position: i + 1, tied });
+    }
+    i = j;
+  }
+  return out;
+}
