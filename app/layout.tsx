@@ -3,11 +3,16 @@ import { Inter, Instrument_Serif } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-// Google Analytics measurement ID is read from a public env var so the
-// production build can wire up without code changes (set
-// NEXT_PUBLIC_GA_ID in Vercel). When the env var is unset (dev, or
-// before the ID lands), the script tags don't render — zero impact.
-const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+// Google Analytics measurement ID. Hardcoded — GA IDs are public
+// (they ship in client-side script tags anyway) so there's no benefit
+// to env-vault gymnastics. NEXT_PUBLIC_GA_ID can override at build
+// time if a staging deploy needs a different stream.
+//
+// Gated to production so `npm run dev` doesn't pollute the analytics
+// stream with localhost traffic.
+const GA_ID =
+  process.env.NEXT_PUBLIC_GA_ID ?? "G-E53NK6G8JN";
+const GA_ENABLED = process.env.NODE_ENV === "production";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -52,8 +57,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Google Analytics — gtag.js. Loaded with `afterInteractive` so
             it doesn't block the LCP. The script tag still lands inside
-            <head> via Next.js's deduper. Only renders when GA_ID is set. */}
-        {GA_ID && (
+            <head> via Next.js's deduper. Production only — dev traffic
+            does not hit GA. */}
+        {GA_ENABLED && (
           <>
             <Script
               src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
