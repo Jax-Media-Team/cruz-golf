@@ -334,6 +334,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         rps={rps ?? []}
         initialScores={scores ?? []}
         games={games ?? []}
+        manualPresses={presses ?? []}
         totalHoles={(round.holes as 9 | 18) ?? 18}
         startingHole={round.starting_hole ?? 1}
       />

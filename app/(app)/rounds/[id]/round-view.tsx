@@ -4,16 +4,26 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { buildPlayerSheet, leaderboard } from "@/lib/scoring";
 import { settleGame } from "@/lib/games";
+import {
+  settleManualPress,
+  type HoleResult,
+  type ManualPress
+} from "@/lib/games/press";
 import { Leaderboard, type LeaderboardTab } from "@/components/Leaderboard";
 import type { CourseHole, RoundGame, RoundPlayer, Score } from "@/lib/types";
 
 type RP = any;
+
+export type RoundManualPress = ManualPress & {
+  status: "pending" | "accepted" | "declined" | "withdrawn" | "expired";
+};
 
 export function RoundView({
   roundId,
   rps,
   initialScores,
   games,
+  manualPresses = [],
   totalHoles = 18,
   startingHole = 1
 }: {
@@ -21,6 +31,9 @@ export function RoundView({
   rps: RP[];
   initialScores: Score[];
   games: any[];
+  /** Accepted + pending presses. BetsPanel uses only `status === "accepted"`
+   *  for the projected payout — pending presses don't move money yet. */
+  manualPresses?: RoundManualPress[];
   totalHoles?: 9 | 18;
   startingHole?: number;
 }) {
@@ -132,7 +145,15 @@ export function RoundView({
         ) : tab === "team" ? (
           <TeamPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
         ) : tab === "bets" ? (
-          <BetsPanel games={games} players={players} scores={scores} holes={holes} totalHoles={totalHoles} startingHole={startingHole} />
+          <BetsPanel
+            games={games}
+            players={players}
+            scores={scores}
+            holes={holes}
+            totalHoles={totalHoles}
+            startingHole={startingHole}
+            manualPresses={manualPresses}
+          />
         ) : null
       }
     />
@@ -287,7 +308,8 @@ function BetsPanel({
   scores,
   holes,
   totalHoles,
-  startingHole
+  startingHole,
+  manualPresses = []
 }: {
   games: any[];
   players: RoundPlayer[];
@@ -295,33 +317,136 @@ function BetsPanel({
   holes: CourseHole[];
   totalHoles: 9 | 18;
   startingHole: number;
+  manualPresses?: RoundManualPress[];
 }) {
-  if (games.length === 0)
+  const acceptedPresses = manualPresses.filter((p) => p.status === "accepted");
+  if (games.length === 0 && acceptedPresses.length === 0)
     return <div className="text-slate-500 text-sm py-8 text-center">No games configured.</div>;
   const totals = new Map<string, number>();
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
   let anyLive = false;
 
+  // 1. Parent games settle as before.
   for (const g of games) {
     if (g.game_type === "ctp" || g.game_type === "long_drive" || g.game_type === "custom") continue;
     const out = settleGame({
       game: g as RoundGame,
       players,
       scores,
-      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) }, totalHoles, startingHole
+      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) },
+      totalHoles,
+      startingHole
     });
     if (out.status === "live") anyLive = true;
     for (const [pid, v] of out.perPlayer) {
       totals.set(pid, (totals.get(pid) ?? 0) + v.delta_cents);
     }
   }
+
+  // 2. Accepted manual presses contribute to projected payout. Mirrors
+  //    the settlement logic from finalize-view.tsx:
+  //      - best-ball gross-min per side per hole
+  //      - hole is `incomplete` if any side member's score is missing
+  //      - settled press → loser pays stake; winners split pot, with
+  //        the remainder cent going to the first sorted winner id.
+  //    Until every hole in the press range is scored, the press's
+  //    contribution stays at 0 (result_delta === null) and the Bets
+  //    tab reflects the partial state. Once complete, the projected
+  //    payouts include the press — no more "where's the press money?"
+  //    confusion mid-round.
+  const grossByRpHole = new Map<string, number>();
+  for (const s of scores) {
+    if (s.gross == null) continue;
+    grossByRpHole.set(`${s.round_player_id}:${s.hole_number}`, s.gross);
+  }
+  for (const press of acceptedPresses) {
+    if (press.side_a_rp_ids.length === 0) continue;
+    if (press.side_b_rp_ids.length === 0) continue;
+    const holeResults: HoleResult[] = holes.map((h) => {
+      const aScores = press.side_a_rp_ids
+        .map((rp) => grossByRpHole.get(`${rp}:${h.hole_number}`))
+        .filter((v): v is number => v != null);
+      const bScores = press.side_b_rp_ids
+        .map((rp) => grossByRpHole.get(`${rp}:${h.hole_number}`))
+        .filter((v): v is number => v != null);
+      const complete =
+        aScores.length === press.side_a_rp_ids.length &&
+        bScores.length === press.side_b_rp_ids.length;
+      if (!complete) {
+        return {
+          hole_number: h.hole_number,
+          a_won: false,
+          b_won: false,
+          push: false,
+          incomplete: true
+        };
+      }
+      const a = Math.min(...aScores);
+      const b = Math.min(...bScores);
+      return {
+        hole_number: h.hole_number,
+        a_won: a < b,
+        b_won: b < a,
+        push: a === b,
+        incomplete: false
+      };
+    });
+    const settled = settleManualPress(press, holeResults);
+    if (settled.result_delta == null) {
+      anyLive = true;
+      continue;
+    }
+    if (settled.result_delta === 0) continue;
+    const aWon = settled.result_delta > 0;
+    const winners = aWon ? press.side_a_rp_ids : press.side_b_rp_ids;
+    const losers = aWon ? press.side_b_rp_ids : press.side_a_rp_ids;
+    const pot = press.stake_cents * losers.length;
+    for (const id of losers) {
+      totals.set(id, (totals.get(id) ?? 0) - press.stake_cents);
+    }
+    const each = Math.floor(pot / winners.length);
+    const remainder = pot - each * winners.length;
+    [...winners].sort().forEach((id, i) => {
+      const delta = each + (i < remainder ? 1 : 0);
+      totals.set(id, (totals.get(id) ?? 0) + delta);
+    });
+  }
+
+  // Pending-press hint count — surfaced in the header so the user knows
+  // the projected payout doesn't include presses that haven't been
+  // accepted yet. We don't include pending presses in the math because
+  // they may never settle.
+  const pendingCount = manualPresses.filter(
+    (p) => p.status === "pending"
+  ).length;
+
   const rows = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  const fmt = (c: number) => (c >= 0 ? "+" : "−") + "$" + (Math.abs(c) / 100).toFixed(2);
+  const fmt = (c: number) =>
+    (c >= 0 ? "+" : "−") + "$" + (Math.abs(c) / 100).toFixed(2);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
-        <span className="font-serif text-lg text-slate-900">Projected payouts</span>
+        <div className="min-w-0">
+          <span className="font-serif text-lg text-slate-900">
+            Projected payouts
+          </span>
+          {acceptedPresses.length > 0 && (
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Includes {acceptedPresses.length} accepted press
+              {acceptedPresses.length === 1 ? "" : "es"}.
+              {pendingCount > 0
+                ? ` ${pendingCount} pending — not counted until accepted.`
+                : ""}
+            </p>
+          )}
+          {acceptedPresses.length === 0 && pendingCount > 0 && (
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {pendingCount} press{pendingCount === 1 ? "" : "es"} pending —
+              not counted until accepted.
+            </p>
+          )}
+        </div>
         <StatusPill status={anyLive ? "live" : "final"} />
       </div>
       <ul className="divide-y divide-slate-100 text-sm">
