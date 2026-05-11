@@ -15,13 +15,21 @@ type Card = {
   score_count?: number;
   /** Total cells the card SHOULD have (rows × holes). */
   cells_total?: number;
+  /** Data URL of the uploaded image — retained for the diagnostics
+   *  panel thumbnail and for the "Retry OCR" path so we don't need
+   *  the user to re-pick the file. */
+  data_url?: string;
   /** Diagnostics from the OCR endpoint (raw model text + pre/post
-   *  coerce shapes). Surfaced in a collapsible panel for "where did
-   *  the scores get lost" debugging. */
+   *  coerce shapes + image / model meta). Surfaced in a collapsible
+   *  panel for "where did the scores get lost" debugging. */
   debug?: {
     raw_text: string;
     pre_coerce: any;
     post_coerce: any;
+    data_url_bytes?: number;
+    model?: string;
+    called_at?: string;
+    no_player_hint?: boolean;
   };
   /** Per-row outcome captured during the merge step — what the score
    *  count was, who it matched, why it was dropped if unmatched.
@@ -33,6 +41,10 @@ type Card = {
     match_score: number;
     outcome: "merged" | "unmatched_panel" | "dropped_no_name_no_scores";
   }>;
+  /** True when this card has been retried at least once. Used to dim
+   *  the Retry button after one attempt and surface "retry count" in
+   *  the diagnostics panel. */
+  retry_count?: number;
 };
 
 type CellSource = "db" | "ocr" | "manual" | null;
@@ -137,6 +149,174 @@ export function UploadView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Core OCR-and-merge pipeline. Extracted from `onFiles` so we can
+   * re-run it for a Retry from the diagnostics panel without making
+   * the user re-pick the file. Idempotent on the grid: per-cell merge
+   * with "OCR value wins if non-null".
+   */
+  async function runOcrOnCard(
+    cardId: string,
+    filename: string,
+    dataUrl: string
+  ) {
+    setCards((prev) =>
+      prev.map((c) =>
+        c.id === cardId
+          ? { ...c, status: "uploading", err: undefined }
+          : c
+      )
+    );
+    try {
+      const r = await fetch("/api/scorecard-ocr", {
+        method: "POST",
+        body: JSON.stringify({ dataUrl, holes })
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "OCR failed");
+      const rows = (j.players ?? []) as Array<{
+        name: string;
+        scores: Array<number | null>;
+      }>;
+      const score_count = rows.reduce(
+        (sum, p) => sum + p.scores.filter((s) => s != null).length,
+        0
+      );
+      const cells_total = rows.length * holes;
+      const debug = (j._debug ?? undefined) as Card["debug"];
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? {
+                ...c,
+                status: "parsed",
+                rows,
+                score_count,
+                cells_total,
+                debug,
+                data_url: dataUrl
+              }
+            : c
+        )
+      );
+      // Merge into grid: for each parsed row, find the best-
+      // scoring matching player via bestMatch (handles initials,
+      // comma-reversed names, nickname → full-name, etc.). Per-cell
+      // overwrite if the OCR cell has a value. Unmatched rows go
+      // into the `unmatched` list with a "Map to:" dropdown — the
+      // user resolves them manually instead of losing the scores.
+      const roundPlayerCandidates = players.map((p) => ({
+        round_player_id: p.round_player_id,
+        name: p.name
+      }));
+      const matchAssignments = new Map<string, number>(); // rp_id → row index
+      rows.forEach((row, rowIdx) => {
+        const best = bestMatch(row.name, roundPlayerCandidates);
+        if (best) matchAssignments.set(best.round_player_id, rowIdx);
+      });
+
+      setGrid((prev) =>
+        prev.map((row) => {
+          const matchedIdx = matchAssignments.get(row.round_player_id);
+          if (matchedIdx == null) return row;
+          const match = rows[matchedIdx];
+          const nextScores = row.scores.map((existing, idx) => {
+            const ocrVal = match.scores[idx] ?? null;
+            return ocrVal != null ? ocrVal : existing;
+          });
+          const nextSources = row.sources.map((existingSrc, idx) => {
+            const ocrVal = match.scores[idx] ?? null;
+            if (ocrVal != null) return "ocr" as CellSource;
+            return existingSrc;
+          });
+          const sources = row.source_filenames.includes(filename)
+            ? row.source_filenames
+            : [...row.source_filenames, filename];
+          return {
+            ...row,
+            scores: nextScores,
+            sources: nextSources,
+            source_filenames: sources
+          };
+        })
+      );
+
+      // Drop any unmatched rows previously captured for THIS card —
+      // a retry should replace them, not duplicate.
+      setUnmatched((prev) => prev.filter((u) => !u.id.startsWith(`${cardId}-`)));
+
+      const matchedRowIndexes = new Set(matchAssignments.values());
+      const newUnmatched: UnmatchedRow[] = [];
+      const rowOutcomes: NonNullable<Card["row_outcomes"]> = [];
+      rows.forEach((row, idx) => {
+        const scoreCount = row.scores.filter((s) => s != null).length;
+        const best = bestMatch(row.name, roundPlayerCandidates);
+
+        if (matchedRowIndexes.has(idx)) {
+          let matchedRpId: string | null = null;
+          for (const [rpId, assignedIdx] of matchAssignments) {
+            if (assignedIdx === idx) {
+              matchedRpId = rpId;
+              break;
+            }
+          }
+          const matchedRp = players.find(
+            (p) => p.round_player_id === matchedRpId
+          );
+          rowOutcomes.push({
+            ocr_name: row.name || `Row ${idx + 1}`,
+            scores_parsed: scoreCount,
+            matched_to: matchedRp?.name ?? null,
+            match_score: best?.score ?? 0,
+            outcome: "merged"
+          });
+          return;
+        }
+        if (!row.name && scoreCount === 0) {
+          rowOutcomes.push({
+            ocr_name: row.name || `Row ${idx + 1}`,
+            scores_parsed: 0,
+            matched_to: null,
+            match_score: 0,
+            outcome: "dropped_no_name_no_scores"
+          });
+          return;
+        }
+        rowOutcomes.push({
+          ocr_name: row.name || `Row ${idx + 1}`,
+          scores_parsed: scoreCount,
+          matched_to: null,
+          match_score: best?.score ?? 0,
+          outcome: "unmatched_panel"
+        });
+        newUnmatched.push({
+          id: `${cardId}-${idx}`,
+          ocr_name: row.name || `Row ${idx + 1}`,
+          scores: row.scores,
+          suggested_rp_id: best?.round_player_id ?? null,
+          suggested_score: best?.score ?? 0,
+          filename
+        });
+      });
+      if (newUnmatched.length > 0) {
+        setUnmatched((prev) => [...prev, ...newUnmatched]);
+      }
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId ? { ...c, row_outcomes: rowOutcomes } : c
+        )
+      );
+    } catch (e: any) {
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? { ...c, status: "failed", err: e?.message ?? "OCR failed" }
+            : c
+        )
+      );
+    }
+  }
+
   async function onFiles(files: FileList | File[]) {
     setErr(null);
     const list = Array.from(files);
@@ -152,154 +332,31 @@ export function UploadView({
     await Promise.all(
       list.map(async (file, i) => {
         const cardId = newCards[i].id;
-        try {
-          const dataUrl = await fileToDataUrl(file);
-          const r = await fetch("/api/scorecard-ocr", {
-            method: "POST",
-            body: JSON.stringify({ dataUrl, players: players.map((p) => p.name), holes })
-          });
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.error ?? "OCR failed");
-          const rows = (j.players ?? []) as Array<{ name: string; scores: Array<number | null> }>;
-          // Count successfully-parsed cells so the card list can show
-          // "Read 56 of 72 cells" instead of just "Parsed 4 players".
-          const score_count = rows.reduce(
-            (sum, p) => sum + p.scores.filter((s) => s != null).length,
-            0
-          );
-          const cells_total = rows.length * holes;
-          // Capture diagnostics (raw model text + pre/post coerce) so
-          // the UI can surface "where did scores get lost?" when the
-          // grid comes back empty. The API returns _debug on every
-          // call; we just stash it on the card row.
-          const debug = (j._debug ?? undefined) as Card["debug"];
-          setCards((prev) =>
-            prev.map((c) =>
-              c.id === cardId
-                ? { ...c, status: "parsed", rows, score_count, cells_total, debug }
-                : c
-            )
-          );
-          // Merge into grid: for each parsed row, find the best-
-          // scoring matching player via bestMatch (handles
-          // initials, comma-reversed names, nickname → full-name,
-          // etc.). Per-cell overwrite if the OCR cell has a value.
-          // Unmatched rows (no candidate scored > 0) go into the
-          // `unmatched` list with a "Map to:" dropdown — the user
-          // resolves them manually instead of losing the scores.
-          const roundPlayerCandidates = players.map((p) => ({
-            round_player_id: p.round_player_id,
-            name: p.name
-          }));
-          const matchAssignments = new Map<string, number>(); // rp_id → row index
-          rows.forEach((row, rowIdx) => {
-            const best = bestMatch(row.name, roundPlayerCandidates);
-            if (best) matchAssignments.set(best.round_player_id, rowIdx);
-          });
-
-          setGrid((prev) =>
-            prev.map((row) => {
-              const matchedIdx = matchAssignments.get(row.round_player_id);
-              if (matchedIdx == null) return row;
-              const match = rows[matchedIdx];
-              const nextScores = row.scores.map((existing, idx) => {
-                const ocrVal = match.scores[idx] ?? null;
-                return ocrVal != null ? ocrVal : existing;
-              });
-              const nextSources = row.sources.map((existingSrc, idx) => {
-                const ocrVal = match.scores[idx] ?? null;
-                if (ocrVal != null) return "ocr" as CellSource;
-                return existingSrc;
-              });
-              const sources = row.source_filenames.includes(file.name)
-                ? row.source_filenames
-                : [...row.source_filenames, file.name];
-              return {
-                ...row,
-                scores: nextScores,
-                sources: nextSources,
-                source_filenames: sources
-              };
-            })
-          );
-
-          // Track unmatched rows for manual mapping. Skip rows that
-          // have zero scores AND no name (pure noise).
-          // Also build the per-row outcome list for the diagnostics
-          // panel — every row that went through the pipeline gets one
-          // entry so "where did the scores go" is answerable per row.
-          const matchedRowIndexes = new Set(matchAssignments.values());
-          const newUnmatched: UnmatchedRow[] = [];
-          const rowOutcomes: NonNullable<Card["row_outcomes"]> = [];
-          rows.forEach((row, idx) => {
-            const scoreCount = row.scores.filter((s) => s != null).length;
-            const best = bestMatch(row.name, roundPlayerCandidates);
-
-            if (matchedRowIndexes.has(idx)) {
-              // Find which round_player_id this row was assigned to
-              // (the inverse of matchAssignments).
-              let matchedRpId: string | null = null;
-              for (const [rpId, assignedIdx] of matchAssignments) {
-                if (assignedIdx === idx) {
-                  matchedRpId = rpId;
-                  break;
-                }
-              }
-              const matchedRp = players.find(
-                (p) => p.round_player_id === matchedRpId
-              );
-              rowOutcomes.push({
-                ocr_name: row.name || `Row ${idx + 1}`,
-                scores_parsed: scoreCount,
-                matched_to: matchedRp?.name ?? null,
-                match_score: best?.score ?? 0,
-                outcome: "merged"
-              });
-              return;
-            }
-            if (!row.name && scoreCount === 0) {
-              rowOutcomes.push({
-                ocr_name: row.name || `Row ${idx + 1}`,
-                scores_parsed: 0,
-                matched_to: null,
-                match_score: 0,
-                outcome: "dropped_no_name_no_scores"
-              });
-              return;
-            }
-            rowOutcomes.push({
-              ocr_name: row.name || `Row ${idx + 1}`,
-              scores_parsed: scoreCount,
-              matched_to: null,
-              match_score: best?.score ?? 0,
-              outcome: "unmatched_panel"
-            });
-            newUnmatched.push({
-              id: `${cardId}-${idx}`,
-              ocr_name: row.name || `Row ${idx + 1}`,
-              scores: row.scores,
-              suggested_rp_id: best?.round_player_id ?? null,
-              suggested_score: best?.score ?? 0,
-              filename: file.name
-            });
-          });
-          if (newUnmatched.length > 0) {
-            setUnmatched((prev) => [...prev, ...newUnmatched]);
-          }
-          // Stash the per-row outcomes on the card so the diagnostics
-          // panel can render them.
-          setCards((prev) =>
-            prev.map((c) =>
-              c.id === cardId ? { ...c, row_outcomes: rowOutcomes } : c
-            )
-          );
-        } catch (e: any) {
-          setCards((prev) =>
-            prev.map((c) => (c.id === cardId ? { ...c, status: "failed", err: e?.message ?? "OCR failed" } : c))
-          );
-        }
+        const dataUrl = await fileToDataUrl(file);
+        await runOcrOnCard(cardId, file.name, dataUrl);
       })
     );
+  }
+
+  /**
+   * Re-run OCR on a card the user already uploaded. Useful when the
+   * first parse came back empty — gpt-4o can be non-deterministic on
+   * difficult cards even at temperature=0, and a single retry often
+   * recovers. We also use this as the "rescan after deploy" path —
+   * when the prompt changes, an unhappy parse can be fixed without
+   * the user re-picking the file.
+   */
+  async function retryCard(cardId: string) {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card?.data_url) return;
+    setCards((prev) =>
+      prev.map((c) =>
+        c.id === cardId
+          ? { ...c, retry_count: (c.retry_count ?? 0) + 1 }
+          : c
+      )
+    );
+    await runOcrOnCard(cardId, card.filename, card.data_url);
   }
 
   async function save() {
@@ -466,12 +523,81 @@ export function UploadView({
                     diagnostics state is captured on every OCR call.
                 */}
                 {(c.status === "parsed" || c.status === "failed") &&
-                  (c.row_outcomes || c.debug) && (
+                  (c.row_outcomes || c.debug || c.data_url) && (
                     <details className="text-[11px] text-cream-100/65 pl-3 border-l border-cream-100/10">
                       <summary className="cursor-pointer hover:text-cream-100/85 select-none">
                         Diagnostics — what the OCR saw
                       </summary>
                       <div className="mt-2 space-y-2 pl-2">
+                        {/* Image thumbnail + meta + retry. The
+                            thumbnail is the most-requested feature
+                            from real-world testing — when the model
+                            returns garbage, you want to verify the
+                            image actually arrived at the API. */}
+                        {c.data_url && (
+                          <div className="flex items-start gap-3 flex-wrap">
+                            <a
+                              href={c.data_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block shrink-0"
+                              title="Open full image"
+                            >
+                              <img
+                                src={c.data_url}
+                                alt={`Uploaded scorecard ${c.filename}`}
+                                className="rounded-md ring-1 ring-cream-100/15 max-h-32 object-contain bg-brand-900/30"
+                              />
+                            </a>
+                            <div className="space-y-1 min-w-0 flex-1">
+                              {c.debug?.model && (
+                                <p className="text-cream-100/60">
+                                  Model:{" "}
+                                  <span className="font-mono text-cream-100/85">
+                                    {c.debug.model}
+                                  </span>
+                                  {c.debug.no_player_hint === false && (
+                                    <span className="text-amber-300 ml-1">
+                                      (with player hints)
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                              {c.debug?.data_url_bytes != null && (
+                                <p className="text-cream-100/60">
+                                  Image payload:{" "}
+                                  <span className="font-mono text-cream-100/85">
+                                    {(c.debug.data_url_bytes / 1024).toFixed(0)}{" "}
+                                    KB
+                                  </span>
+                                </p>
+                              )}
+                              {c.debug?.called_at && (
+                                <p className="text-cream-100/60">
+                                  Called:{" "}
+                                  <span className="font-mono text-cream-100/85">
+                                    {new Date(c.debug.called_at).toLocaleTimeString()}
+                                  </span>
+                                  {c.retry_count != null && c.retry_count > 0 && (
+                                    <span className="text-cream-100/45 ml-1">
+                                      · retry {c.retry_count}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                              {c.status === "parsed" && c.data_url && (
+                                <button
+                                  type="button"
+                                  className="btn-ghost text-[10px] mt-1"
+                                  onClick={() => retryCard(c.id)}
+                                  title="Re-run OCR on the same image. Useful when the first parse came back empty."
+                                >
+                                  ↻ Retry OCR
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {c.row_outcomes && c.row_outcomes.length > 0 && (
                           <div>
                             <p className="font-medium text-cream-100/75">
