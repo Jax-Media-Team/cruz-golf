@@ -175,5 +175,99 @@ export const HELP_ENTRIES: HelpEntry[] = [
     q: "Does Cruz Golf use AI for scoring or recaps?",
     a: "No. Score entry, leaderboard, settlement, and the Smack Talk recap are all pure JavaScript algorithms — no LLM calls. The only AI in the app is this help assistant (when you open it) and optional scorecard photo OCR (only if you upload a photo and an OPENAI_API_KEY is configured).",
     keywords: ["ai", "llm", "openai", "anthropic", "claude", "gpt", "smack talk"]
+  },
+
+  // ── PWA / install / offline ──
+  {
+    q: "Can I install Cruz Golf on my phone?",
+    a: "Yes — it's a PWA. On iPhone: Safari → Share → Add to Home Screen. On Android: Chrome menu → Install app. Once installed it launches full-screen without the browser chrome, has its own app icon, and the service worker caches the shell so it opens instantly even on bad service.",
+    keywords: ["install", "pwa", "home screen", "app", "iphone", "android", "standalone"]
+  },
+  {
+    q: "What happens if I'm completely offline while scoring?",
+    a: "Score entries get queued in localStorage. You'll see an amber \"Offline · scores will sync when you reconnect\" pill at the top. When the device comes back online the queue drains automatically — no scores are lost. If a write fails after retries, the score-status banner gives you Retry / Diagnose / Discard.",
+    keywords: ["offline", "no signal", "no wifi", "queue", "pending", "sync", "scores lost"]
+  },
+  {
+    q: "Why does the page sometimes show a 'skeleton' before content loads?",
+    a: "That's the loading state — gray cards in roughly the shape of the eventual page. Slow phone networks and PWA cold-start used to paint blank for 1-3 seconds; the skeleton fills that gap so the layout doesn't jump on hydration.",
+    keywords: ["loading", "skeleton", "blank page", "slow", "loading state"]
+  },
+
+  // ── Course library ──
+  {
+    q: "What do the course library states mean (verified, community, needs_review, placeholder)?",
+    a: "Verified = full data from an official scorecard or USGA source. Community = added by a user, not yet admin-verified. Needs_review = some data present but rating/slope or hole detail is incomplete. Placeholder = name + city only, no tees yet. Only verified + community courses can be cloned into your group; placeholders show a disabled clone button.",
+    keywords: ["course library", "verified", "community", "needs review", "placeholder", "verification status"]
+  },
+  {
+    q: "How do I add a course?",
+    a: "Three paths: (1) /courses/import — snap a scorecard photo, OCR pulls tees + pars + stroke index, you confirm; (2) clone from the Course library at the bottom of /courses if the course is already there; (3) /courses/new — manual entry, last resort.",
+    keywords: ["add course", "new course", "import", "ocr", "scorecard photo", "clone"]
+  },
+  {
+    q: "Can I edit a course after creating it?",
+    a: "Yes, on /courses/[id] commissioners can edit tee names, ratings, slope, hole pars, and stroke indexes. Round-level handicap math re-runs on next finalize.",
+    keywords: ["edit course", "fix course", "update tees", "wrong rating"]
+  },
+
+  // ── Round lifecycle (extended) ──
+  {
+    q: "What's the difference between live, pending, and finalized rounds?",
+    a: "Live = scoring in progress, no settlements yet. Pending finalization = scoring is done but the commissioner hasn't locked it; still editable, no settlements written. Finalized = locked, settlements written, money owed. The flow is draft → live → pending_finalization → finalized. Commissioners can move back: pending → live, or finalized → live via Unfinalize.",
+    keywords: ["lifecycle", "draft", "live", "pending", "finalized", "status", "state"]
+  },
+  {
+    q: "How do I unfinalize a round if I need to fix a score?",
+    a: "Open the finalized round → \"Unfinalize\" button (commissioner-only). The round flips back to live, settlements are deleted, you fix the score, then re-finalize. The action writes to the audit log so the history isn't quietly altered.",
+    keywords: ["unfinalize", "reopen round", "fix after finalize", "edit final score"]
+  },
+  {
+    q: "I deleted a round by accident — can I recover it?",
+    a: "Yes. Round deletes are soft — they set deleted_at instead of dropping the row. Open /admin/rounds (platform admin) or the recycle bin on /dashboard (group commissioner) and tap Restore. The same applies to courses.",
+    keywords: ["delete round", "restore", "undo delete", "recover", "soft delete", "recycle bin"]
+  },
+
+  // ── Active round pill + realtime ──
+  {
+    q: "What's the floating pill in the bottom-right corner?",
+    a: "It's the Active Round Pill — appears whenever there's a live round and you're not already on it. One tap takes you back to scoring. The pill turns amber when there's a press awaiting your response. Dismiss with the × for the current session.",
+    keywords: ["pill", "floating", "back to round", "active round pill", "live indicator"]
+  },
+  {
+    q: "How does realtime work — when do I need to refresh?",
+    a: "Almost never. The leaderboard, score-group, and press controls all subscribe to Supabase Realtime — scores entered on any phone update everyone's view within a second. Each surface also has a 60-second safety-net refresh in case the socket silently drops, and refetches everything on every reconnect.",
+    keywords: ["realtime", "refresh", "update", "live updates", "supabase realtime", "reconnect"]
+  },
+
+  // ── Group privacy ──
+  {
+    q: "Who can see my group's rounds and records?",
+    a: "Only members of your group. Cruz Golf is group-private by default — there's no public social feed, no cross-group leaderboards, no strangers in your records. The only way someone outside the group sees your data is if you explicitly share a spectator link.",
+    keywords: ["privacy", "private", "public", "visibility", "social", "feed", "stranger"]
+  },
+  {
+    q: "What's the difference between a spectator link and a join PIN?",
+    a: "Spectator = read-only public view of one round (no PIN, no scoring, no account needed — anyone with the URL can watch). PIN = lets a player JOIN the round to score themselves. Spectator links are safe to share publicly; PINs should only go to players you want scoring.",
+    keywords: ["spectator", "pin", "share", "public", "join", "watch vs play"]
+  },
+
+  // ── Admin / observability ──
+  {
+    q: "How do I see what an admin did to my round?",
+    a: "Every destructive op (archive, restore, delete, finalize, unfinalize, mark-pending, resume, press open/accept/decline/withdraw, course verify) writes to /admin/audit. Open the audit log, filter by your round_id or by kind. It's append-only — no admin can edit history through the app.",
+    keywords: ["audit", "audit log", "history", "what changed", "who did", "destructive op", "tamper"]
+  },
+  {
+    q: "What's 'admin spectator mode'?",
+    a: "Platform admins can view any round via /rounds/[id]/leaderboard?token=...&adminMode=1 — read-only with a gold banner that says \"Watching as admin.\" The server re-verifies admin status (URL flag alone won't grant the banner). It's observability, not impersonation — admins never act as you.",
+    keywords: ["admin", "spectator", "watch", "observability", "impersonation", "support"]
+  },
+
+  // ── Dashboard signals (clubhouse) ──
+  {
+    q: "What are those small cards at the top of my dashboard?",
+    a: "The Clubhouse Strip — up to 4 living signals from your group history. Live round leader, current win/loss streaks, biggest rivalries, partner chemistry, group lifetime totals, course mastery, hole mastery, recent milestones. They appear only when there's enough history to be meaningful (3+ rounds at a course, 2+ in a row for streaks, etc.) — not artificially manufactured.",
+    keywords: ["clubhouse", "strip", "dashboard cards", "streak", "rivalry", "mastery", "signals"]
   }
 ];

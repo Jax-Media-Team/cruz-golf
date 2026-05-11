@@ -93,6 +93,46 @@ export default async function AdminOverview() {
     /* table not yet present — admin tile silently hides */
   }
 
+  // Pending presses across the platform — high-leverage troubleshooting
+  // surface. Anything sitting >12h is flagged for attention (UI-side
+  // expiry is 24h; >12h means it's getting stale). Defensive against
+  // pre-0035 envs where round_presses doesn't exist.
+  let pendingPresses: Array<{
+    id: string;
+    round_id: string;
+    segment_label: string;
+    stake_cents: number;
+    opened_at: string;
+    course_name: string | null;
+    group_name: string | null;
+    age_hours: number;
+  }> = [];
+  try {
+    const { data } = await sb
+      .from("round_presses")
+      .select(
+        "id, round_id, segment_label, stake_cents, opened_at, rounds(courses(name), groups(name))"
+      )
+      .eq("status", "pending")
+      .order("opened_at", { ascending: true })
+      .limit(20);
+    pendingPresses = ((data as any[]) ?? []).map((p) => {
+      const ageMs = Date.now() - new Date(p.opened_at).getTime();
+      return {
+        id: p.id,
+        round_id: p.round_id,
+        segment_label: p.segment_label,
+        stake_cents: p.stake_cents,
+        opened_at: p.opened_at,
+        course_name: p.rounds?.courses?.name ?? null,
+        group_name: p.rounds?.groups?.name ?? null,
+        age_hours: Math.floor(ageMs / 3_600_000)
+      };
+    });
+  } catch {
+    /* pre-0035 — table missing */
+  }
+
   // ----- Computed analytics -----
   // Most played courses
   const courseRoundCount = new Map<string, number>();
@@ -245,6 +285,57 @@ export default async function AdminOverview() {
                 </div>
               </li>
             ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Pending presses across the platform — anything older than 12h
+          is highlighted amber, anything older than 20h is highlighted
+          red so they're easy to spot before auto-expiry. */}
+      {pendingPresses.length > 0 && (
+        <section className="card p-4 border border-amber-400/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-lg text-cream-50">
+              Pending presses ({pendingPresses.length})
+            </h2>
+            <Link href="/admin/audit?kind=press.open" className="text-xs text-gold-400 underline">
+              Audit history →
+            </Link>
+          </div>
+          <p className="text-[11px] text-cream-100/55">
+            Pending more than 24h auto-expires on the next action. Use this list
+            to nudge groups whose presses are sitting unanswered.
+          </p>
+          <ul className="divide-y divide-cream-100/8 text-sm">
+            {pendingPresses.map((p) => {
+              const ageColor =
+                p.age_hours >= 20
+                  ? "text-red-300"
+                  : p.age_hours >= 12
+                  ? "text-amber-300"
+                  : "text-cream-100/65";
+              return (
+                <li key={p.id} className="py-2 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/rounds/${p.round_id}`}
+                      className="text-cream-50 hover:underline truncate block"
+                    >
+                      {p.course_name ?? "Course"}
+                      <span className="text-cream-100/55 text-xs ml-2">
+                        · {p.segment_label} · ${(p.stake_cents / 100).toFixed(0)}
+                      </span>
+                    </Link>
+                    <div className="text-[11px] text-cream-100/55 truncate">
+                      {p.group_name ?? "Group"}
+                    </div>
+                  </div>
+                  <div className={`text-xs tabular-nums ${ageColor} shrink-0`}>
+                    {p.age_hours === 0 ? "<1h" : `${p.age_hours}h ago`}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
