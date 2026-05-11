@@ -477,6 +477,15 @@ export function UploadView({
     );
   }
 
+  // OCR no-op detection. The OCR endpoint returns a sentinel string in
+  // _debug.raw_text when OPENAI_API_KEY isn't set on the deployment.
+  // If we see that on any uploaded card, the whole upload surface is
+  // effectively broken — bump a banner to the top so the user doesn't
+  // think their image was bad.
+  const ocrNoop = cards.some((c) =>
+    c.debug?.raw_text?.startsWith("OPENAI_API_KEY is not set")
+  );
+
   return (
     <div className="space-y-4 max-w-5xl">
       <header>
@@ -487,6 +496,25 @@ export function UploadView({
           into the same grid. Confirm and edit before saving.
         </p>
       </header>
+
+      {ocrNoop && (
+        <div className="card p-4 border border-red-400/40 bg-red-500/10 space-y-1.5">
+          <p className="font-medium text-red-200">
+            Scorecard OCR is disabled on this deployment.
+          </p>
+          <p className="text-xs text-red-100/85 leading-snug">
+            The server is missing the{" "}
+            <code className="font-mono text-red-100">OPENAI_API_KEY</code> env
+            var, so every upload returns empty scores. You can still type
+            scores by hand in the grid below — but the AI parse won&apos;t
+            work until an admin adds the key in Vercel and redeploys.
+          </p>
+          <p className="text-[11px] text-red-100/70 leading-snug">
+            Admins: see <code className="font-mono">/admin/diagnostics</code> for
+            the full env-var status of this deployment.
+          </p>
+        </div>
+      )}
 
       <div className="card p-4 space-y-3">
         <div>

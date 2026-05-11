@@ -288,10 +288,26 @@ export const openAIVisionOCR: ScorecardOCR = {
     const calledAt = new Date().toISOString();
     const dataUrlBytes = dataUrl.length;
     if (!apiKey) {
+      // Loud server-side warning so the silent no-op shows up in
+      // Vercel Function logs even when nobody is watching the UI.
+      // Patrick caught this once via the per-card diagnostics panel;
+      // log + a structured diagnostics flag make it impossible to
+      // miss a second time.
+      const env =
+        process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown";
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[ocr] OPENAI_API_KEY is not set (env=${env}). ` +
+          `Upload returned no-op shape. Add the env var via Vercel ` +
+          `→ Settings → Environment Variables and redeploy.`
+      );
       return {
         players: [],
         _debug: {
-          raw_text: "OPENAI_API_KEY is not set — OCR is a no-op.",
+          raw_text:
+            "OPENAI_API_KEY is not set — OCR is a no-op. " +
+            "Add it via Vercel → Settings → Environment Variables, " +
+            "scope it to Production + Preview, then trigger a redeploy.",
           pre_coerce: null,
           post_coerce: null,
           data_url_bytes: dataUrlBytes,
