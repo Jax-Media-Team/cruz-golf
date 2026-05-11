@@ -30,6 +30,12 @@ type Card = {
     model?: string;
     called_at?: string;
     no_player_hint?: boolean;
+    /** Number of upstream API calls — 2 means we auto-retried on
+     *  the "rows but no scores" failure mode. */
+    attempts?: number;
+    /** When auto-retried, the first attempt's raw text — so we can
+     *  see WHAT the model returned that triggered the retry. */
+    first_attempt_raw?: string;
   };
   /** Per-row outcome captured during the merge step — what the score
    *  count was, who it matched, why it was dropped if unmatched.
@@ -578,9 +584,14 @@ export function UploadView({
                                   <span className="font-mono text-cream-100/85">
                                     {new Date(c.debug.called_at).toLocaleTimeString()}
                                   </span>
+                                  {c.debug?.attempts && c.debug.attempts > 1 && (
+                                    <span className="text-amber-300 ml-1">
+                                      · auto-retried (model gave up first time)
+                                    </span>
+                                  )}
                                   {c.retry_count != null && c.retry_count > 0 && (
                                     <span className="text-cream-100/45 ml-1">
-                                      · retry {c.retry_count}
+                                      · manual retry {c.retry_count}
                                     </span>
                                   )}
                                 </p>
@@ -640,9 +651,22 @@ export function UploadView({
                           <details className="text-[10px] font-mono">
                             <summary className="cursor-pointer hover:text-cream-100/85">
                               Raw model output
+                              {c.debug?.attempts && c.debug.attempts > 1
+                                ? " (winning attempt)"
+                                : ""}
                             </summary>
                             <pre className="mt-1 whitespace-pre-wrap break-all text-cream-100/55 max-h-48 overflow-auto">
                               {c.debug.raw_text}
+                            </pre>
+                          </details>
+                        )}
+                        {c.debug?.first_attempt_raw && (
+                          <details className="text-[10px] font-mono">
+                            <summary className="cursor-pointer hover:text-cream-100/85">
+                              First attempt (auto-retried, returned no scores)
+                            </summary>
+                            <pre className="mt-1 whitespace-pre-wrap break-all text-cream-100/55 max-h-48 overflow-auto">
+                              {c.debug.first_attempt_raw}
                             </pre>
                           </details>
                         )}

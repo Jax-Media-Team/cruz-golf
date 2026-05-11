@@ -67,6 +67,13 @@ export interface ScorecardOCR {
       called_at: string;
       /** True iff this was a no-hint call (the new default). */
       no_player_hint: boolean;
+      /** Number of upstream API calls actually made. 1 for normal,
+       *  2 when the first response had rows-but-no-scores and we
+       *  auto-retried. */
+      attempts: number;
+      /** If we auto-retried, the raw text of the FIRST attempt — so
+       *  the diagnostics panel shows both. */
+      first_attempt_raw?: string;
     };
   }>;
 }
@@ -167,6 +174,113 @@ FINAL CHECKS BEFORE RETURNING:
 
 Return ONLY the JSON object. No code fences, no prose.`;
 
+/** Build the API request body with optional retry-hint text. */
+function buildRequestBody(
+  modelId: string,
+  dataUrl: string,
+  holes: 9 | 18,
+  retryHint: string | null,
+  temperature: number
+) {
+  return {
+    model: modelId,
+    response_format: { type: "json_object" as const },
+    temperature,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              `This card has ${holes} holes. Transcribe every ` +
+              `handwritten score row you can see. Use the literal ` +
+              `handwritten text for each name — no normalization, ` +
+              `no invented names.` +
+              (retryHint ? `\n\n${retryHint}` : "")
+          },
+          {
+            type: "image_url",
+            // detail:"high" is the critical flag for pencil
+            // handwriting. Without it the API aggressively
+            // downsamples and digits become unreadable.
+            image_url: { url: dataUrl, detail: "high" as const }
+          }
+        ]
+      }
+    ]
+  };
+}
+
+async function callOpenAI(
+  apiKey: string,
+  body: ReturnType<typeof buildRequestBody>
+) {
+  return await retry(
+    async () => {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`OCR upstream ${r.status}: ${text.slice(0, 200)}`);
+      }
+      return await r.json();
+    },
+    { attempts: 4, baseMs: 500 }
+  );
+}
+
+function parseModelResponse(raw: any, holes: 9 | 18) {
+  let parsed: any = null;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return { parsed: null, rows: [] as Array<{ name: string; scores: Array<number | null> }> };
+  }
+  const rows = (parsed?.players ?? []).map((p: any) => ({
+    name: String(p?.name ?? ""),
+    scores: Array.from({ length: holes }, (_, i) => {
+      const v = p?.scores?.[i];
+      return typeof v === "number" && Number.isFinite(v)
+        ? Math.round(v)
+        : null;
+    })
+  }));
+  return { parsed, rows };
+}
+
+function countCells(
+  rows: Array<{ scores: Array<number | null> }>
+): number {
+  return rows.reduce(
+    (sum, p) => sum + p.scores.filter((s) => s != null).length,
+    0
+  );
+}
+
+/**
+ * Retry framing used when the first pass returned rows-but-zero-cells.
+ * This is the classic "model gave up" failure mode — it produced
+ * structurally valid output but every score is null. The second pass
+ * uses a higher temperature + a focused user message addressing the
+ * exact failure ("you returned all nulls — try again, the digits are
+ * visible") so the model is much less likely to repeat the same path.
+ */
+const RETRY_HINT =
+  `IMPORTANT: A previous attempt at this exact image returned all-null ` +
+  `scores. That is the WRONG behavior. The handwritten digits on this ` +
+  `card are visible to a human — they are visible to you too. Look ` +
+  `again carefully at each row. Read the pencil scores literally. If a ` +
+  `digit is at all legible, return it. Return null only for cells that ` +
+  `are genuinely blank.`;
+
 export const openAIVisionOCR: ScorecardOCR = {
   async parse({ dataUrl, holes, model }) {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -183,101 +297,76 @@ export const openAIVisionOCR: ScorecardOCR = {
           data_url_bytes: dataUrlBytes,
           model: modelId,
           called_at: calledAt,
-          no_player_hint: true
+          no_player_hint: true,
+          attempts: 0
         }
       };
     }
-    // NOTE: we deliberately do NOT include the player list in the
-    // prompt. See the file header for the bug this fixes.
-    const body = {
-      model: modelId,
-      response_format: { type: "json_object" as const },
-      // temperature: 0 gives deterministic output — same image always
-      // produces the same parse, which is what we want for a
-      // diagnostics workflow.
-      temperature: 0,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text:
-                `This card has ${holes} holes. Transcribe every handwritten ` +
-                `score row you can see. Use the literal handwritten text ` +
-                `for each name — no normalization, no invented names.`
-            },
-            {
-              type: "image_url",
-              // detail:"high" is the critical flag for pencil
-              // handwriting. Without it, the API aggressively
-              // downsamples and the digits become unreadable. We pay
-              // a small cost increase per call for usable output.
-              image_url: { url: dataUrl, detail: "high" as const }
-            }
-          ]
-        }
-      ]
-    };
-    const j = await retry(
-      async () => {
-        const r = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(body)
-        });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(
-            `OCR upstream ${r.status}: ${text.slice(0, 200)}`
-          );
-        }
-        return await r.json();
-      },
-      { attempts: 4, baseMs: 500 }
-    );
-    const raw = j.choices?.[0]?.message?.content;
-    let parsed: any;
-    try {
-      parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    } catch {
+
+    // First attempt — temperature 0, no retry hint.
+    const body1 = buildRequestBody(modelId, dataUrl, holes, null, 0);
+    const j1 = await callOpenAI(apiKey, body1);
+    const raw1 = j1.choices?.[0]?.message?.content;
+    const { parsed: parsed1, rows: rows1 } = parseModelResponse(raw1, holes);
+
+    // Decide if we need a second pass. Auto-retry ONLY when:
+    //   - we got at least one row back (so the model produced
+    //     structured output), AND
+    //   - every cell across all rows is null (the "gave up" signal).
+    // This avoids doubling the API spend on:
+    //   - empty-array responses (model said "I can't read this") —
+    //     a retry won't help, the image is unreadable.
+    //   - partial parses (some cells filled) — already useful; the
+    //     manual Retry button covers improvement attempts.
+    const needRetry = rows1.length > 0 && countCells(rows1) === 0;
+
+    if (!needRetry) {
       return {
-        players: [],
+        players: rows1,
         _debug: {
-          raw_text: typeof raw === "string" ? raw : JSON.stringify(raw),
-          pre_coerce: null,
-          post_coerce: null,
+          raw_text: typeof raw1 === "string" ? raw1 : JSON.stringify(raw1),
+          pre_coerce: parsed1,
+          post_coerce: rows1,
           data_url_bytes: dataUrlBytes,
           model: modelId,
           called_at: calledAt,
-          no_player_hint: true
+          no_player_hint: true,
+          attempts: 1
         }
       };
     }
-    const preCoerce = parsed;
-    const out = (parsed?.players ?? []).map((p: any) => ({
-      name: String(p?.name ?? ""),
-      scores: Array.from({ length: holes }, (_, i) => {
-        const v = p?.scores?.[i];
-        return typeof v === "number" && Number.isFinite(v)
-          ? Math.round(v)
-          : null;
-      })
-    }));
+
+    // Second attempt — slightly warmer temperature + the
+    // "you returned all nulls last time" addressing.
+    const body2 = buildRequestBody(modelId, dataUrl, holes, RETRY_HINT, 0.4);
+    const j2 = await callOpenAI(apiKey, body2);
+    const raw2 = j2.choices?.[0]?.message?.content;
+    const { parsed: parsed2, rows: rows2 } = parseModelResponse(raw2, holes);
+
+    // Use the better of the two responses (more cells wins). Tie
+    // goes to the retry since that's our "the model actually looked"
+    // attempt.
+    const cells1 = countCells(rows1);
+    const cells2 = countCells(rows2);
+    const winnerIs2 = cells2 >= cells1;
+    const winnerRows = winnerIs2 ? rows2 : rows1;
+    const winnerParsed = winnerIs2 ? parsed2 : parsed1;
+    const winnerRaw = winnerIs2 ? raw2 : raw1;
+
     return {
-      players: out,
+      players: winnerRows,
       _debug: {
-        raw_text: typeof raw === "string" ? raw : JSON.stringify(raw),
-        pre_coerce: preCoerce,
-        post_coerce: out,
+        raw_text:
+          typeof winnerRaw === "string" ? winnerRaw : JSON.stringify(winnerRaw),
+        pre_coerce: winnerParsed,
+        post_coerce: winnerRows,
         data_url_bytes: dataUrlBytes,
         model: modelId,
         called_at: calledAt,
-        no_player_hint: true
+        no_player_hint: true,
+        attempts: 2,
+        first_attempt_raw:
+          typeof raw1 === "string" ? raw1 : JSON.stringify(raw1)
       }
     };
   }

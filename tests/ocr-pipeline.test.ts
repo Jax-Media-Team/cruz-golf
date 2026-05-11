@@ -39,6 +39,10 @@ describe("OCR pipeline contract", () => {
     expect(typeof out._debug?.data_url_bytes).toBe("number");
     expect(out._debug?.data_url_bytes).toBeGreaterThan(0);
     expect(out._debug?.called_at).toMatch(/T.*Z/);
+    // No-op path makes ZERO API calls — attempts=0 distinguishes it
+    // from a real call that happens to fail.
+    expect(out._debug?.attempts).toBe(0);
+    expect(out._debug?.first_attempt_raw).toBeUndefined();
   });
 
   it("no-op with no player list still works (players is optional)", async () => {
