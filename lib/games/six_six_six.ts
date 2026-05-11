@@ -1,6 +1,7 @@
 import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
 import { addDelta, emptyOutput, holesInPlay } from "./helpers";
+import { detectAutoPresses, pressPotsBySide, type HoleResult } from "./press";
 
 /**
  * 6-6-6: a 4-player game played in three 6-hole segments. Partners rotate so
@@ -21,6 +22,12 @@ import { addDelta, emptyOutput, holesInPlay } from "./helpers";
  *   net: bool — use net scores (default true)
  *   match_play: bool — true = head-to-head per hole; false = sum of best balls
  *               across the 6 holes (default true)
+ *   presses: "none" | "manual" | "auto_2_down" — auto-fire when one side
+ *            goes 2-down with 3+ holes left WITHIN A SEGMENT. Each segment
+ *            has its own press chain (partner pairings change between
+ *            segments, so a press in segment 1 doesn't carry into segment 2).
+ *            Manual presses (via /rounds/[id]/press-controls) work for any
+ *            6-6-6 round regardless of this config. Default: "none".
  */
 
 type Pair = [UUID, UUID];
@@ -36,9 +43,11 @@ export function settleSixSixSix(input: GameInput): GameOutput {
     rotation?: SegmentRotation[];
     net?: boolean;
     match_play?: boolean;
+    presses?: "none" | "manual" | "auto_2_down";
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
+  const autoPress = cfg.presses === "auto_2_down";
 
   const playerIds = input.players.map((p) => p.id);
   for (const id of playerIds) addDelta(out.perPlayer, id, 0, "");
@@ -86,16 +95,37 @@ export function settleSixSixSix(input: GameInput): GameOutput {
     };
 
     if (matchPlay) {
-      let aUp = 0;
-      let played = 0;
-      for (const h of segHoles) {
+      // Build per-hole HoleResult[] for this segment — used by both the
+      // segment-payout calc and the press primitive. Aligns with the
+      // way Nassau (lib/games/nassau.ts) wires presses per segment.
+      const segHoleResults: HoleResult[] = segHoles.map((h) => {
         const a = sideHoleScore(team_a, h.hole_number);
         const b = sideHoleScore(team_b, h.hole_number);
-        // Skip holes still missing — keep counting later complete holes.
-        if (a == null || b == null) continue;
+        if (a == null || b == null) {
+          return {
+            hole_number: h.hole_number,
+            a_won: false,
+            b_won: false,
+            push: false,
+            incomplete: true
+          };
+        }
+        return {
+          hole_number: h.hole_number,
+          a_won: a < b,
+          b_won: b < a,
+          push: a === b,
+          incomplete: false
+        };
+      });
+
+      let aUp = 0;
+      let played = 0;
+      for (const hr of segHoleResults) {
+        if (hr.incomplete) continue;
         played++;
-        if (a < b) aUp++;
-        else if (b < a) aUp--;
+        if (hr.a_won) aUp++;
+        else if (hr.b_won) aUp--;
       }
       if (played === segHoles.length) {
         lastPlayedHole = Math.max(lastPlayedHole, segHoles[segHoles.length - 1].hole_number);
@@ -104,6 +134,35 @@ export function settleSixSixSix(input: GameInput): GameOutput {
           const losingSide = aUp > 0 ? team_b : team_a;
           for (const pid of losingSide) addDelta(out.perPlayer, pid, -stake, `666 segment ${idx + 1}`);
           for (const pid of winningSide) addDelta(out.perPlayer, pid, +stake, `666 segment ${idx + 1}`);
+        }
+      }
+
+      // Auto-press settlement within this segment. Each segment has
+      // independent presses — partners rotate between segments, so a
+      // press doesn't carry over. Standard rule: trigger at 2-down,
+      // min 3 holes left in the segment, cap of 4 presses per side
+      // per segment (matches Nassau).
+      if (autoPress) {
+        const presses = detectAutoPresses(segHoleResults, {
+          triggerDown: 2,
+          minRemainingHoles: 3,
+          maxPresses: 4,
+          stakeCents: stake,
+          segmentLabel: `666 seg ${idx + 1}`,
+          segmentStart: 0,
+          segmentEnd: segHoleResults.length
+        });
+        if (presses.length > 0) {
+          const pots = pressPotsBySide(presses, [...team_a], [...team_b]);
+          for (const [pid, delta] of pots.entries()) {
+            if (delta !== 0) {
+              const labels = presses
+                .filter((p) => p.result_delta != null && p.result_delta !== 0)
+                .map((p) => p.label)
+                .join(" + ");
+              addDelta(out.perPlayer, pid, delta, labels || `666 seg ${idx + 1} presses`);
+            }
+          }
         }
       }
     } else {
