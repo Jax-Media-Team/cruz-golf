@@ -135,12 +135,21 @@ export function useScoreSaver(scope: { roundId: string }) {
       for (const it of loaded) setStatus(it.key, "saving");
       void drain();
     }
-    // Drain on tab focus / online — covers the laptop-closed-and-reopened path.
+    // Drain on tab focus / online / visibility — covers the laptop-
+    // closed-and-reopened path AND the installed-iPhone-PWA path where
+    // swiping back from another app fires `visibilitychange` without
+    // necessarily firing `focus`. We listen to all three because no
+    // single event is guaranteed across iOS Safari / Chrome / installed-
+    // standalone modes.
     const onWake = () => {
       if (queueRef.current.length > 0) void drain();
     };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onWake();
+    };
     window.addEventListener("online", onWake);
     window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onVisibility);
 
     // Also drain on auth state change — when a user signs back in after a
     // session expiry, any items that were parked as "failed" due to 401
@@ -166,6 +175,7 @@ export function useScoreSaver(scope: { roundId: string }) {
     return () => {
       window.removeEventListener("online", onWake);
       window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onVisibility);
       authSub.subscription.unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
