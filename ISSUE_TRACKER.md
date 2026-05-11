@@ -1,5 +1,25 @@
 # Cruz Golf — Living Roadmap & Issue Tracker
 
+## 🌅 Current state snapshot (2026-05-10 evening)
+
+| Field | Value |
+|---|---|
+| **Branch** | `main` |
+| **Latest commit** | `a9a2723` — docs(tracker): usability pass — real-round simulation + admin round-detail + docs |
+| **Working tree** | clean, in sync with origin |
+| **Production URL** | https://cruz-golf.vercel.app |
+| **Vercel deployment** | success (id 4642248168, sha a9a2723, picked up 2026-05-11 01:36 UTC) |
+| **Tests** | 312/312 passing across 22 files |
+| **Typecheck** | clean |
+| **Migrations applied through** | `0038` (The Plantation at Ponte Vedra Beach) |
+| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033` (see migration table) |
+| **Open issues blocking ship** | none |
+| **Safe to reboot machine** | ✅ yes |
+
+For cold-start context start with [CLAUDE.md → NEXT SESSION START HERE](./CLAUDE.md). This file is the detailed roadmap.
+
+---
+
 ## Next session priorities (per Patrick, 2026-05-10)
 
 1. **Data integrity + trust** — no destructive ops without explicit approval; archive/restore default

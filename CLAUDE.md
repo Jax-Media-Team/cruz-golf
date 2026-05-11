@@ -4,6 +4,96 @@
 
 ---
 
+## 🌅 NEXT SESSION START HERE (snapshot 2026-05-10 evening)
+
+**Current system status: ✅ healthy and deployed.**
+
+- **Latest commit on main:** `a9a2723` — *docs(tracker): usability pass — real-round simulation + admin round-detail + docs*
+- **Branch:** `main` (working tree clean, in sync with origin)
+- **Production URL:** https://cruz-golf.vercel.app — last build state: **success** (Vercel deployment id 4642248168, picked up `a9a2723` at 2026-05-11 01:36 UTC)
+- **Per-commit Vercel preview:** https://cruz-golf-5iwmg98qp-pcruz-jmts-projects.vercel.app
+- **Test suite:** 312/312 passing across 22 test files. Run with `npm test -- --run` from project root.
+- **Typecheck:** clean (`npx tsc --noEmit`)
+- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). One verified scorecard added this evening.
+
+### Highest priorities for next session
+
+1. **Real-device iPhone PWA QA** — walk through `docs/IPHONE_PWA_QA.md` on an actual iPhone. The 9 scenarios in there can't be programmatically verified. Most likely places to find bugs: realtime over LTE with poor signal, service-worker activation timing on first install, home-indicator clearance on different iPhone models.
+2. **Course library expansion** — 6 NE FL placeholders still empty (Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Dye's Valley, San Jose, Pablo Creek). Waiting on official scorecards. **No fabrication.** When a card arrives, follow the 0034 / 0038 pattern: one tee per color, men's-only rating/slope/SI, idempotent migration, status=verified only if rating + slope are printed on the card.
+3. **Manual press dispute end-to-end with a real foursome** — the engine + UI + audit are tested but the dispute workflow (`docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`) hasn't been exercised with a real "Ben says he accepted" scenario. Watch for: does the audit log surface the right info? Is the round-detail page enough to resolve it without SQL?
+4. **(Lower priority) Push notifications for press requests** — not implemented. The active round pill alert (amber) + in-app banner are the only out-of-app signals. If players have the app backgrounded, they won't know about a press until they open it.
+
+### Outstanding risks (things that could break in the field)
+
+- **Press accept while completely offline:** intentionally NOT queued (24h expiry window + business rules make it risky). User sees "You're offline. Try again when you reconnect." and must retry manually. Confirm this is the right call after real use.
+- **Service worker freshness after a deploy:** the version watcher polls every ~30s, shows a "Refresh" toast. If users dismiss + never refresh, they stay on stale code until the SW cache invalidates on next cold start. Acceptable but worth monitoring.
+- **No push notifications.** Press requests rely on active app foreground. Real-world impact depends on how players actually use the app — if it stays open during a round (likely), this is fine.
+- **High-handicap-mode handicap math:** tested in unit + simulation but not on every USGA edge case (plus handicaps, allowances < 50%, 9-hole-only rounds with full-round handicap).
+
+### Important files (read first when resuming)
+
+- `CLAUDE.md` (this file) — posture + principles + the "don't re-litigate" list
+- `ISSUE_TRACKER.md` — full migration table + priority list + session execution log
+- `docs/IPHONE_PWA_QA.md` — 9-scenario real-device checklist
+- `docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md` — admin support walkthrough
+- `lib/games/press.ts` — the press engine (auto + manual)
+- `lib/clubhouse.ts` — the living-clubhouse signal builders (1641 lines, 11 builders)
+- `app/(app)/rounds/[id]/press-controls.tsx` — manual press UI (realtime + retry)
+- `app/(app)/rounds/[id]/finalize/finalize-view.tsx` — full settlement composition
+- `supabase/migrations/0038_plantation_pvb_data.sql` — latest applied migration
+
+### Active routes / surfaces (mental map)
+
+User-facing app (`app/(app)/`):
+- `/dashboard` — clubhouse strip + rounds list + onboarding checklist (skeleton ✓)
+- `/rounds/new` — create round
+- `/rounds/[id]` — live round page + PressControls (skeleton ✓)
+- `/rounds/[id]/score` — single-player score entry
+- `/rounds/[id]/score-group` — group score entry
+- `/rounds/[id]/finalize` — settlement + pending-press warning
+- `/rounds/[id]/invites`, `/wagers`, `/upload`, `/games`, `/join`
+- `/leaderboards`, `/records`, `/records/me`, `/records/course/[id]`
+- `/players`, `/players/[id]/stats`
+- `/courses`, `/courses/[id]`, `/courses/new`, `/courses/import`
+- `/ledger`
+- `/onboarding`
+
+Public:
+- `/login`, `/signup`, `/demo`
+- `/rounds/[id]/leaderboard?token=...` — spectator
+- `/rounds/[id]/leaderboard?token=...&adminMode=1` — admin spectator (gold banner)
+
+Admin (`app/admin/`):
+- `/admin` — overview + live rounds + pending presses panel + recent audit
+- `/admin/audit` — full destructive-op log (filter by kind; press events deep-link to round)
+- `/admin/rounds/[id]` — round inspection + **manual press lifecycle section** (status pills, opener, acceptor, timestamps)
+- `/admin/users`, `/admin/groups`, `/admin/courses`, `/admin/course-library`, `/admin/feedback`
+
+### Unfinished work (none currently in-progress)
+
+No half-finished branches, no WIP commits, no `// TODO` markers added this stretch. If you find something stale, treat it as exploration not commitment.
+
+### Recommended next steps (in priority order)
+
+1. **Read this section + the migration table in ISSUE_TRACKER.md** — confirms the snapshot matches the actual state.
+2. **Walk `docs/IPHONE_PWA_QA.md` on your iPhone** — file any bugs as `MOBILE-N` items in the tracker.
+3. **If Patrick brings a scorecard:** add it as migration 0039 following the 0038 pattern. Test the SQL idempotency by re-running it.
+4. **If a real press dispute happens:** follow `docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`. Take notes on what's missing.
+5. **Otherwise:** continue working through the ⏳ items in the tracker's "Next major focus areas" section.
+
+### Safety / reliability decisions (do NOT re-litigate)
+
+- **Press accept is NOT queued offline.** Deliberate — 24h expiry window matters.
+- **Score writes ARE queued offline** via localStorage outbox (`useScoreSaver`).
+- **Round status `draft → live → pending_finalization → finalized`** — no auto-transitions, no midnight cron. Trust + recoverability over clutter cleanup.
+- **Migration workflow:** SQL pasted in chat → Patrick applies via Supabase SQL editor → confirms "applied". No autonomous DDL.
+- **Group-private by default.** No public social feed, no cross-group leaderboards, no strangers in records.
+- **Audit log is append-only.** No UPDATE / DELETE policies. Admins can read, not edit.
+- **GHIN integration: NOT implemented.** Manual handicaps only via `wrapManualIndex`. The `HandicapProviderLookup` interface is the seam for future GHIN. Local overrides always win.
+- **No course-data fabrication.** Verified scorecards / USGA NCRDB / community-OCR with admin moderation only.
+
+---
+
 ## What this is
 
 Cruz Golf is a **Next.js 15 + Supabase** app for private golf groups. Patrick Cruz (Jacksonville, FL) is the founder and the user testing it most. Initial user base: Northeast Florida private-club golfers, member-member tournaments, gambling foursomes.
@@ -170,6 +260,78 @@ Distinct visual modes:
 - **Editing as admin** = NOT YET BUILT; if added, will use a distinct (red/amber) banner + opt-in route + audit log
 - **Acting as user** = never. Don't do impersonation.
 
+**Admin tooling shipped (as of 0038):**
+
+| Surface | What it shows |
+|---|---|
+| `/admin` | Live rounds list + **pending presses panel** (age-colored: amber >12h, red >20h) + recent audit + counts |
+| `/admin/audit` | Full destructive-op log, filter by kind, deep-link from press events back to round |
+| `/admin/rounds/[id]` | Round inspection + **full press lifecycle section** (status pill, sides, opener, acceptor/decliner/withdrawer, timestamps) |
+| `/admin/users` | Per-user view |
+| `/admin/groups` | Group inspection |
+| `/admin/courses` + `/admin/course-library` | Course moderation (verify / flag / community / placeholder) with bulk actions |
+| `/admin/feedback` | User feedback inbox |
+
+All admin pages re-verify `fn_is_platform_admin()` server-side. The audit log is append-only — even admins can't tamper through the API.
+
+---
+
+## PWA / offline status (as built)
+
+**Service worker** (`public/sw.js`, CACHE_VERSION = `cruz-golf-v1`):
+
+- Static assets (`/_next/static/`, logos, fonts, css, js): **cache-first**.
+- HTML pages: **network-first, cache fallback**. Last-resort offline fallback: cached `/dashboard` or an HTML stub.
+- `/api/*` and `/auth/*`: pass-through (never cached).
+- Auto-claims clients on activate; cleans up old cache versions on version bump.
+
+**Score writes** (`lib/useScoreSaver.ts` + `lib/score-queue.ts`):
+
+- localStorage outbox queue, durable across browser closes.
+- Drains on online / focus / SIGNED_IN / TOKEN_REFRESHED events.
+- `retry()` with exponential backoff on each item.
+- `beforeunload` warning if pending writes exist.
+- Failed items don't block the head — queue walks forward; user gets Retry / Diagnose / Discard via `<SaveStatusBanner>`.
+
+**Offline indicators / chrome**:
+
+- `<OfflineIndicator>` — calm amber pill at top when `navigator.onLine === false`. Statement, not exclamation.
+- `<UpdateToast>` — bottom-left toast when a newer deploy is detected (via `useVersionWatch`). User picks when to refresh.
+- All floating chrome (`<ActiveRoundPill>`, `<HelpButton>`, `<InstallPrompt>`, `<UpdateToast>`) uses `bottom-[calc(... + env(safe-area-inset-bottom, 0px))]` so the iPhone home indicator never overlaps.
+- Loading skeletons at `app/(app)/loading.tsx`, `dashboard/loading.tsx`, `rounds/[id]/loading.tsx` cover slow-network RSC streaming.
+
+**Press accept offline:** NOT queued. User sees "You're offline. Try again when you reconnect." (see `lib/press-errors.ts` + Q7 in Open strategic questions).
+
+---
+
+## QA status (current as of a9a2723)
+
+- **Test suite: 312/312 passing across 22 files.** Run `npm test -- --run`.
+- **Typecheck: clean.** Run `npx tsc --noEmit`.
+- **Engine + settlement coverage:** 22 unit tests for press, 19 scenario simulations, 13 real-round (8-player) integration tests. All zero-sum invariants hold.
+- **Press lifecycle:** every state transition (open / accept / decline / withdraw / expired) tested; status filter at settlement verified; finalize-with-pending-press warning verified.
+- **PWA reliability:** safe-area / floating chrome / skeleton loaders verified at code level. **Real-device iPhone QA still pending — checklist in `docs/IPHONE_PWA_QA.md`.**
+- **Admin support:** dispute workflow walkthrough in `docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`. Not exercised with a real dispute yet.
+
+---
+
+## Course library status (current as of 0038)
+
+NE FL priority list — **7 of 13 populated + verified:**
+
+✅ JGCC (preset + verified template) · ✅ PVIC Ocean · ✅ PVIC Lagoon · ✅ TPC Sawgrass Stadium · ✅ Deerwood CC · ✅ Timuquana CC · ✅ The Plantation at Ponte Vedra Beach
+
+**Still placeholder, waiting on official scorecards** (no fabrication):
+⏳ Sawgrass CC · ⏳ Atlantic Beach CC · ⏳ Marsh Landing · ⏳ TPC Dye's Valley · ⏳ San Jose · ⏳ Pablo Creek
+
+Plus the Berkeley Hall South Course (Bluffton SC) template (0033, awaiting apply).
+
+When a scorecard arrives:
+1. Verify rating + slope are printed for each tee.
+2. Follow the `0034` / `0038` pattern: idempotent migration, `do $...$` block, one tee per color, men's-only, status=verified if data is complete (else `needs_review`).
+3. Paste SQL in chat for Patrick to apply via Supabase SQL editor.
+4. Mark applied in `ISSUE_TRACKER.md` migration table.
+
 ---
 
 ## Testing convention
@@ -266,29 +428,80 @@ The starting privacy model unless a major technical reason forces otherwise:
 
 Friends-list scope (Q3): treat as **global per profile**, but every "share to friend" is an explicit one-time share — never an implicit data leak across groups.
 
-## Manual press UI — design questions for next session
+## Manual press model — AS BUILT (shipped 2026-05-10, migrations 0035 + 0036)
 
-Patrick (2026-05-10) flagged manual presses as the most important remaining betting feature, and asked me to think through the parameters. Here's the design surface to lock down before building:
+Manual presses are fully shipped. This section is the as-built reference — if you change behavior here, update the docs + tests + this section.
 
-| Question | Recommended answer |
+**Schema** (`round_presses` table from migration 0035):
+
+| Column | Notes |
 |---|---|
-| **Who can press?** | Either side's commissioner, OR any active player on the round. Default: any player on a side that's currently down. Both sides must acknowledge. |
-| **When is a press available?** | At any hole the down-side has played but no later than 3 holes from the segment end (matches the auto-press 3-hole rule). Disabled before scores exist. |
-| **What hole does the press start on?** | The NEXT hole after the trigger event. Press doesn't retroactively cover already-played holes. |
-| **Acknowledgement model?** | One-tap accept by the OTHER side. Mid-round wager-ack pattern, similar to existing `round_wager_acks`. Auto-expires after 24 hours if not accepted. |
-| **Stake?** | Defaults to parent segment's stake. Commissioner can override to a different stake. |
-| **Live leaderboard display?** | Shows "Press 1 open · holes 7-18 · Patrick + Ben press" inline with the segment summary. Per-press deltas accumulate into the per-player total. |
-| **Settlement display?** | Per-press line items in the FinalizeView's "By game" breakdown — same pattern as auto-presses already use (`label: "Nassau front · press 1"`). |
-| **Audit log?** | Every press open + accept + decline writes a `destructive_audit_log` row (kind: `press.open` / `press.accept` / `press.decline`). Provides recovery path if disputes arise. |
-| **Reversibility?** | Until accepted, the opener can withdraw. Once accepted, it's binding through finalize unless commissioner unfinalizes the round. |
+| `id` | UUID, primary key |
+| `round_id` | FK to `rounds(id)` |
+| `game_id` | optional FK to `round_games(id)` — null for round-level presses |
+| `segment_label` | display string, e.g. "Nassau back · manual press" |
+| `start_hole` / `end_hole` | inclusive range; must cover ≥3 holes; clamped to `round.holes` |
+| `stake_cents` | positive integer |
+| `side_a_rp_ids` / `side_b_rp_ids` | `uuid[]`, frozen at open. Both sides must cover EVERY player in the round (0036 partition check) |
+| `status` | one of `pending` / `accepted` / `declined` / `withdrawn` / `expired` |
+| `opened_by_rp_id` / `opened_at` | always set |
+| `accepted_by_rp_id` / `accepted_at` | set on accept |
+| `declined_by_rp_id` / `declined_at` | set on decline |
+| `withdrawn_at` | set on withdraw |
+| `expires_at` | default opened_at + 24h |
 
-Ship plan when picking this up:
-1. New table `round_presses` (round_id, segment_label, opened_by_rp, opened_at, accepted_by_rps[], accepted_at, withdrawn_at, stake_cents, start_hole, status)
-2. RPCs: `fn_open_press`, `fn_accept_press`, `fn_decline_press`, `fn_withdraw_press`
-3. UI: small "Press →" affordance on the round page when commissioner-applicable + a "press accepted" banner for the opposing side
-4. Engine wiring: `lib/games/press.ts` extended to accept manual presses alongside auto-presses; settlement reads `round_presses` rows and applies them
+**RPCs** (`fn_open_press`, `fn_accept_press`, `fn_decline_press`, `fn_withdraw_press`):
 
-Defer until Patrick green-lights the design.
+- SECURITY DEFINER. Authenticated only.
+- `accept`/`decline`/`withdraw` use `SELECT ... FOR UPDATE` row locks (0036 race fix).
+- Open validates: caller is on side A, partition covers all players, hole range fits `round.holes`, ≥3 holes, stake > 0.
+- Every state change writes a `destructive_audit_log` row via `fn_log_destructive` (kinds: `press.open`, `press.accept`, `press.decline`, `press.withdraw`).
+
+**Engine** (`lib/games/press.ts`):
+
+- `settleManualPress(press, holes)` — pure function. Returns `PressMatch` with `result_delta = null` if any in-range hole is incomplete.
+- `pressPotsBySide(presses, sideA, sideB)` — zero-sum money distribution. Loser pays stake, pot splits among winners, remainder cent to first sorted winner id.
+
+**UI** (`app/(app)/rounds/[id]/press-controls.tsx`):
+
+- "+ Press" affordance on every live or pending-finalization round.
+- "Press requested" amber banner for side-B players (or commissioner) with Accept / Decline.
+- "Press pending" card for the opener with Withdraw.
+- Accepted strip with calm green dot.
+- Hides pending presses opened >24h ago (UI-side expiry).
+- All three RPCs wrapped in `retry` helper (3 attempts, 400ms backoff) via `lib/press-errors.ts` translator.
+
+**Realtime** (subscribed in both PressControls AND ActiveRoundPill):
+
+- `postgres_changes` on `round_presses` filtered by `round_id`.
+- Any state change → `router.refresh()` on the round page, or refetch press-pending count on the pill.
+- 60s safety-net refresh covers silent socket drops.
+
+**Active round pill** alert state:
+
+- Green "Live · [course] →" when round is just live.
+- **Amber "Press pending · [course] →"** when the viewer is on side B of a pending press.
+- Visible on every non-round page (hides on /dashboard which has its own hero card, /rounds/[id] which IS the destination, /demo, /admin).
+
+**Finalize integration** (`app/(app)/rounds/[id]/finalize/`):
+
+- Only `status === "accepted"` presses settle.
+- Best-ball gross-min per side computes the per-hole HoleResult[].
+- **Pending-press warning banner** at top of finalize view when any pending press exists in the 24h window — blocks silent drops.
+- Per-press line in "By game" breakdown labeled `"<segment> · manual press"`.
+
+**Admin observability**:
+
+- `/admin` overview lists all pending presses across the platform (amber >12h, red >20h).
+- `/admin/rounds/[id]` shows the full lifecycle: status pill, sides, opener, acceptor/decliner/withdrawer, timestamps, raw UUID.
+- `/admin/audit?kind=press.open` filters the destructive-op log; each row deep-links back to the round.
+
+**Tests:**
+
+- `tests/press.test.ts` — 22 unit tests (detection + settlement)
+- `tests/press-simulation.test.ts` — 19 scenario tests (status filter, overlap, 2v2, 1v3, 6-6-6 frozen sides, incomplete blocking, mixed status)
+- `tests/real-round-simulation.test.ts` — 13 end-to-end tests (8-player JGCC round)
+- `tests/press-errors.test.ts` — 8 translator tests
 
 ---
 
@@ -298,8 +511,10 @@ Defer until Patrick green-lights the design.
 |---|---|---|
 | Q1 | Add `POSTGRES_URL` to Vercel via Supabase integration? | Patrick said "worth doing soon" — would unblock autonomous DDL apply. Not yet done. |
 | Q2 | Public record-book share — opt-in per round or per record-book? | Defer until friends-list ships |
-| Q3 | Friends list — global or per-group scope? | **Decided 2026-05-10: global per profile, explicit one-time shares only.** |
+| Q3 | Friends list — global or per-group scope? | **Decided 2026-05-10: global per profile, explicit one-time shares only.** Not yet built. |
 | Q4 | Cross-group "club leaderboards" — opt-in per round or default-participate? | **Decided 2026-05-10: no cross-group leaderboards by default.** |
-| Q5 | When a guest is linked to a real account, do their past rounds count toward personal stats? | Almost certainly yes |
+| Q5 | When a guest is linked to a real account, do their past rounds count toward personal stats? | Almost certainly yes — not implemented |
+| Q6 | Push notifications for press requests? | Not implemented. Active round pill amber alert is the only out-of-app signal. Re-evaluate after real-world use. |
+| Q7 | Should press accept queue offline like score writes? | **Decided 2026-05-10: NO.** 24h expiry window + business rules make queueing risky. Retry+offline message is the right semantic. |
 
 Don't re-ask these without reason. If a feature requires a decision on one, surface it with a recommendation.
