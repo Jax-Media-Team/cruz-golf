@@ -93,30 +93,30 @@ export default async function CourseRecordsPage({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <RecordCard
-            title="🏆 Course record (18 holes)"
+            title="Course record (18 holes)"
             rows={lowestGross18(bundle.perfs, labelByRound).slice(0, 1)}
             emptyMessage="No 18-hole rounds at this course yet."
           />
           <RecordCard
-            title="🎯 Course record (9 holes)"
+            title="Course record (9 holes)"
             rows={lowestGross9(bundle.perfs, labelByRound).slice(0, 1)}
             emptyMessage="No 9-hole rounds at this course yet."
           />
-          <RecordCard title="📋 Top 18-hole scores" rows={lowestGross18(bundle.perfs, labelByRound)} />
-          <RecordCard title="💀 Highest 18-hole gross" rows={highestGross18(bundle.perfs, labelByRound)} />
+          <RecordCard title="Top 18-hole scores" rows={lowestGross18(bundle.perfs, labelByRound)} />
+          <RecordCard title="Highest 18-hole gross" rows={highestGross18(bundle.perfs, labelByRound)} />
           <RecordCard
-            title="🐦 Most birdies in a round here"
+            title="Most birdies in a round here"
             rows={mostBirdiesInRound(bundle.perfs, labelByRound)}
             emptyMessage="No birdies recorded yet."
           />
-          <RecordCard title="📅 Most rounds played here" rows={mostRoundsPlayed(bundle.perfs)} />
+          <RecordCard title="Most rounds played here" rows={mostRoundsPlayed(bundle.perfs)} />
           <RecordCard
-            title="💰 Biggest single-round wins"
+            title="Biggest single-round wins"
             rows={biggestWins(bundle.perfs, bundle.moneyByRp, labelByRound)}
             emptyMessage="No winning rounds yet."
           />
           <RecordCard
-            title="🩸 Biggest single-round losses"
+            title="Biggest single-round losses"
             rows={biggestLosses(bundle.perfs, bundle.moneyByRp, labelByRound)}
             emptyMessage="No losing rounds yet."
           />

@@ -334,7 +334,7 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {bestRound && (
             <div className="card p-4">
-              <p className="h-eyebrow text-emerald-300">🏆 Best round</p>
+              <p className="h-eyebrow text-emerald-300">Best round</p>
               <div className="font-serif text-3xl text-cream-50 mt-1 tabular-nums">
                 {projectGross(bestRound)}
                 {bestRound.holes_played < 18 && <span className="text-sm text-cream-100/55"> (proj.)</span>}
@@ -351,7 +351,7 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
           )}
           {worstRound && worstRound !== bestRound && (
             <div className="card p-4">
-              <p className="h-eyebrow text-red-300">💀 Worst round</p>
+              <p className="h-eyebrow text-red-300">Worst round</p>
               <div className="font-serif text-3xl text-cream-50 mt-1 tabular-nums">
                 {projectGross(worstRound)}
                 {worstRound.holes_played < 18 && <span className="text-sm text-cream-100/55"> (proj.)</span>}

@@ -81,7 +81,6 @@ export default async function RecordsPage() {
       {totalRounds === 0 ? (
         <div className="card p-6 sm:p-8 space-y-4">
           <div className="text-center space-y-2">
-            <p className="text-3xl">🏆</p>
             <h2 className="font-serif text-2xl text-cream-50">
               Your group&apos;s record book is waiting
             </h2>
@@ -93,12 +92,12 @@ export default async function RecordsPage() {
           </div>
 
           <ul className="text-xs text-cream-100/65 grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-2xl mx-auto">
-            <li className="surface rounded-lg px-3 py-2 text-center">🏆 Lowest gross</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">💰 Biggest win</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🩸 Biggest loss</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🐦 Most birdies</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">📅 Most rounds</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">👑 Season net</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Lowest gross</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Biggest win</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Biggest loss</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Most birdies</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Most rounds</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Season net</li>
           </ul>
 
           <div className="flex flex-wrap gap-2 justify-center">
@@ -111,17 +110,17 @@ export default async function RecordsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <RecordCard title="🏆 Lowest gross (18 holes)" rows={lowestGross18(bundle.perfs, labelByRound)} />
-            <RecordCard title="💀 Highest gross (18 holes)" rows={highestGross18(bundle.perfs, labelByRound)} />
-            <RecordCard title="💰 Biggest single-round win" rows={biggestWins(bundle.perfs, bundle.moneyByRp, labelByRound)} />
-            <RecordCard title="🩸 Biggest single-round loss" rows={biggestLosses(bundle.perfs, bundle.moneyByRp, labelByRound)} />
-            <RecordCard title="🐦 Most birdies in a round" rows={mostBirdiesInRound(bundle.perfs, labelByRound)} />
-            <RecordCard title="📅 Most rounds played" rows={mostRoundsPlayed(bundle.perfs)} />
+            <RecordCard title="Lowest gross (18 holes)" rows={lowestGross18(bundle.perfs, labelByRound)} />
+            <RecordCard title="Highest gross (18 holes)" rows={highestGross18(bundle.perfs, labelByRound)} />
+            <RecordCard title="Biggest single-round win" rows={biggestWins(bundle.perfs, bundle.moneyByRp, labelByRound)} />
+            <RecordCard title="Biggest single-round loss" rows={biggestLosses(bundle.perfs, bundle.moneyByRp, labelByRound)} />
+            <RecordCard title="Most birdies in a round" rows={mostBirdiesInRound(bundle.perfs, labelByRound)} />
+            <RecordCard title="Most rounds played" rows={mostRoundsPlayed(bundle.perfs)} />
             {lowestGross9(bundle.perfs, labelByRound).length > 0 && (
-              <RecordCard title="🎯 Lowest gross (9 holes)" rows={lowestGross9(bundle.perfs, labelByRound)} />
+              <RecordCard title="Lowest gross (9 holes)" rows={lowestGross9(bundle.perfs, labelByRound)} />
             )}
             {seasonNetTop(bundle.perfs, bundle.moneyByRp).length > 0 && (
-              <RecordCard title="👑 Season net (all rounds)" rows={seasonNetTop(bundle.perfs, bundle.moneyByRp)} />
+              <RecordCard title="Season net (all rounds)" rows={seasonNetTop(bundle.perfs, bundle.moneyByRp)} />
             )}
           </div>
 
@@ -139,7 +138,7 @@ export default async function RecordsPage() {
                     href={`/records/course/${id}`}
                     className="pill bg-brand-900/60 border border-cream-100/15 text-cream-100/85 hover:bg-brand-900 text-xs px-3 py-1.5"
                   >
-                    🏌️ {name}
+                    {name}
                   </Link>
                 ))}
               </div>

@@ -155,7 +155,7 @@ export default async function PersonalRecordsPage() {
           {/* Best round hero */}
           {best && (
             <div className="card p-5 border border-emerald-400/30 bg-emerald-500/5">
-              <p className="h-eyebrow text-emerald-300">🏆 Personal best</p>
+              <p className="h-eyebrow text-emerald-300">Personal best</p>
               <div className="font-serif text-4xl text-cream-50 mt-1 tabular-nums">
                 {best.value}
               </div>
@@ -165,33 +165,33 @@ export default async function PersonalRecordsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <RecordCard
-              title="🏆 Best 18-hole rounds"
+              title="Best 18-hole rounds"
               rows={lowestGross18(bundle.perfs, labelByRound)}
               emptyMessage="No 18-hole rounds yet."
             />
             {lowestGross9(bundle.perfs, labelByRound).length > 0 && (
               <RecordCard
-                title="🎯 Best 9-hole rounds"
+                title="Best 9-hole rounds"
                 rows={lowestGross9(bundle.perfs, labelByRound)}
               />
             )}
             <RecordCard
-              title="💀 Worst 18-hole rounds"
+              title="Worst 18-hole rounds"
               rows={highestGross18(bundle.perfs, labelByRound)}
               emptyMessage="No 18-hole rounds yet."
             />
             <RecordCard
-              title="🐦 Most birdies in a round"
+              title="Most birdies in a round"
               rows={mostBirdiesInRound(bundle.perfs, labelByRound)}
               emptyMessage="No birdies yet — keep going."
             />
             <RecordCard
-              title="💰 Biggest single-round wins"
+              title="Biggest single-round wins"
               rows={biggestWins(bundle.perfs, bundle.moneyByRp, labelByRound)}
               emptyMessage="No winning rounds yet."
             />
             <RecordCard
-              title="🩸 Biggest single-round losses"
+              title="Biggest single-round losses"
               rows={biggestLosses(bundle.perfs, bundle.moneyByRp, labelByRound)}
               emptyMessage="No losing rounds. Lucky you."
             />
@@ -199,7 +199,7 @@ export default async function PersonalRecordsPage() {
 
           {bestPerCourse.size > 0 && (
             <RecordCard
-              title="🏌️ Best gross by course"
+              title="Best gross by course"
               rows={[...bestPerCourse.values()].sort(
                 (a, b) => Number(a.value) - Number(b.value)
               )}

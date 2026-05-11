@@ -126,7 +126,6 @@ export default async function LeaderboardsPage() {
       {(rounds?.length ?? 0) === 0 ? (
         <div className="card p-6 sm:p-8 space-y-4">
           <div className="text-center space-y-2">
-            <p className="text-3xl">📊</p>
             <h2 className="font-serif text-2xl text-cream-50">
               Your crew&apos;s leaderboards open up after the first round
             </h2>
@@ -137,14 +136,14 @@ export default async function LeaderboardsPage() {
           </div>
 
           <ul className="text-xs text-cream-100/65 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-2xl mx-auto">
-            <li className="surface rounded-lg px-3 py-2 text-center">💰 Money won</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🎯 Win rate</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🔥 Hot streak</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🐦 Birdies</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🏆 Best round</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">🥶 Cold streak</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">📅 Most active</li>
-            <li className="surface rounded-lg px-3 py-2 text-center">📈 $ / round</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Money won</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Win rate</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Hot streak</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Birdies</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Best round</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Cold streak</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">Most active</li>
+            <li className="surface rounded-lg px-3 py-2 text-center">$ / round</li>
           </ul>
 
           <div className="flex flex-wrap gap-2 justify-center">
@@ -157,51 +156,51 @@ export default async function LeaderboardsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Board
-            title="💰 Money"
+            title="Money"
             subtitle="Net winnings across all settled rounds"
             rows={boards.money}
             valueFmt={(v) => fmtMoney(v)}
             valueTone={(v) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-red-300" : "text-cream-100/65")}
           />
           <Board
-            title="📈 Money per round"
+            title="Money per round"
             subtitle="Average winnings per round played"
             rows={boards.money_per_round}
             valueFmt={(v) => fmtMoney(v)}
             valueTone={(v) => (v > 0 ? "text-emerald-300" : v < 0 ? "text-red-300" : "text-cream-100/65")}
           />
           <Board
-            title="🎯 Win rate"
+            title="Win rate"
             subtitle="Percentage of rounds where you came out ahead"
             rows={boards.win_rate}
             valueFmt={(v) => `${v}%`}
           />
           <Board
-            title="🐦 Birdies"
+            title="Birdies"
             subtitle="Total birdies + per-round average"
             rows={boards.birdies}
             valueFmt={(v) => v.toString()}
           />
           <Board
-            title="🔥 Hot streak"
+            title="Hot streak"
             subtitle="Consecutive winning rounds (recent)"
             rows={boards.hot}
-            valueFmt={(v) => `${v}🔥`}
+            valueFmt={(v) => v.toString()}
           />
           <Board
-            title="🥶 Cold streak"
+            title="Cold streak"
             subtitle="Consecutive losing rounds (recent) — chin up"
             rows={boards.cold}
-            valueFmt={(v) => `${v}🧊`}
+            valueFmt={(v) => v.toString()}
           />
           <Board
-            title="🏆 Best round"
+            title="Best round"
             subtitle="Lowest gross score (18-hole equivalent)"
             rows={boards.best_round}
             valueFmt={(v) => v.toString()}
           />
           <Board
-            title="📅 Most active"
+            title="Most active"
             subtitle="Rounds played in this group"
             rows={boards.most_active}
             valueFmt={(v) => v.toString()}
