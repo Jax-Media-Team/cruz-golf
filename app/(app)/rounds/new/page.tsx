@@ -104,6 +104,10 @@ export default function NewRoundPage() {
 
   // User-saved Quick Start presets.
   const [myPresets, setMyPresets] = useState<any[]>([]);
+  // Inline error for preset save / delete — replaces alert() so the
+  // installed PWA doesn't pop a native system dialog. Cleared on next
+  // successful action.
+  const [presetErr, setPresetErr] = useState<string | null>(null);
 
   const hasAnyGameEnabled = Object.values(games).some((v) => v.enabled);
 
@@ -154,9 +158,10 @@ export default function NewRoundPage() {
       .select("*")
       .single();
     if (error) {
-      alert(`Couldn't save preset: ${error.message}`);
+      setPresetErr(`Couldn't save preset: ${error.message}`);
       return;
     }
+    setPresetErr(null);
     if (data) setMyPresets((prev) => [data, ...prev]);
   }
 
@@ -164,9 +169,10 @@ export default function NewRoundPage() {
     if (!confirm("Delete this preset?")) return;
     const { error } = await sb.from("quick_start_presets").delete().eq("id", id);
     if (error) {
-      alert(`Couldn't delete preset: ${error.message}`);
+      setPresetErr(`Couldn't delete preset: ${error.message}`);
       return;
     }
+    setPresetErr(null);
     setMyPresets((prev) => prev.filter((p) => p.id !== id));
   }
 
@@ -807,6 +813,26 @@ export default function NewRoundPage() {
             ★ Save current setup
           </button>
         </div>
+
+        {presetErr && (
+          <div
+            className="card p-2.5 border border-red-400/40 bg-red-500/10 flex items-start justify-between gap-2"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="text-xs text-red-200 break-words flex-1 min-w-0">
+              {presetErr}
+            </p>
+            <button
+              type="button"
+              onClick={() => setPresetErr(null)}
+              className="text-xs text-red-200/70 hover:text-red-100 shrink-0"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {myPresets.length > 0 && (
           <>

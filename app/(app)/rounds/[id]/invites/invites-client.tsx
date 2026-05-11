@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 type Invite = {
@@ -26,6 +26,14 @@ export function InvitesClient({
   const [draft, setDraft] = useState<{ name: string; email: string }>({ name: "", email: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Transient toast — used for "copied" confirmation. Auto-dismisses
+  // after 2 seconds so it doesn't clutter the screen.
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function create() {
     if (!draft.name.trim()) return;
@@ -52,7 +60,10 @@ export function InvitesClient({
   async function revoke(inv: Invite) {
     if (!confirm(`Revoke invite for ${inv.intended_for_name}?`)) return;
     const { error } = await sb.from("round_invites").delete().eq("id", inv.id);
-    if (error) return alert(error.message);
+    if (error) {
+      setErr(`Couldn't revoke invite: ${error.message}`);
+      return;
+    }
     setInvites((arr) => arr.filter((x) => x.id !== inv.id));
   }
 
@@ -66,7 +77,7 @@ export function InvitesClient({
     const msg = `Cruz Golf — you're in.\nTap to join the round (one-time link, just for you):\n${url}`;
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(msg);
-      alert("Invite copied — paste it to them in iMessage / WhatsApp.");
+      setToast("Invite copied — paste in iMessage / WhatsApp");
     }
   }
 
@@ -78,6 +89,21 @@ export function InvitesClient({
 
   return (
     <div className="space-y-4">
+      {toast && (
+        <div
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/40 px-3 py-1.5 text-xs backdrop-blur shadow-soft">
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-emerald-400"
+              aria-hidden="true"
+            />
+            <span>{toast}</span>
+          </div>
+        </div>
+      )}
       <div className="card p-4 space-y-3">
         <h2 className="font-serif text-lg text-cream-50">Create a one-time invite</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

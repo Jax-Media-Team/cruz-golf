@@ -53,6 +53,10 @@ export function PlayersClient({
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState<string | null>(null);
   const [linkErr, setLinkErr] = useState<{ id: string; msg: string } | null>(null);
+  // Surface action failures (add / update / archive / unarchive / delete)
+  // inline instead of via native alert() — alerts feel jarring on the
+  // installed PWA, dismissable banner matches the rest of the app.
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const sb = supabaseBrowser();
   const router = useRouter();
 
@@ -128,6 +132,7 @@ export function PlayersClient({
 
   async function add() {
     if (!groupId || !draft.display_name) return;
+    setActionErr(null);
     const { data, error } = await sb
       .from("players")
       .insert({
@@ -144,7 +149,7 @@ export function PlayersClient({
       .select("*")
       .single();
     if (error) {
-      alert(error.message);
+      setActionErr(`Couldn't add player: ${error.message}`);
       return;
     }
     if (data) setPlayers((p) => [...p, data]);
@@ -153,9 +158,10 @@ export function PlayersClient({
   }
 
   async function update(p: Player, patch: Partial<Player>) {
+    setActionErr(null);
     const { error } = await sb.from("players").update(patch).eq("id", p.id);
     if (error) {
-      alert(error.message);
+      setActionErr(`Couldn't update ${p.display_name}: ${error.message}`);
       return;
     }
     setPlayers((arr) => arr.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
@@ -163,8 +169,12 @@ export function PlayersClient({
 
   async function archive(p: Player) {
     if (!confirm(`Archive ${p.display_name}? They'll stay on past rounds and stats but won't show up in your default player list.`)) return;
+    setActionErr(null);
     const { error } = await sb.from("players").update({ deleted_at: new Date().toISOString() }).eq("id", p.id);
-    if (error) return alert(error.message);
+    if (error) {
+      setActionErr(`Couldn't archive ${p.display_name}: ${error.message}`);
+      return;
+    }
     if (showArchived) {
       setPlayers((arr) => arr.map((x) => (x.id === p.id ? { ...x, deleted_at: new Date().toISOString() } : x)));
     } else {
@@ -173,8 +183,12 @@ export function PlayersClient({
   }
 
   async function unarchive(p: Player) {
+    setActionErr(null);
     const { error } = await sb.from("players").update({ deleted_at: null }).eq("id", p.id);
-    if (error) return alert(error.message);
+    if (error) {
+      setActionErr(`Couldn't restore ${p.display_name}: ${error.message}`);
+      return;
+    }
     setPlayers((arr) => arr.map((x) => (x.id === p.id ? { ...x, deleted_at: null } : x)));
     router.refresh();
   }
@@ -186,10 +200,15 @@ export function PlayersClient({
       )
     )
       return;
+    setActionErr(null);
     const { error } = await sb.from("players").delete().eq("id", p.id);
     if (error) {
-      // Likely FK violation — they have round_players rows. Fall back to archive.
-      alert(`Couldn't delete (probably has round history): ${error.message}\nArchiving instead.`);
+      // Likely FK violation — they have round_players rows. Fall back to archive
+      // automatically so the user's intent (get this player out of my list) is
+      // honored without a confusing second confirmation.
+      setActionErr(
+        `Couldn't delete ${p.display_name} — they have round history. Archived instead.`
+      );
       return archive(p);
     }
     setPlayers((arr) => arr.filter((x) => x.id !== p.id));
@@ -200,6 +219,25 @@ export function PlayersClient({
 
   return (
     <div className="space-y-4">
+      {actionErr && (
+        <div
+          className="card p-3 border border-red-400/40 bg-red-500/10 flex items-start justify-between gap-3"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-sm text-red-200 break-words flex-1 min-w-0">
+            {actionErr}
+          </p>
+          <button
+            type="button"
+            onClick={() => setActionErr(null)}
+            className="text-xs text-red-200/70 hover:text-red-100 shrink-0"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="h-eyebrow">Roster</p>
