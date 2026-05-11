@@ -17,10 +17,27 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, settings, courses(name, city, state)")
+    .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, settings, event_id, courses(name, city, state)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
+
+  // If the round belongs to an event, fetch the event name + id so the
+  // round header can surface "Part of [Event Name]" with a back-link.
+  // Defensive against the events table not existing pre-0039.
+  let parentEvent: { id: string; name: string } | null = null;
+  if ((round as any).event_id) {
+    try {
+      const { data: ev } = await sb
+        .from("events")
+        .select("id, name")
+        .eq("id", (round as any).event_id)
+        .maybeSingle();
+      parentEvent = (ev as any) ?? null;
+    } catch {
+      /* events table missing — silent */
+    }
+  }
 
   // Is this user a commissioner of the round's group?
   const { data: gm } = await sb
@@ -117,6 +134,17 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="space-y-5">
       <header className="space-y-3">
+        {parentEvent && (
+          <Link
+            href={`/events/${parentEvent.id}`}
+            className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:underline"
+          >
+            <span aria-hidden="true">←</span>
+            <span>
+              Part of <span className="font-medium">{parentEvent.name}</span>
+            </span>
+          </Link>
+        )}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="h-eyebrow text-gold-400">

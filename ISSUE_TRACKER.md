@@ -410,7 +410,7 @@ including the override-always-wins safety property.
 | 0036 | applied | Press hardening per QA agent findings: SELECT...FOR UPDATE row lock on accept/decline/withdraw (fixes race), partition validation in fn_open_press (sides must include every player), hole-range validated against round.holes (fixes 9-hole edge case). Re-creates all 4 press RPCs in full. Idempotent. |
 | 0037 | applied | Timuquana CC + Deerwood CC: real rating/slope per tee (Patrick supplied 2026-05-10), promote both to verified. 8 UPDATEs total, idempotent. |
 | 0038 | applied | The Plantation at Ponte Vedra Beach populated. 6 men's tees (Black 74.3/146, Blue 71.9/132, Green 70.0/126, Gold 67.7/119, Silver 63.9/113, Red 62.1/108), all yardage/par/SI verified from official scorecard (Arnold Palmer 1986, Letsche redesign 2016). Status=verified. Idempotent. |
-| 0039 | **awaiting your apply** | Multi-group events Phase 1 schema. New `events` table (group_id, name, kind, dates, spectator_token, commissioner_profile_id, soft-delete via deleted_at). New `event_games` table (field-wide games). New `rounds.event_id` nullable FK. RLS in place + spectator-token read policy. Trigger for events.updated_at. No RPCs, no UI yet — Phase 2 builds those. Idempotent. See `docs/MULTI_GROUP_DESIGN.md` for full plan. |
+| 0039 | applied | Multi-group events Phase 1 schema. New `events` table (group_id, name, kind, dates, spectator_token, commissioner_profile_id, soft-delete via deleted_at). New `event_games` table (field-wide games). New `rounds.event_id` nullable FK. RLS in place + spectator-token read policy. Trigger for events.updated_at. No RPCs, no UI yet — Phase 2 builds those. Idempotent. See `docs/MULTI_GROUP_DESIGN.md` for full plan. |
 
 ---
 

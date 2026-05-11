@@ -76,6 +76,42 @@ export default async function DashboardPage() {
     | { id: string; date: string; status: string; courses?: { name?: string } | null }
     | undefined;
 
+  // Events the group is running — surfaced as a section above the rounds
+  // list when any exist. Phase 2 of MULTI_GROUP_DESIGN.md. Defensive
+  // try/catch against the events table not existing (pre-0039 envs).
+  let events: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    starts_on: string;
+    ends_on: string | null;
+  }> = [];
+  try {
+    const { data: ev } = await sb
+      .from("events")
+      .select("id, name, kind, starts_on, ends_on")
+      .eq("group_id", groupId)
+      .is("deleted_at", null)
+      .order("starts_on", { ascending: false })
+      .limit(5);
+    events = (ev as any[]) ?? [];
+  } catch {
+    /* events table missing pre-0039 */
+  }
+
+  // Is the viewer a commissioner of the active group? Controls whether
+  // the "+ New event" CTA shows.
+  let isGroupCommissioner = false;
+  if (groupId) {
+    const { data: gm } = await sb
+      .from("group_members")
+      .select("role")
+      .eq("group_id", groupId)
+      .eq("profile_id", user.id)
+      .maybeSingle();
+    isGroupCommissioner = (gm as any)?.role === "commissioner";
+  }
+
   const hasCourses = (courseCount ?? 0) > 0;
   const hasPlayers = (playerCount ?? 0) > 0;
   const hasRounds = (rounds?.length ?? 0) > 0;
@@ -405,6 +441,62 @@ export default async function DashboardPage() {
           )}
         </div>
       </section>
+
+      {(events.length > 0 || isGroupCommissioner) && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="h-eyebrow text-gold-400">Events</p>
+            {isGroupCommissioner && (
+              <Link
+                href="/events/new"
+                className="text-xs text-gold-400 underline"
+              >
+                + New event
+              </Link>
+            )}
+          </div>
+          {events.length === 0 ? (
+            <div className="card p-3 text-xs text-cream-100/65">
+              Running a tournament, trip, or club game with multiple
+              foursomes? Create an event and add foursomes to it — each
+              foursome stays a normal round, the event aggregates
+              standings across them.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {events.map((ev) => (
+                <li key={ev.id}>
+                  <Link
+                    href={`/events/${ev.id}`}
+                    className="card card-hover p-3 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-serif text-base text-cream-50 truncate">
+                        {ev.name}
+                      </div>
+                      <p className="text-[11px] text-cream-100/55 mt-0.5">
+                        {ev.kind === "tournament"
+                          ? "Tournament"
+                          : ev.kind === "trip"
+                          ? "Trip"
+                          : "Club game"}
+                        {" · "}
+                        {ev.starts_on}
+                        {ev.ends_on && ev.ends_on !== ev.starts_on
+                          ? ` — ${ev.ends_on}`
+                          : ""}
+                      </p>
+                    </div>
+                    <span className="text-xs text-cream-100/55 shrink-0">
+                      →
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {hasRounds && (
         <>

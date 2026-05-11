@@ -73,6 +73,16 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["6-6-6", "six six six", "rotating partners", "round robin"]
   },
   {
+    q: "How do I run a member-guest tournament with multiple foursomes?",
+    a: "Create an Event from the dashboard (\"+ New event\" link in the Events section, commissioner-only). Pick the kind (tournament / trip / club game), name it, and set the date(s). From the event home page, tap \"+ Add foursome\" to create one round per group of 4 — each foursome gets its own scorer + presses, and the event aggregates standings across them. Real-world examples: 16 players in 4 foursomes for a member-guest, 8 players × 3 days for a golf trip, 12 players in 3 foursomes for Saturday club games. Field-wide games (skins across all 16, net stroke play across the field) ship in a later phase.",
+    keywords: ["event", "tournament", "member-guest", "multi-group", "trip", "club game", "foursome", "field", "multiple groups"]
+  },
+  {
+    q: "What's the difference between a round and an event?",
+    a: "A round is one foursome playing one course on one day — the basic unit. An event is an optional container that groups multiple rounds (foursomes) under one umbrella. Most rounds will never belong to an event — that's fine. Use events when you need a shared leaderboard across foursomes (member-guest), or a multi-round trip with rolling totals. Presses ALWAYS stay round-scoped (foursome-only) — no real golf-group press crosses foursomes.",
+    keywords: ["round vs event", "foursome", "event", "container", "grouping"]
+  },
+  {
     q: "How do I score a scramble — do all four players have to enter their score?",
     a: "No. Scramble is one shared shot per team, so one scorer entering the team's score works fine. The engine takes the lowest entered score on each hole as the team score. If you tap the same number into all four player rows (group-pad pattern), the math is identical. Best ball and aggregate are different — each player plays their own ball, so every player must record on every hole.",
     keywords: ["scramble", "scramble scoring", "team score", "one scorer", "shared ball"]
