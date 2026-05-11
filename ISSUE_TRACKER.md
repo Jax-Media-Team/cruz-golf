@@ -540,3 +540,57 @@ near the next-up work.)
   `buildCareerMoney`, `buildLastRoundSignal`).
 
 **Suite: 245 → 272. Typecheck: clean throughout. All commits on main.**
+
+---
+
+## QA pass — commits 174b5bf → c40b321
+
+Shifted from features to reliability per Patrick's directive.
+
+**Test coverage added (291 total, +19 from press-simulation)**
+- `tests/press-simulation.test.ts` mirrors finalize-view.tsx settlement
+  end-to-end across 19 scenarios:
+  - 1v1 win + halved
+  - status filter (pending / declined / withdrawn / expired all
+    correctly never settle)
+  - overlapping presses same direction + opposite direction
+  - press starting holes 1-9, 7-12, 10-18
+  - 2v2 best-ball gross-min per side
+  - 1v3 asymmetric with deterministic remainder cent
+  - 6-6-6 frozen-sides invariant (sides locked at open even after
+    parent game's partner rotation)
+  - incomplete-hole blocking (per-player AND per-team)
+  - mixed-status round (only accepted counts)
+  - 9-hole round end-to-end
+  - 10-press deterministic random stress with zero-sum invariant
+
+**Reliability fixes shipped this pass**
+- Press RPCs wrapped in retry+backoff (3 attempts, 400ms base). Raw
+  Supabase "fetch failed" replaced with "You're offline. Try again
+  when you reconnect." when navigator.onLine is false. Open / accept /
+  decline / withdraw all hardened. (commit 5f7e78d)
+- Finalize warns when pending presses exist instead of silently
+  dropping them. Amber banner: "N presses still pending · Finalizing
+  now drops them" with a "← Back to round" link. (commit 5f7e78d)
+- HelpButton was rendered at the same vertical band as ActiveRoundPill
+  and covered by it on /leaderboards, /records, etc. — bumped to
+  9rem + safe-area so it stacks above the pill on mobile. (commit
+  c40b321)
+- HelpButton + UpdateToast missing safe-area-inset-bottom — iOS home
+  indicator was eating part of the floating chrome in PWA standalone
+  mode. Now match the pattern ActiveRoundPill + layout.tsx already
+  use. (commit c40b321)
+
+**Admin observability added**
+- /admin pending-presses panel: every pending press across the
+  platform, with course + group + age (color-coded amber >12h, red
+  >20h). Defensive against pre-0035 envs. (commit 174b5bf)
+
+**Help knowledge expansion**
+- 26 → 41 entries. Added: PWA install, offline behavior, loading
+  skeletons, course library states, round lifecycle, unfinalize,
+  soft-delete recovery, active round pill, realtime, group privacy,
+  spectator vs PIN, audit log, admin spectator mode, clubhouse
+  signals. (commit 174b5bf)
+
+**Suite: 272 → 291. Typecheck clean.**
