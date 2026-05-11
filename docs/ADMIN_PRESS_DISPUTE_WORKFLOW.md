@@ -74,9 +74,14 @@ Click the Target link (`press @ rounds/abc12345`). This deep-links to
 There you can see:
 
 - The round's state (live / pending / finalized)
-- All players + their scores
+- All players + their handicaps
 - All games on the round (skins, best ball, Nassau, etc.)
-- All settlements (the actual money owed)
+- **Manual presses section** — every press on the round with status pill,
+  segment label, stake, hole range, both sides (with player names),
+  opener + timestamp, and acceptor/decliner/withdrawer + timestamp.
+  Color-coded by status: emerald accepted, amber pending, red declined,
+  gray withdrawn/expired.
+- Scores entered count + access mode + PIN + created-at timestamp
 
 ---
 
