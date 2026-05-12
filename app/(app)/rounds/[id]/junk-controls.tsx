@@ -94,6 +94,14 @@ export function JunkControls({
   const [pending, setPending] = useState<string | null>(null); // category currently being saved
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Custom-category entry. When the user taps "+ Other", they type
+  // a one-off label (e.g. "Woodie", "Wilson special") + tap Record.
+  // The RPC accepts category="custom" unconditionally — it doesn't
+  // need to be in active_categories — but DOES require a non-empty
+  // label.
+  const [customMode, setCustomMode] = useState(false);
+  const [customLabel, setCustomLabel] = useState("");
+
   // Track whether the user has manually overridden the hole picker.
   // After a manual change we stop auto-syncing from defaultHole — the
   // scorer might be backfilling junk on an earlier hole and we
@@ -229,9 +237,24 @@ export function JunkControls({
       return;
     }
     const name = nameById.get(selectedRp) ?? "Player";
-    setToast(`${name} · ${categoryLabel(category)} · hole ${hole}`);
+    const label =
+      category === "custom" && customLabel
+        ? customLabel
+        : categoryLabel(category);
+    setToast(`${name} · ${label} · hole ${hole}`);
     setTimeout(() => setToast(null), 2200);
     router.refresh();
+  }
+
+  async function submitCustom() {
+    const trimmed = customLabel.trim();
+    if (trimmed.length === 0) {
+      setErr("Custom junk needs a label.");
+      return;
+    }
+    await recordJunk("custom", trimmed);
+    setCustomMode(false);
+    setCustomLabel("");
   }
 
   // Inline "remove with reason" — the item being removed + its
@@ -386,7 +409,67 @@ export function JunkControls({
               </button>
             );
           })}
+          {/* "+ Other" — expands to an inline label input. Lets the
+              user record one-off junk like "Woodie" or "Wilson
+              special" without going through Edit games. Engine + RPC
+              accept category="custom" unconditionally (doesn't have
+              to be in active_categories) so long as a label is
+              supplied. */}
+          <button
+            type="button"
+            disabled={!selectedRp || pending !== null || customMode}
+            title="Record a one-off junk item with a custom label (e.g. Woodie, Wilson special)"
+            className={`pill text-xs px-3 py-1.5 transition-colors ${
+              !selectedRp
+                ? "bg-brand-900/30 text-cream-100/30 cursor-not-allowed"
+                : "bg-brand-900/60 border border-dashed border-cream-100/30 text-cream-100/85 hover:bg-gold-500/15 hover:border-gold-500/50"
+            }`}
+            onClick={() => setCustomMode(true)}
+          >
+            + Other
+          </button>
         </div>
+        {customMode && selectedRp && (
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <input
+              type="text"
+              className="input text-sm flex-1 min-w-[10rem]"
+              placeholder="Custom label (e.g. Woodie, Wilson special)"
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCustom();
+                if (e.key === "Escape") {
+                  setCustomMode(false);
+                  setCustomLabel("");
+                }
+              }}
+              autoFocus
+              maxLength={40}
+            />
+            <span className="text-[10px] text-gold-400 tabular-nums">
+              {fmtFlat$(previewAmount("custom"))}
+            </span>
+            <button
+              type="button"
+              className="btn-primary text-xs"
+              disabled={customLabel.trim().length === 0 || pending !== null}
+              onClick={submitCustom}
+            >
+              Record
+            </button>
+            <button
+              type="button"
+              className="btn-ghost text-xs text-cream-100/65"
+              onClick={() => {
+                setCustomMode(false);
+                setCustomLabel("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         {!selectedRp && (
           <p className="text-[10px] text-cream-100/45">
             Select a player above first.

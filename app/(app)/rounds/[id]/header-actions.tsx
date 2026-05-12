@@ -61,6 +61,7 @@ export function RoundHeaderActions({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const sb = supabaseBrowser();
   const router = useRouter();
 
@@ -81,17 +82,25 @@ export function RoundHeaderActions({
     router.push("/dashboard");
   }
 
-  // Reverse archive — back to active state.
+  // Reverse archive — back to active state. Unlike archive/delete
+  // we stay on the round page (no navigation), so surface a brief
+  // success message so the user knows the action took.
   async function restore() {
     setBusy(true);
     setActionErr(null);
+    setActionMsg(null);
     const { error } = await sb.rpc("fn_restore_round", { p_round_id: roundId });
     setBusy(false);
     if (error) {
       setActionErr(error.message);
       return;
     }
+    setActionMsg("Round restored. Refreshing…");
     router.refresh();
+    // Clear the message a bit later — by then router.refresh has
+    // re-rendered the parent server component and the "This round
+    // is archived" block has flipped to the active-round actions.
+    setTimeout(() => setActionMsg(null), 3000);
   }
 
   // Hard delete via fn_delete_round. Cascades through scores,
@@ -354,6 +363,9 @@ export function RoundHeaderActions({
                   </button>
                 </div>
               </>
+            )}
+            {actionMsg && (
+              <p className="text-[11px] text-emerald-300">{actionMsg}</p>
             )}
             {actionErr && (
               <p className="text-[11px] text-red-300 break-words">
