@@ -20,6 +20,8 @@ import {
   venmoNoteForRound,
   venmoPayUrl
 } from "@/lib/profile-format";
+import { formatDate } from "@/lib/format-date";
+import { parseSettlementBreakdown } from "@/lib/settlement-format";
 
 export type SettlementFlow = {
   from_round_player_id: string;
@@ -94,16 +96,10 @@ export function SettlementSummary({
   // so this surface matches the finalize-view editor exactly.
   const noteForVenmo = venmoNoteForRound(courseName, roundDate);
 
-  const niceFinalizedAt = (() => {
-    if (!finalizedAt) return null;
-    const d = new Date(finalizedAt);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    });
-  })();
+  // finalized_at is a timestamptz, so route through the TZ-aware
+  // formatDate (Eastern by default). Empty string means we couldn't
+  // parse it; render nothing in that case.
+  const niceFinalizedAt = finalizedAt ? formatDate(finalizedAt) || null : null;
 
   return (
     <section className="card p-5 space-y-3">
@@ -146,20 +142,13 @@ export function SettlementSummary({
             const fromName = labelByPlayer.get(f.from_round_player_id);
             const toName = labelByPlayer.get(f.to_round_player_id);
             const toHandle = venmoByPlayer.get(f.to_round_player_id);
-            // Two-way transparency: build BOTH sides' per-game contributions
-            // from the breakdown JSONB. Format: [{game, from, to}, ...].
-            // Filter to non-zero so the panel stays focused on what actually
-            // moved.
-            const items: Array<{ game: string; from: number; to: number }> =
-              Array.isArray(f.breakdown) ? f.breakdown : [];
-            const fromDeltas = items
-              .filter((x) => x.from !== 0)
-              .map((x) => ({ game: x.game, cents: x.from }));
-            const toDeltas = items
-              .filter((x) => x.to !== 0)
-              .map((x) => ({ game: x.game, cents: x.to }));
-            const fromTotal = fromDeltas.reduce((s, x) => s + x.cents, 0);
-            const toTotal = toDeltas.reduce((s, x) => s + x.cents, 0);
+            // Two-way transparency: both payer + recipient see how each
+            // game contributed to their own side. parseSettlementBreakdown
+            // handles null/malformed breakdowns defensively (returns
+            // empty arrays + zero totals) so a legacy or hand-edited
+            // settlement row doesn't crash the round page.
+            const { fromDeltas, toDeltas, fromTotal, toTotal } =
+              parseSettlementBreakdown(f.breakdown);
             const viewerIsPayer = viewerRpId === f.from_round_player_id;
             const viewerIsRecipient = viewerRpId === f.to_round_player_id;
             const highlight = viewerIsPayer || viewerIsRecipient;

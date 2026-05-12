@@ -40,11 +40,23 @@ export function formatDateTime(
   }, timeZone);
 }
 
-/** "May 9" style. */
+/** "May 9" style — pure-date version that also handles YYYY-MM-DD
+ *  inputs without the TZ-shift bug (same noon-UTC parsing as
+ *  formatRoundDate). Used in the round breadcrumb + Venmo note. */
 export function formatShortDate(
   input: Date | string | number | null | undefined,
   timeZone: string = DEFAULT_TZ
 ): string {
+  if (input == null) return "";
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, d] = input.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric"
+    }).format(dt);
+  }
   return formatDate(input, { month: "short", day: "numeric" }, timeZone);
 }
 
@@ -68,4 +80,33 @@ export function formatRoundDate(
     }).format(dt);
   }
   return formatDate(input, { year: "numeric", month: "short", day: "numeric" }, timeZone);
+}
+
+/**
+ * "Saturday, May 12" — adds the weekday + full month name on top of
+ * formatShortDate. Used on the round-detail page header where the
+ * date is the anchor for a Saturday-morning return visit. Mirrors
+ * formatRoundDate's noon-UTC parsing path so YYYY-MM-DD strings stay
+ * stable across device timezones.
+ */
+export function formatLongRoundDate(
+  input: Date | string | number | null | undefined,
+  timeZone: string = DEFAULT_TZ
+): string {
+  if (input == null) return "";
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, d] = input.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      weekday: "long",
+      month: "long",
+      day: "numeric"
+    }).format(dt);
+  }
+  return formatDate(
+    input,
+    { weekday: "long", month: "long", day: "numeric" },
+    timeZone
+  );
 }

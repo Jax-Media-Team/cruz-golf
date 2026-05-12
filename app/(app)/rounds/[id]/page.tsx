@@ -10,6 +10,7 @@ import { PressControls } from "./press-controls";
 import { JunkControls } from "./junk-controls";
 import { SettlementSummary } from "@/components/SettlementSummary";
 import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
+import { formatLongRoundDate } from "@/lib/format-date";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -207,19 +208,11 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="h-eyebrow text-gold-400">
-              {/* Audit P2 #27: ISO date → "Saturday, May 12" so a
-                  Saturday-morning return visit reads like a date, not
-                  a sortkey. Locale-fixed (en-US) so the display is
-                  stable across device locales. */}
-              Live leaderboard · {(() => {
-                const d = new Date((round.date ?? "") + "T00:00:00");
-                if (isNaN(d.getTime())) return round.date;
-                return d.toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric"
-                });
-              })()} · {round.holes} holes
+              {/* "Saturday, May 12" — formatted via the central
+                  lib/format-date helper (noon-UTC parse, en-US
+                  locale, stable across device timezones). */}
+              Live leaderboard · {formatLongRoundDate(round.date) || round.date}
+              {" · "}{round.holes} holes
             </p>
             <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>
           </div>
