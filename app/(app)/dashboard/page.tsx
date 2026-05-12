@@ -293,11 +293,15 @@ export default async function DashboardPage() {
     },
     {
       done: hasRounds,
-      // Blocked when prerequisites aren't met. The button is replaced by a
-      // disabled label rather than a no-op Link.
-      blocked: !(hasCourses && hasPlayers),
+      // No longer blocked when prereqs are missing. /rounds/new now
+      // surfaces an inline "Quick-add JGCC / scorecard photo / type
+      // it in" prompt when no courses exist, and the player section
+      // already has inline guest-add. The user can finish all three
+      // setup steps on one screen. Per Patrick 2026-05-12 framing —
+      // setup welcome trumps configurability.
+      blocked: false,
       title: "Tee it up",
-      body: "Pick your course, your players, and the games you want to run. Each player joins on their phone with a 4-digit PIN — no account required to play.",
+      body: "Pick your course, your players, and the games you want to run. New here? You can add the course + players inline from the round form. Each player joins on their phone with a 4-digit PIN — no account required to play.",
       href: "/rounds/new",
       cta: "Start a round"
     }

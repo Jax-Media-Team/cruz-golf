@@ -684,7 +684,7 @@ export default function NewRoundPage() {
     const { error: rpe } = await sb.from("round_players").insert(rpRows);
     if (rpe) {
       setBusy(false);
-      setErr(rpe.message);
+      setErr(friendlyAuthError(rpe));
       return;
     }
 
@@ -820,6 +820,42 @@ export default function NewRoundPage() {
               <option value="">Pick a course…</option>
               {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            {/* First-time-user guard: when the course list is empty,
+                the picker is a dead end. Surface the two fastest paths
+                to get a course on file inline so a brand-new user can
+                finish setup without context-switching to /courses.
+                Per Patrick 2026-05-12 product framing — setup welcome
+                trumps configurability. */}
+            {courses.length === 0 && (
+              <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-xs space-y-1.5">
+                <p className="text-cream-50">No courses on file yet.</p>
+                <p className="text-cream-100/65 leading-snug">
+                  Add one in a minute, then come back to start the round:
+                </p>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <Link
+                    href="/courses"
+                    className="text-gold-400 hover:underline"
+                  >
+                    Quick-add JGCC →
+                  </Link>
+                  <span className="text-cream-100/30">·</span>
+                  <Link
+                    href="/courses/import"
+                    className="text-gold-400 hover:underline"
+                  >
+                    Snap a scorecard photo →
+                  </Link>
+                  <span className="text-cream-100/30">·</span>
+                  <Link
+                    href="/courses/new"
+                    className="text-gold-400 hover:underline"
+                  >
+                    Type it in manually →
+                  </Link>
+                </div>
+              </div>
+            )}
             {courseId && tees.length <= 1 && (
               <p className="text-[11px] text-cream-100/55 mt-1.5">
                 Only one tee on file.{" "}
