@@ -314,6 +314,22 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           </Link>
         )}
 
+      {/* Leaderboard moved above the press/junk controls + secondary
+          action grid (audit P1 #13). The leaderboard is what people
+          came to see; controls live below so they don't bury it. The
+          #leaderboard anchor still resolves because it lives right
+          before the RoundView. */}
+      <div id="leaderboard" />
+      <RoundView
+        roundId={id}
+        rps={rps ?? []}
+        initialScores={scores ?? []}
+        games={games ?? []}
+        manualPresses={presses ?? []}
+        totalHoles={(round.holes as 9 | 18) ?? 18}
+        startingHole={round.starting_hole ?? 1}
+      />
+
       {/* Junk side-bet panel — entry + live totals + commissioner edits.
           Only renders when junk config exists for this round AND the
           round is editable. Tap-the-extras UX per Patrick's principle. */}
@@ -458,16 +474,6 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      <div id="leaderboard" />
-      <RoundView
-        roundId={id}
-        rps={rps ?? []}
-        initialScores={scores ?? []}
-        games={games ?? []}
-        manualPresses={presses ?? []}
-        totalHoles={(round.holes as 9 | 18) ?? 18}
-        startingHole={round.starting_hole ?? 1}
-      />
     </div>
   );
 }

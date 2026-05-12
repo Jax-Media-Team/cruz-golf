@@ -426,6 +426,42 @@ export default async function DashboardPage() {
         </Link>
       )}
 
+      {/* Returning-user hero card — only when there's already history and
+          NO active round in progress. Audit P1 #14: the top-right "New
+          round" text button is too small to anchor a Saturday-morning
+          return visit. The big gold card draws the eye to the next
+          action; the sub-link below cues the "re-use last lineup"
+          feature that already lives on /rounds/new. */}
+      {hasRounds && !activeRound && (
+        <div className="card p-5 sm:p-6 border border-gold-500/40 bg-brand-900/40 flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <p className="h-eyebrow text-gold-400">Saturday game</p>
+            <div className="font-serif text-xl sm:text-2xl text-cream-50 mt-0.5">
+              Start a new round
+            </div>
+            {(rounds?.[0] as any)?.courses?.name ? (
+              <p className="text-[12px] text-cream-100/65 mt-1 leading-snug">
+                Last round was at{" "}
+                <span className="text-cream-50">
+                  {(rounds?.[0] as any).courses.name}
+                </span>
+                . The lineup, games, and stakes are one tap to re-use.
+              </p>
+            ) : (
+              <p className="text-[12px] text-cream-100/65 mt-1">
+                Course, players, games — set up in under a minute.
+              </p>
+            )}
+          </div>
+          <Link
+            href="/rounds/new"
+            className="btn-primary text-sm shrink-0"
+          >
+            New round →
+          </Link>
+        </div>
+      )}
+
       {/* Quick links — always-visible nav surface for the side rooms of the app. */}
       <section className="space-y-2">
         <p className="h-eyebrow text-gold-400">Quick links</p>

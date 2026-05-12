@@ -128,6 +128,15 @@ export default function SignupPage() {
           <p className="text-xs text-cream-100/55 mt-1">Takes 30 seconds. You can name your crew when you start your first round.</p>
         </div>
 
+        {/* OAuth above email/password — one tap for users who already
+            have Google or Facebook. Audit P1 #10. */}
+        <GoogleAuthButton next="/dashboard" />
+        <FacebookAuthButton next="/dashboard" />
+        <div className="relative my-1">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
+          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign up with email</span></div>
+        </div>
+
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -159,20 +168,19 @@ export default function SignupPage() {
           </div>
           <div>
             <label className="label">Password</label>
-            <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} type="password" minLength={8} required />
-            <p className="text-[10px] text-cream-100/40 mt-1">Minimum 8 characters.</p>
+            <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} type="password" minLength={8} required autoComplete="new-password" />
+            {/* Bumped from 10px to 12px + live green-check at 8 chars.
+                Audit P1 #15 — golfers were typing "golf123" and getting
+                an opaque server error. */}
+            <p className={`text-xs mt-1 ${password.length >= 8 ? "text-emerald-300" : "text-cream-100/55"}`}>
+              {password.length >= 8 ? "✓ " : ""}Minimum 8 characters{password.length > 0 && password.length < 8 ? ` (${8 - password.length} to go)` : ""}.
+            </p>
           </div>
         </div>
 
         {err && <p className="text-sm text-red-300">{err}</p>}
         <button className="btn-primary w-full" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
 
-        <div className="relative my-1">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
-          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or</span></div>
-        </div>
-        <GoogleAuthButton next="/dashboard" />
-        <FacebookAuthButton next="/dashboard" />
         <p className="text-sm text-cream-100/60 text-center">
           Have an account? <Link href="/login" className="text-cream-50 underline">Sign in</Link>
         </p>

@@ -25,13 +25,15 @@ const TABS: Array<{ key: LeaderboardTab; label: string }> = [
   { key: "gross", label: "Gross" },
   { key: "net", label: "Net" },
   { key: "skins", label: "Skins" },
-  // "Match" covers Nassau (front/back/overall), 6-6-6 (3 segments),
-  // Best Ball / Aggregate / Scramble (team vs team match state). Was
-  // "Team" — renamed because Nassau can be 1v1 head-to-head and the
-  // user feedback was that the live match state was the biggest
-  // gameplay-clarity gap.
-  { key: "match", label: "Match" },
-  { key: "bets", label: "Bets" }
+  // "Game" covers Nassau (front/back/overall), 6-6-6 (3 segments),
+  // Best Ball / Aggregate / Scramble (team vs team match state).
+  // Renamed from "Match" → "Game" (audit P1 #12) — first-time users
+  // saw "Match" and didn't connect it to their Nassau / 6-6-6.
+  { key: "match", label: "Game" },
+  // Renamed from "Bets" → "Money" (audit P1 #12) — "Bets" sounded
+  // like a config surface; "Money" makes it obvious this is the
+  // running $-flow.
+  { key: "bets", label: "Money" }
 ];
 
 function fmtPar(vsPar: number, played: number): string {

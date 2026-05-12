@@ -110,9 +110,17 @@ function LoginInner() {
           <p className="h-eyebrow">Sign in</p>
           <h1 className="h-display text-3xl text-cream-50 mt-1">Welcome back.</h1>
         </div>
+        {/* OAuth above email/password — returning users who signed up
+            with Google or Facebook hit one tap. Audit P1 #10. */}
+        <GoogleAuthButton next="/dashboard" />
+        <FacebookAuthButton next="/dashboard" />
+        <div className="relative my-1">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
+          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign in with email</span></div>
+        </div>
         <div>
           <label className="label">Email</label>
-          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required autoFocus />
+          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
         </div>
         <div>
           <label className="label">Password</label>
@@ -146,12 +154,6 @@ function LoginInner() {
         <button className="btn-primary w-full" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
-        <div className="relative my-1">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
-          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or</span></div>
-        </div>
-        <GoogleAuthButton next="/dashboard" />
-        <FacebookAuthButton next="/dashboard" />
         <p className="text-sm text-cream-100/60 text-center">
           New here? <Link href="/signup" className="text-cream-50 underline">Create an account</Link>
         </p>

@@ -667,177 +667,9 @@ export default function NewRoundPage() {
         </div>
       </section>
 
-      <section className="card p-4 space-y-3">
-        <div className="flex items-end justify-between gap-3">
-          <h2 className="font-serif text-xl text-cream-50">Players</h2>
-          <span className="text-xs text-cream-100/55">
-            {pickedPlayers.length} picked
-          </span>
-        </div>
-
-        {lastLineup && pickedPlayers.length === 0 && (
-          <button
-            type="button"
-            className="w-full text-left rounded-xl border border-gold-500/30 bg-brand-900/40 hover:bg-brand-900/70 p-3 transition-colors"
-            onClick={() => {
-              const valid = lastLineup.playerIds.filter((pid) => allPlayers.some((p) => p.id === pid));
-              setPickedPlayers(valid.map((pid) => ({ id: pid, tee_id: (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "", team_id: null })));
-            }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="font-serif text-cream-50">Re-play with last round&apos;s lineup</div>
-                <p className="text-xs text-cream-100/65 mt-0.5">
-                  {lastLineup.courseName} · {lastLineup.date} · {lastLineup.playerIds.length} players
-                </p>
-              </div>
-              <span className="pill bg-gold-500 text-brand-900 text-xs">Use →</span>
-            </div>
-          </button>
-        )}
-
-        {/* Inline guest creation — for ad-hoc players who aren't in the directory yet */}
-        <div className="surface rounded-xl p-3 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-2 items-end">
-          <div>
-            <label className="label">Add a guest player</label>
-            <input
-              className="input text-sm"
-              placeholder="Name (e.g. Dave)"
-              value={guestDraft.name}
-              onChange={(e) => setGuestDraft({ ...guestDraft, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">HI</label>
-            <input
-              className="input text-sm"
-              type="text"
-              inputMode="decimal"
-              placeholder="14.0 or +1.4"
-              value={guestDraft.hi}
-              onChange={(e) => setGuestDraft({ ...guestDraft, hi: e.target.value })}
-            />
-          </div>
-          <button
-            type="button"
-            className="btn-secondary text-sm"
-            disabled={guestBusy || !guestDraft.name.trim()}
-            onClick={addGuest}
-          >
-            {guestBusy ? "Adding…" : "Add guest"}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {allPlayers.map((p) => {
-            const picked = pickedPlayers.find((x) => x.id === p.id);
-            const lp = lastPlayedAt[p.id];
-            const hiValue = hiEdits[p.id] ?? hiInputValue(p.handicap_index);
-            return (
-              <div
-                key={p.id}
-                className={`card p-3 transition-colors ${picked ? "ring-2 ring-gold-500/60 bg-brand-800/70" : ""}`}
-              >
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={!!picked} onChange={() => togglePlayer(p.id)} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-cream-50 truncate">{p.display_name}</div>
-                    <div className="text-xs text-cream-100/55">
-                      {lp ? `Last played ${lp}` : "New to this group"}
-                    </div>
-                  </div>
-                  {!picked && (
-                    <span className="text-xs text-cream-100/55 tabular-nums">HI {formatHi(p.handicap_index)}</span>
-                  )}
-                </label>
-                {picked && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="label text-xs">Handicap Index</label>
-                      <input
-                        className="input text-sm"
-                        type="text"
-                        inputMode="decimal"
-                        value={hiValue}
-                        placeholder="14.0 or +1.4"
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setHiEdits((prev) => ({ ...prev, [p.id]: v }));
-                        }}
-                        onBlur={async () => {
-                          const raw = hiEdits[p.id];
-                          if (raw == null) return;
-                          const parsed = parseHi(raw);
-                          // Re-render the input as a normalized value (e.g., "+1.4" stays "+1.4",
-                          // "1.4" stays "1.4") so the user sees what was actually saved.
-                          setHiEdits((prev) => ({ ...prev, [p.id]: hiInputValue(parsed) }));
-                          if (parsed === p.handicap_index) return;
-                          await sb
-                            .from("players")
-                            .update({
-                              handicap_index: parsed,
-                              handicap_index_source: "manual",
-                              handicap_updated_at: new Date().toISOString()
-                            })
-                            .eq("id", p.id);
-                          setAllPlayers((prev) =>
-                            prev.map((x) => (x.id === p.id ? { ...x, handicap_index: parsed } : x))
-                          );
-                        }}
-                      />
-                      <p className="text-[10px] text-cream-100/45 mt-0.5">
-                        Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
-                      </p>
-                    </div>
-                    {tees.length > 0 && (
-                      <div>
-                        <label className="label text-xs">Tees</label>
-                        <select
-                          className="input text-sm"
-                          value={picked.tee_id}
-                          onChange={(e) =>
-                            setPickedPlayers((arr) =>
-                              arr.map((x) => (x.id === p.id ? { ...x, tee_id: e.target.value } : x))
-                            )
-                          }
-                        >
-                          {tees.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name} · {t.rating}/{t.slope}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {(teamGameEnabled || sixSixSixEnabled) && pickedPlayers.length > 0 && (
-        <div className="card p-3 border border-gold-500/30 bg-gold-500/5 text-sm">
-          <div className="font-medium text-cream-50">
-            Team game selected — make sure your teams are set below
-          </div>
-          <p className="text-xs text-cream-100/65 mt-0.5 leading-snug">
-            {sixSixSixEnabled
-              ? "6-6-6 needs exactly 4 picked players; partners rotate every 6 holes (no manual team assignment needed)."
-              : `2 teams have been auto-shuffled for you. Drag a player onto a different team if you want to change it.`}
-          </p>
-        </div>
-      )}
-
-      <TeamsSection
-        pickedPlayers={pickedPlayers}
-        setPickedPlayers={setPickedPlayers}
-        allPlayers={allPlayers}
-        teamCount={teamCount}
-        setTeamCount={setTeamCount}
-      />
-
+      {/* Quick start moved above Players (audit P1 #6) so a first-
+          timer lands on the preset escape hatch before being asked
+          to configure individuals. */}
       <section className="card p-4 space-y-3">
         <div className="flex items-end justify-between gap-2 flex-wrap">
           <div>
@@ -941,20 +773,260 @@ export default function NewRoundPage() {
         </div>
       </section>
 
+      <section className="card p-4 space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <h2 className="font-serif text-xl text-cream-50">Players</h2>
+          <span className="text-xs text-cream-100/55">
+            {pickedPlayers.length} picked
+          </span>
+        </div>
+
+        {lastLineup && pickedPlayers.length === 0 && (
+          <button
+            type="button"
+            className="w-full text-left rounded-xl border border-gold-500/30 bg-brand-900/40 hover:bg-brand-900/70 p-3 transition-colors"
+            onClick={() => {
+              const valid = lastLineup.playerIds.filter((pid) => allPlayers.some((p) => p.id === pid));
+              setPickedPlayers(valid.map((pid) => ({ id: pid, tee_id: (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "", team_id: null })));
+            }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-serif text-cream-50">Re-play with last round&apos;s lineup</div>
+                <p className="text-xs text-cream-100/65 mt-0.5">
+                  {lastLineup.courseName} · {lastLineup.date} · {lastLineup.playerIds.length} players
+                </p>
+              </div>
+              <span className="pill bg-gold-500 text-brand-900 text-xs">Use →</span>
+            </div>
+          </button>
+        )}
+
+        {/* Inline guest creation — for ad-hoc players who aren't in the directory yet */}
+        <div className="surface rounded-xl p-3 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-2 items-end">
+          <div>
+            <label className="label">Add a guest player</label>
+            <input
+              className="input text-sm"
+              placeholder="Name (e.g. Dave)"
+              value={guestDraft.name}
+              onChange={(e) => setGuestDraft({ ...guestDraft, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">HI</label>
+            <input
+              className="input text-sm"
+              type="text"
+              inputMode="decimal"
+              placeholder="14.0 or +1.4"
+              value={guestDraft.hi}
+              onChange={(e) => setGuestDraft({ ...guestDraft, hi: e.target.value })}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-secondary text-sm"
+            disabled={guestBusy || !guestDraft.name.trim()}
+            onClick={addGuest}
+          >
+            {guestBusy ? "Adding…" : "Add guest"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {allPlayers.map((p) => {
+            const picked = pickedPlayers.find((x) => x.id === p.id);
+            const lp = lastPlayedAt[p.id];
+            const hiValue = hiEdits[p.id] ?? hiInputValue(p.handicap_index);
+            // Live Course Handicap preview — match the value that will
+            // be written to round_players at round-start (line 521).
+            // Audit P1 #9: member-member golfers want to verify their
+            // strokes BEFORE tee-off, not after the round starts.
+            const pickedTee = picked
+              ? tees.find((t) => t.id === picked.tee_id)
+              : null;
+            const previewCH = pickedTee
+              ? courseHandicap(
+                  p.handicap_index ?? 0,
+                  pickedTee.slope,
+                  pickedTee.rating,
+                  pickedTee.par,
+                  holes
+                )
+              : null;
+            const previewPH =
+              previewCH != null ? playingHandicap(previewCH, 100) : null;
+            return (
+              <div
+                key={p.id}
+                className={`card p-3 transition-colors ${picked ? "ring-2 ring-gold-500/60 bg-brand-800/70" : ""}`}
+              >
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={!!picked} onChange={() => togglePlayer(p.id)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-cream-50 truncate">{p.display_name}</div>
+                    <div className="text-xs text-cream-100/55">
+                      {lp ? `Last played ${lp}` : "New to this group"}
+                    </div>
+                  </div>
+                  {!picked && (
+                    <span className="text-xs text-cream-100/55 tabular-nums">HI {formatHi(p.handicap_index)}</span>
+                  )}
+                </label>
+                {picked && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {previewCH != null && (
+                      <p className="col-span-2 text-[11px] text-cream-100/70 leading-snug">
+                        Course handicap (CH):{" "}
+                        <span className="text-cream-50 font-medium tabular-nums">
+                          {previewCH > 0 ? `+${previewCH}` : previewCH}
+                        </span>
+                        {previewPH != null && previewPH !== previewCH && (
+                          <>
+                            {" · "}
+                            Playing handicap (PH):{" "}
+                            <span className="text-cream-50 font-medium tabular-nums">
+                              {previewPH > 0 ? `+${previewPH}` : previewPH}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    )}
+                    <div>
+                      <label className="label text-xs">Handicap Index</label>
+                      <input
+                        className="input text-sm"
+                        type="text"
+                        inputMode="decimal"
+                        value={hiValue}
+                        placeholder="14.0 or +1.4"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setHiEdits((prev) => ({ ...prev, [p.id]: v }));
+                        }}
+                        onBlur={async () => {
+                          const raw = hiEdits[p.id];
+                          if (raw == null) return;
+                          const parsed = parseHi(raw);
+                          // Re-render the input as a normalized value (e.g., "+1.4" stays "+1.4",
+                          // "1.4" stays "1.4") so the user sees what was actually saved.
+                          setHiEdits((prev) => ({ ...prev, [p.id]: hiInputValue(parsed) }));
+                          if (parsed === p.handicap_index) return;
+                          await sb
+                            .from("players")
+                            .update({
+                              handicap_index: parsed,
+                              handicap_index_source: "manual",
+                              handicap_updated_at: new Date().toISOString()
+                            })
+                            .eq("id", p.id);
+                          setAllPlayers((prev) =>
+                            prev.map((x) => (x.id === p.id ? { ...x, handicap_index: parsed } : x))
+                          );
+                        }}
+                      />
+                      <p className="text-[10px] text-cream-100/45 mt-0.5">
+                        Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
+                      </p>
+                    </div>
+                    {tees.length > 0 && (
+                      <div>
+                        <label className="label text-xs">Tees</label>
+                        <select
+                          className="input text-sm"
+                          value={picked.tee_id}
+                          onChange={(e) =>
+                            setPickedPlayers((arr) =>
+                              arr.map((x) => (x.id === p.id ? { ...x, tee_id: e.target.value } : x))
+                            )
+                          }
+                        >
+                          {tees.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} · {t.rating}/{t.slope}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="card p-4 space-y-2">
         <h2 className="font-serif text-xl text-cream-50">Games</h2>
         <p className="text-xs text-cream-100/55">
           Pick a family, then choose Gross / Net inside. Add as many as you
           like — they all run together on the round.
         </p>
-        {GAME_FAMILIES.map((family) => (
-          <FamilyGameRow
-            key={family.key}
-            family={family}
-            games={games}
-            setGames={setGames}
-          />
-        ))}
+        {/* Audit P1 #7: collapse the long tail. Show Skins / Nassau /
+            Best Ball / Side Bets by default; tuck individual / aggregate
+            / scramble / 6-6-6 behind a disclosure so a first-time user
+            isn't confronted with 8+ checkboxes. Any family with an
+            already-enabled game stays visible so a returning round
+            template doesn't appear to "lose" games. */}
+        {(() => {
+          const featured = new Set([
+            "skins",
+            "nassau",
+            "best_ball",
+            "side_bets"
+          ]);
+          // Mirrors FamilyGameRow's activeEntry resolution — a family
+          // is "enabled" if any of its concrete (variant, mode) game
+          // types has `enabled: true` in the games map.
+          const isEnabledForFamily = (family: GameFamily) =>
+            family.variants.some((v) => {
+              if (family.hasMode) {
+                return (
+                  games[v.resolve("gross")]?.enabled ||
+                  games[v.resolve("net")]?.enabled
+                );
+              }
+              return games[v.resolve(null)]?.enabled;
+            });
+          const featuredFamilies = GAME_FAMILIES.filter(
+            (f) => featured.has(f.key) || isEnabledForFamily(f)
+          );
+          const moreFamilies = GAME_FAMILIES.filter(
+            (f) => !featured.has(f.key) && !isEnabledForFamily(f)
+          );
+          return (
+            <>
+              {featuredFamilies.map((family) => (
+                <FamilyGameRow
+                  key={family.key}
+                  family={family}
+                  games={games}
+                  setGames={setGames}
+                />
+              ))}
+              {moreFamilies.length > 0 && (
+                <details className="pt-1">
+                  <summary className="cursor-pointer text-xs uppercase tracking-[0.18em] text-cream-100/55 hover:text-cream-100 py-1.5 select-none">
+                    More games · {moreFamilies.length} ▾
+                  </summary>
+                  <p className="text-[11px] text-cream-100/45 mt-1 mb-1 leading-snug">
+                    Less common formats. Pick any of these the same way.
+                  </p>
+                  {moreFamilies.map((family) => (
+                    <FamilyGameRow
+                      key={family.key}
+                      family={family}
+                      games={games}
+                      setGames={setGames}
+                    />
+                  ))}
+                </details>
+              )}
+            </>
+          );
+        })()}
         {/* Second-chance Save Preset button so the user sees it after
             they've actually configured the games, not just at the top
             of Quick Start. */}
@@ -971,6 +1043,31 @@ export default function NewRoundPage() {
           </div>
         )}
       </section>
+
+      {/* Teams section — placed after Games so a brand-new user
+          doesn't see "Teams" before they've picked a game that needs
+          them. Audit P1 #6. The team-game hint surfaces only when a
+          team game is enabled. */}
+      {(teamGameEnabled || sixSixSixEnabled) && pickedPlayers.length > 0 && (
+        <div className="card p-3 border border-gold-500/30 bg-gold-500/5 text-sm">
+          <div className="font-medium text-cream-50">
+            Team game selected — make sure your teams are set below
+          </div>
+          <p className="text-xs text-cream-100/65 mt-0.5 leading-snug">
+            {sixSixSixEnabled
+              ? "6-6-6 needs exactly 4 picked players; partners rotate every 6 holes (no manual team assignment needed)."
+              : `2 teams have been auto-shuffled for you. Tap a team chip per player to change it.`}
+          </p>
+        </div>
+      )}
+
+      <TeamsSection
+        pickedPlayers={pickedPlayers}
+        setPickedPlayers={setPickedPlayers}
+        allPlayers={allPlayers}
+        teamCount={teamCount}
+        setTeamCount={setTeamCount}
+      />
 
       {/* Junk side-bets — opt-in at round creation. Single toggle +
           flat amount, defaults to off. Commissioner can configure
@@ -1281,13 +1378,71 @@ function GameConfigEditor({
 
   if (gameType === "nassau") {
     const cfg = value.config;
+    const front = cfg.front_stake_cents ?? value.stake_cents;
+    const back = cfg.back_stake_cents ?? value.stake_cents;
+    const overall = cfg.overall_stake_cents ?? value.stake_cents;
+    // Three stakes are "split" if any pair differs OR the user has
+    // explicitly opened the advanced split UI. Default first-render
+    // is single-stake (audit P1 #8: a $5 Nassau is $5, not $5 × 3 = $15).
+    const splitEnabled =
+      cfg._split_stakes === true ||
+      front !== back ||
+      back !== overall;
+    const totalCents = front + back + overall;
     return (
       <div className="mt-3 pl-6 space-y-3">
-        <div className="grid grid-cols-3 gap-2">
-          <Money label="Front $" cents={cfg.front_stake_cents ?? value.stake_cents} onChange={(c) => setConfig({ front_stake_cents: c })} />
-          <Money label="Back $" cents={cfg.back_stake_cents ?? value.stake_cents} onChange={(c) => setConfig({ back_stake_cents: c })} />
-          <Money label="Overall $" cents={cfg.overall_stake_cents ?? value.stake_cents} onChange={(c) => setConfig({ overall_stake_cents: c })} />
-        </div>
+        {!splitEnabled ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+            <Money
+              label="Stake $"
+              cents={front}
+              onChange={(c) =>
+                setConfig({
+                  front_stake_cents: c,
+                  back_stake_cents: c,
+                  overall_stake_cents: c
+                })
+              }
+            />
+            <button
+              type="button"
+              onClick={() => setConfig({ _split_stakes: true })}
+              className="text-[11px] text-cream-100/55 hover:text-cream-100 underline underline-offset-2 self-end pb-2 text-left"
+            >
+              Advanced: split front / back / overall →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              <Money label="Front $" cents={front} onChange={(c) => setConfig({ front_stake_cents: c })} />
+              <Money label="Back $" cents={back} onChange={(c) => setConfig({ back_stake_cents: c })} />
+              <Money label="Overall $" cents={overall} onChange={(c) => setConfig({ overall_stake_cents: c })} />
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setConfig({
+                  _split_stakes: false,
+                  back_stake_cents: front,
+                  overall_stake_cents: front
+                })
+              }
+              className="text-[11px] text-cream-100/55 hover:text-cream-100 underline underline-offset-2"
+            >
+              ← Use one stake for all three
+            </button>
+          </div>
+        )}
+        {/* Total-at-risk preview so a $5 Nassau doesn't surprise a
+            first-timer as $15. Audit P1 #8. */}
+        <p className="text-[11px] text-cream-100/65 leading-snug">
+          Total at risk per player:{" "}
+          <span className="text-cream-50 font-medium tabular-nums">
+            ${(totalCents / 100).toFixed(2)}
+          </span>
+          {" "}({"front + back + overall"})
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="label text-xs">Format</label>
@@ -1301,7 +1456,8 @@ function GameConfigEditor({
             <select className="input text-sm" value={cfg.presses ?? "none"} onChange={(e) => setConfig({ presses: e.target.value })}>
               <option value="none">None</option>
               <option value="auto_2_down">Auto-press at 2 down</option>
-              <option value="manual">Manual (commissioner adds during round)</option>
+              {/* Audit P2 #24: "commissioner" jargon → "anyone can request". */}
+              <option value="manual">Manual (anyone can request mid-round)</option>
             </select>
           </div>
         </div>

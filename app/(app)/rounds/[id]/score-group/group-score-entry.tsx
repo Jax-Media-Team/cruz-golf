@@ -84,6 +84,27 @@ export function GroupScoreEntry({
     saver.save(rpId, hole, gross);
   }
 
+  // Scorecard-complete detection (audit P1 #11). When every included
+  // player has a non-null gross for every hole, the "Done" CTA flips
+  // from "View leaderboard →" to "Finalize round →" and routes to
+  // /finalize instead of /#leaderboard. Pending writes block the
+  // flip — finalizing on top of an in-flight write could miss data.
+  const scorecardComplete = useMemo(() => {
+    if (holes.length === 0 || players.length === 0) return false;
+    for (const p of players) {
+      for (const h of holes) {
+        const v = scores[k(p.id, h.hole_number)];
+        if (v == null) return false;
+      }
+    }
+    return true;
+  }, [holes, players, scores]);
+  // SaverState shape: { status: Record<key, Status>, pending: number }.
+  // `pending` counts items still saving or in failed-retry. Block the
+  // finalize flip until pending drains so we don't navigate past an
+  // in-flight write.
+  const finalizeReady = scorecardComplete && saver.state.pending === 0;
+
   return (
     <div className="space-y-4">
       {/* Back-nav lives in the parent page's <RoundBreadcrumb> — no
@@ -174,8 +195,14 @@ export function GroupScoreEntry({
               players={players}
               scores={scores}
               onSave={save}
-              onFinish={() => router.push(`/rounds/${roundId}#leaderboard`)}
-              finishLabel="View leaderboard →"
+              onFinish={() =>
+                router.push(
+                  finalizeReady
+                    ? `/rounds/${roundId}/finalize`
+                    : `/rounds/${roundId}#leaderboard`
+                )
+              }
+              finishLabel={finalizeReady ? "Finalize round →" : "View leaderboard →"}
             />
           ) : (
             <ScoreGrid holes={holes} players={players} scores={scores} onSave={save} />
