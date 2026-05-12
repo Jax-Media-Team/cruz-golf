@@ -30,14 +30,28 @@ export default function Landing() {
           <p className="mt-3 text-sm sm:text-base text-cream-100/55 max-w-xl">
             Live scoring for private golf groups, member games, and small club events.
           </p>
-          <div className="mt-9 flex flex-wrap gap-3">
+          <div className="mt-9 flex flex-wrap items-center gap-3">
+            {/* Audit P2 #18: hero has one primary action. The 90-second
+                demo CTA lives in the "Take the tour" strip below the
+                features so the eye doesn't bounce between two equal
+                buttons. */}
             <Link href="/signup" className="btn-primary">Create account</Link>
-            <Link href="/demo" className="btn-secondary">See it in action</Link>
-            <Link href="/login" className="btn-ghost">I have an account</Link>
           </div>
+          {/* Audit P2 #16: returning users get a small text link, not a
+              third button competing with the primary CTAs. */}
+          <p className="mt-3 text-sm text-cream-100/55">
+            Have an account?{" "}
+            <Link href="/login" className="text-cream-50 underline underline-offset-2">
+              Sign in
+            </Link>
+            .
+          </p>
 
           <p className="mt-12 text-sm text-cream-100/55 max-w-xl">
-            Built for member games, regular groups, and small club events — the modern operating system for private golf wagers.
+            {/* Audit P2 #17: "wagers" → "groups" — sounds less casino,
+                reads truer to a JGCC member-member group's
+                self-description. */}
+            Built for member games, regular groups, and small club events — the modern operating system for private golf groups.
           </p>
         </div>
 

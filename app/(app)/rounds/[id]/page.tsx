@@ -185,7 +185,19 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="h-eyebrow text-gold-400">
-              Live leaderboard · {round.date} · {round.holes} holes
+              {/* Audit P2 #27: ISO date → "Saturday, May 12" so a
+                  Saturday-morning return visit reads like a date, not
+                  a sortkey. Locale-fixed (en-US) so the display is
+                  stable across device locales. */}
+              Live leaderboard · {(() => {
+                const d = new Date((round.date ?? "") + "T00:00:00");
+                if (isNaN(d.getTime())) return round.date;
+                return d.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric"
+                });
+              })()} · {round.holes} holes
             </p>
             <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>
           </div>

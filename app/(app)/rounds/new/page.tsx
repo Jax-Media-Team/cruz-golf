@@ -398,7 +398,9 @@ export default function NewRoundPage() {
   async function addGuest() {
     if (!groupId || !guestDraft.name.trim()) return;
     setGuestBusy(true);
-    const hi = parseHi(guestDraft.hi);
+    // Blank HI → scratch (0). Audit P2 #22 — out-of-town buddy
+    // without a known index shouldn't be blocked from joining.
+    const hi = parseHi(guestDraft.hi) ?? 0;
     const { data, error } = await sb
       .from("players")
       .insert({
@@ -819,7 +821,7 @@ export default function NewRoundPage() {
               className="input text-sm"
               type="text"
               inputMode="decimal"
-              placeholder="14.0 or +1.4"
+              placeholder="14.0"
               value={guestDraft.hi}
               onChange={(e) => setGuestDraft({ ...guestDraft, hi: e.target.value })}
             />
@@ -832,6 +834,13 @@ export default function NewRoundPage() {
           >
             {guestBusy ? "Adding…" : "Add guest"}
           </button>
+          {/* Audit P2 #22: guest HI is optional — out-of-town buddy
+              shouldn't be blocked from joining because he doesn't know
+              his handicap. */}
+          <p className="col-span-full text-[11px] text-cream-100/55 -mt-1 leading-snug">
+            Leave HI blank if unknown — they&apos;ll play as a scratch (0).
+            Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -867,7 +876,9 @@ export default function NewRoundPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-cream-50 truncate">{p.display_name}</div>
                     <div className="text-xs text-cream-100/55">
-                      {lp ? `Last played ${lp}` : "New to this group"}
+                      {/* Audit P2 #23: group-language matches the rest
+                          of the app — "New to this group" was cold. */}
+                      {lp ? `Last played ${lp}` : "First round with the crew"}
                     </div>
                   </div>
                   {!picked && (
@@ -900,7 +911,8 @@ export default function NewRoundPage() {
                         type="text"
                         inputMode="decimal"
                         value={hiValue}
-                        placeholder="14.0 or +1.4"
+                        placeholder="14.0"
+                        title="Plus index? Type with a +, e.g. +1.4"
                         onChange={(e) => {
                           const v = e.target.value;
                           setHiEdits((prev) => ({ ...prev, [p.id]: v }));
@@ -926,9 +938,19 @@ export default function NewRoundPage() {
                           );
                         }}
                       />
-                      <p className="text-[10px] text-cream-100/45 mt-0.5">
-                        Plus index? Type with a +, e.g. <span className="text-gold-400">+1.4</span>
-                      </p>
+                      {/* Audit P2 #21: plus-index hint behind an info
+                          icon (kept the explainer accessible via the
+                          input's title + a small ? glyph) so a
+                          first-timer's eye doesn't see "+1.4" as a
+                          required input. */}
+                      <details className="mt-0.5">
+                        <summary className="text-[10px] text-cream-100/45 cursor-pointer select-none hover:text-cream-100/70">
+                          ? Plus handicap
+                        </summary>
+                        <p className="text-[10px] text-cream-100/45 mt-0.5">
+                          Type with a +, e.g. <span className="text-gold-400">+1.4</span>
+                        </p>
+                      </details>
                     </div>
                     {tees.length > 0 && (
                       <div>
@@ -1061,13 +1083,19 @@ export default function NewRoundPage() {
         </div>
       )}
 
-      <TeamsSection
-        pickedPlayers={pickedPlayers}
-        setPickedPlayers={setPickedPlayers}
-        allPlayers={allPlayers}
-        teamCount={teamCount}
-        setTeamCount={setTeamCount}
-      />
+      {/* Audit P2 #20: Teams section only renders when a team game
+          is enabled (or the user explicitly bumped teamCount > 0).
+          A first-timer playing solo Skins shouldn't see "No teams
+          (individual play)..." load-bearing on the form. */}
+      {(teamGameEnabled || sixSixSixEnabled || teamCount > 0) && (
+        <TeamsSection
+          pickedPlayers={pickedPlayers}
+          setPickedPlayers={setPickedPlayers}
+          allPlayers={allPlayers}
+          teamCount={teamCount}
+          setTeamCount={setTeamCount}
+        />
+      )}
 
       {/* Junk side-bets — opt-in at round creation. Single toggle +
           flat amount, defaults to off. Commissioner can configure
@@ -1121,9 +1149,14 @@ export default function NewRoundPage() {
             </div>
             <div className="text-[11px] text-cream-100/55 leading-snug self-end">
               <span className="text-cream-100/85">Default categories:</span>{" "}
-              Birdie, Eagle, Greenie, Sandy, Chip-in, Poley, Pinny. Tap
-              <span className="text-cream-100/85"> + Other</span> in the
-              live entry strip to record one-offs like &ldquo;Woodie&rdquo;.
+              Birdie, Eagle,{" "}
+              <span title="Greenie — closest to the pin on a par-3 (also called Pinny)">Greenie</span>,{" "}
+              <span title="Sandy — par or better after hitting a bunker">Sandy</span>,{" "}
+              Chip-in,{" "}
+              <span title="Poley — ball ends up touching the flagstick on the green">Poley</span>,{" "}
+              <span title="Pinny — closest-to-the-pin on a par-3 (variant of Greenie)">Pinny</span>.
+              {" "}Tap <span className="text-cream-100/85">+ Other</span> in
+              the live entry strip to record one-offs like &ldquo;Woodie&rdquo;.
             </div>
           </div>
         )}
