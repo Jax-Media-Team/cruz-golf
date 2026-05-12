@@ -106,10 +106,15 @@ export type JunkConfig = {
 /**
  * Default config used when a round opts into junk without picking
  * specifics. Defaults confirmed by Patrick from real-world play:
- *   $2 base, $2 escalation step, per-round scope. Active categories
- *   in display order: birdie, eagle, greenie, sandy, chip-in, poley,
- *   pinny. Barkie + net_birdie remain in the engine but ship disabled
- *   so the default chip strip stays uncluttered.
+ *   - Mode: flat $2 per item. Flat is more common in casual groups
+ *     than escalating; escalating stays as a toggle.
+ *   - Categories in display order: birdie, eagle, greenie, sandy,
+ *     chip-in, poley, pinny. Barkie + net_birdie remain in the
+ *     engine but ship disabled so the default chip strip stays
+ *     uncluttered.
+ *   - Escalating defaults (base $2, step $2, per_round) are kept
+ *     populated so flipping the mode toggle gives sensible numbers
+ *     without re-prompting.
  */
 export const DEFAULT_JUNK_CONFIG: JunkConfig = {
   active_categories: [
@@ -121,7 +126,8 @@ export const DEFAULT_JUNK_CONFIG: JunkConfig = {
     "poley",
     "pinny"
   ],
-  mode: "escalating",
+  mode: "flat",
+  flat_amount_cents: 200,
   base_amount_cents: 200,
   escalation_step_cents: 200,
   escalation_scope: "per_round"

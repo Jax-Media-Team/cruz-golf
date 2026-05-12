@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `814afdb` — *feat(ocr): per-cell confidence + par-suspicion + review bulk actions*
-- **Branch:** `main` (working tree clean, in sync with origin)
+- **Latest commit on main:** *(pending push — junk RPC reapply + archive/delete UI + OCR trust pass)*
+- **Branch:** `main` (working tree dirty, multi-file commit incoming)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **512/512 passing across 34 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **537/537 passing across 35 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0042` (junk realtime publication — Patrick applied 2026-05-11). Migration 0040 (event lifecycle RPCs) still awaiting apply.
+- **Migrations applied through:** `0042` (junk realtime publication). Migration 0040 (event lifecycle RPCs) still awaiting apply. **0043 drafted — defensive re-apply of junk RPCs + flat default + schema-cache reload.** Patrick should apply 0043 because `fn_set_junk_config` is missing from PostgREST schema cache despite 0041 being reported as applied.
 
 ### Recent stretch (2026-05-11)
 

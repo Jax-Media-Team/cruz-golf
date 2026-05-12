@@ -18,7 +18,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
 
   const { data: round } = await sb
     .from("rounds")
-    .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, settings, event_id, courses(name, city, state)")
+    .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, deleted_at, settings, event_id, courses(name, city, state)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -212,6 +212,9 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           pin={isCommissioner ? round.pin : null}
           accessMode={round.access_mode as "invited" | "open_to_group"}
           isCommissioner={isCommissioner}
+          isArchived={(round as any).deleted_at != null}
+          status={round.status as any}
+          hasScores={(scores ?? []).some((s: any) => s.gross != null)}
         />
       </header>
 

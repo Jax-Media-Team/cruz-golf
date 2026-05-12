@@ -446,8 +446,11 @@ describe("display helpers", () => {
 // =============================================================
 
 describe("DEFAULT_JUNK_CONFIG", () => {
-  it("matches Patrick's '$2 escalating, per-round' default", () => {
-    expect(DEFAULT_JUNK_CONFIG.mode).toBe("escalating");
+  it("defaults to flat $2 per item (Patrick's preference, 2026-05-12)", () => {
+    expect(DEFAULT_JUNK_CONFIG.mode).toBe("flat");
+    expect(DEFAULT_JUNK_CONFIG.flat_amount_cents).toBe(200);
+  });
+  it("keeps escalation defaults populated so the toggle works without re-prompting", () => {
     expect(DEFAULT_JUNK_CONFIG.base_amount_cents).toBe(200);
     expect(DEFAULT_JUNK_CONFIG.escalation_step_cents).toBe(200);
     expect(DEFAULT_JUNK_CONFIG.escalation_scope).toBe("per_round");

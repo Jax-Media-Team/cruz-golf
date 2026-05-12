@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 // the file structure changes, this skips to the alternative public
 // surface check.
 import * as ocrModule from "@/lib/ocr/index";
+import { stripHandicap } from "@/lib/ocr/index";
 
 // The parser logic is tightly bound to the file. To test it without
 // exposing internal state, we instead exercise the no-op + sanity
@@ -31,6 +32,35 @@ import * as ocrModule from "@/lib/ocr/index";
 // asserts behavior through the no-op + future tests will cover the
 // confidence path via real-model integration (Patrick's tester).
 const internal = ocrModule as any;
+
+describe("stripHandicap — strip trailing (N) from handwritten name", () => {
+  it("strips a single-digit handicap", () => {
+    expect(stripHandicap("Cruz (5)")).toEqual({ name: "Cruz", handicap: 5 });
+  });
+  it("strips a two-digit handicap", () => {
+    expect(stripHandicap("P. Cruz (12)")).toEqual({ name: "P. Cruz", handicap: 12 });
+  });
+  it("strips a decimal handicap index", () => {
+    expect(stripHandicap("Mitch (4.3)")).toEqual({ name: "Mitch", handicap: 4.3 });
+  });
+  it("leaves a name without parens alone", () => {
+    expect(stripHandicap("Mitch")).toEqual({ name: "Mitch", handicap: null });
+  });
+  it("ignores trailing digits without parens (conservative)", () => {
+    // Patrick's tester used handwritten parens; without parens we
+    // don't assume the trailing number is a handicap. "Cruz 5"
+    // might be a name typo or just spacing — leave it.
+    expect(stripHandicap("Cruz 5")).toEqual({ name: "Cruz 5", handicap: null });
+  });
+  it("trims whitespace inside and around", () => {
+    expect(stripHandicap("  Cruz  (5)  ")).toEqual({ name: "Cruz", handicap: 5 });
+  });
+  it("handles empty / null / undefined gracefully", () => {
+    expect(stripHandicap("")).toEqual({ name: "", handicap: null });
+    expect(stripHandicap(undefined as any)).toEqual({ name: "", handicap: null });
+    expect(stripHandicap(null as any)).toEqual({ name: "", handicap: null });
+  });
+});
 
 describe("OCR confidence parsing (internal)", () => {
   it("falls back gracefully when the model omits score_confidences", () => {

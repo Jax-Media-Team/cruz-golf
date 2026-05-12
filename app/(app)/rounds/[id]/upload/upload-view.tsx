@@ -1115,142 +1115,233 @@ export function UploadView({
         );
       })()}
 
+      {/* Plain-English empty state when OCR finished but no cells
+          auto-filled AND every row is quarantined as a pattern
+          warning. Tells the user clearly: we found something, it
+          looked unreliable, your next step is manual entry. Replaces
+          the prior "nothing happened" feeling Patrick called out. */}
+      {(() => {
+        if (suggestions.length === 0) return null;
+        const anyAutoFilled = grid.some((r) =>
+          r.sources.some((s) => s === "ocr_high")
+        );
+        if (anyAutoFilled) return null;
+        return (
+          <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-2">
+            <p className="h-eyebrow text-amber-300">
+              We read the card, but the scores look unreliable
+            </p>
+            <p className="text-sm text-cream-50 leading-snug">
+              Possible scores came back from OCR, but they showed
+              signs of duplication / templating across players.
+              Nothing was auto-filled — wrong scores are worse than
+              no scores.
+            </p>
+            <p className="text-xs text-cream-100/65 leading-snug">
+              Your options:
+            </p>
+            <ul className="text-xs text-cream-100/75 space-y-1 ml-4 list-disc">
+              <li>
+                <span className="font-medium text-cream-50">
+                  Type the scores manually below.
+                </span>{" "}
+                Fastest path — the grid takes numeric input directly.
+              </li>
+              <li>
+                Review suggestions per player below. If one row looks
+                right at a glance, tap{" "}
+                <span className="font-medium">Accept all for [name]</span>{" "}
+                to take that player&apos;s suggestions wholesale.
+              </li>
+              <li>
+                Tap <span className="font-medium">↻ Retry OCR</span> on
+                the card&apos;s diagnostics panel above — sometimes a
+                second pass reads better.
+              </li>
+            </ul>
+          </div>
+        );
+      })()}
+
       {/* OCR suggestions panel — every cell the OCR proposed that
           did NOT meet the strict auto-fill bar (high confidence AND
-          par-plausible AND pattern-clean). User reviews each and
-          accepts or skips. Patrick's principle: "I would rather have
-          12 high-confidence scores extracted, please fill the rest,
-          than 72 wrong scores filled." */}
-      {suggestions.length > 0 && (
-        <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <p className="h-eyebrow text-amber-300">
-                Review {suggestions.length} OCR suggestion
-                {suggestions.length === 1 ? "" : "s"}
-              </p>
-              <p className="text-xs text-cream-100/75 mt-1 leading-snug">
-                These cells were read from the photo but didn&apos;t
-                clear the auto-fill bar. Tap{" "}
-                <span className="font-medium">Use</span> to accept the
-                value or <span className="font-medium">Skip</span> to
-                leave the cell blank. You can also just type a value in
-                the grid directly.
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0 flex-wrap">
-              <button
-                type="button"
-                className="btn-ghost text-xs text-cream-100/85"
-                onClick={() => setSuggestions([])}
-                title="Drop every suggestion without applying"
-              >
-                Skip all
-              </button>
-              <button
-                type="button"
-                className="btn-secondary text-xs"
-                onClick={() => {
-                  // Apply every suggestion at once. Each suggestion
-                  // becomes a manual cell edit (source = "manual").
-                  const sugByCell = new Map<string, Suggestion>();
-                  for (const s of suggestions) {
-                    sugByCell.set(`${s.round_player_id}:${s.hole_index}`, s);
+          par-plausible AND pattern-clean). Grouped by player so the
+          user can accept a whole player's row in one tap when it
+          looks right, even though pattern checks fired across rows. */}
+      {suggestions.length > 0 && (() => {
+        // Group suggestions by player for the per-player bulk action
+        // ("Accept all for Cruz"). Stable order: in the round's
+        // player order.
+        const byPlayer = new Map<string, Suggestion[]>();
+        for (const s of suggestions) {
+          const arr = byPlayer.get(s.round_player_id) ?? [];
+          arr.push(s);
+          byPlayer.set(s.round_player_id, arr);
+        }
+        // Sort cells within each player by hole index for readability.
+        for (const arr of byPlayer.values()) {
+          arr.sort((a, b) => a.hole_index - b.hole_index);
+        }
+        const playerOrder = players
+          .filter((p) => byPlayer.has(p.round_player_id))
+          .map((p) => ({
+            rp_id: p.round_player_id,
+            name: p.name,
+            entries: byPlayer.get(p.round_player_id) ?? []
+          }));
+
+        function acceptOne(s: Suggestion) {
+          setGrid((prev) =>
+            prev.map((row) =>
+              row.round_player_id === s.round_player_id
+                ? {
+                    ...row,
+                    scores: row.scores.map((v, i) =>
+                      i === s.hole_index ? s.value : v
+                    ),
+                    sources: row.sources.map((src, i) =>
+                      i === s.hole_index
+                        ? ("manual" as CellSource)
+                        : src
+                    )
                   }
-                  setGrid((prev) =>
-                    prev.map((row) => ({
-                      ...row,
-                      scores: row.scores.map((v, i) => {
-                        const s = sugByCell.get(
-                          `${row.round_player_id}:${i}`
-                        );
-                        return s ? s.value : v;
-                      }),
-                      sources: row.sources.map((src, i) => {
-                        const s = sugByCell.get(
-                          `${row.round_player_id}:${i}`
-                        );
-                        return s ? ("manual" as CellSource) : src;
-                      })
-                    }))
-                  );
-                  setSuggestions([]);
-                }}
-                title="Apply every suggestion at once"
-              >
-                Use all
-              </button>
+                : row
+            )
+          );
+          setSuggestions((prev) => prev.filter((x) => x.id !== s.id));
+        }
+
+        function acceptPlayer(rpId: string) {
+          const entries = byPlayer.get(rpId) ?? [];
+          if (entries.length === 0) return;
+          const byHole = new Map<number, number>();
+          for (const e of entries) byHole.set(e.hole_index, e.value);
+          setGrid((prev) =>
+            prev.map((row) =>
+              row.round_player_id === rpId
+                ? {
+                    ...row,
+                    scores: row.scores.map((v, i) =>
+                      byHole.has(i) ? byHole.get(i)! : v
+                    ),
+                    sources: row.sources.map((src, i) =>
+                      byHole.has(i) ? ("manual" as CellSource) : src
+                    )
+                  }
+                : row
+            )
+          );
+          setSuggestions((prev) =>
+            prev.filter((x) => x.round_player_id !== rpId)
+          );
+        }
+
+        function skipPlayer(rpId: string) {
+          setSuggestions((prev) =>
+            prev.filter((x) => x.round_player_id !== rpId)
+          );
+        }
+
+        return (
+          <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="h-eyebrow text-amber-300">
+                  Review {suggestions.length} OCR suggestion
+                  {suggestions.length === 1 ? "" : "s"}
+                </p>
+                <p className="text-xs text-cream-100/75 mt-1 leading-snug">
+                  These cells were read from the photo but didn&apos;t
+                  clear the strict auto-fill bar. Accept per player if
+                  a whole row looks right, or pick cell by cell. You
+                  can also just type values in the grid directly.
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  className="btn-ghost text-xs text-cream-100/85"
+                  onClick={() => setSuggestions([])}
+                  title="Drop every suggestion without applying"
+                >
+                  Skip all
+                </button>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {playerOrder.map((p) => (
+                <div
+                  key={p.rp_id}
+                  className="rounded-lg bg-brand-900/30 p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-medium text-cream-50">
+                      {p.name}{" "}
+                      <span className="text-cream-100/55 text-xs">
+                        · {p.entries.length} cell
+                        {p.entries.length === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        className="btn-primary text-[11px] px-2.5 py-1"
+                        onClick={() => acceptPlayer(p.rp_id)}
+                        title="Accept every suggestion for this player, including any flagged as a pattern duplicate. Use this when the row looks right at a glance."
+                      >
+                        Accept all for {p.name.split(" ")[0]}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost text-[11px] text-cream-100/65 px-2.5 py-1"
+                        onClick={() => skipPlayer(p.rp_id)}
+                      >
+                        Skip all
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="flex flex-wrap gap-1.5 text-xs">
+                    {p.entries.map((s) => (
+                      <li
+                        key={s.id}
+                        className="rounded-md bg-brand-900/50 px-2 py-1 flex items-center gap-1.5 group"
+                        title={s.reasons.join(" · ")}
+                      >
+                        <span className="text-cream-100/55 tabular-nums text-[10px]">
+                          h{s.hole_index + 1}
+                        </span>
+                        <span className="font-serif text-cream-50 tabular-nums">
+                          {s.value}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-emerald-300 hover:text-emerald-200 text-[10px] px-1"
+                          onClick={() => acceptOne(s)}
+                          title="Use this single cell"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          className="text-cream-100/45 hover:text-red-300 text-[10px] px-1"
+                          onClick={() =>
+                            setSuggestions((prev) =>
+                              prev.filter((x) => x.id !== s.id)
+                            )
+                          }
+                          title="Skip this cell"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </div>
-          <ul className="space-y-1.5 text-xs">
-            {suggestions.map((s) => (
-              <li
-                key={s.id}
-                className="rounded-md bg-brand-900/30 px-3 py-2 flex items-center gap-2 flex-wrap"
-              >
-                <span className="font-medium text-cream-50 min-w-[5rem]">
-                  {s.player_name}
-                </span>
-                <span className="text-cream-100/65 tabular-nums">
-                  hole {s.hole_index + 1}
-                </span>
-                <span className="font-serif text-base text-cream-50 tabular-nums ml-1">
-                  {s.value}
-                </span>
-                {s.reasons.map((r) => (
-                  <span
-                    key={r}
-                    className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-200"
-                  >
-                    {r}
-                  </span>
-                ))}
-                <div className="flex gap-1.5 ml-auto shrink-0">
-                  <button
-                    type="button"
-                    className="btn-primary text-[11px] px-2.5 py-1"
-                    onClick={() => {
-                      setGrid((prev) =>
-                        prev.map((row) =>
-                          row.round_player_id === s.round_player_id
-                            ? {
-                                ...row,
-                                scores: row.scores.map((v, i) =>
-                                  i === s.hole_index ? s.value : v
-                                ),
-                                sources: row.sources.map((src, i) =>
-                                  i === s.hole_index
-                                    ? ("manual" as CellSource)
-                                    : src
-                                )
-                              }
-                            : row
-                        )
-                      );
-                      setSuggestions((prev) =>
-                        prev.filter((x) => x.id !== s.id)
-                      );
-                    }}
-                  >
-                    Use
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost text-[11px] text-cream-100/65 px-2.5 py-1"
-                    onClick={() =>
-                      setSuggestions((prev) =>
-                        prev.filter((x) => x.id !== s.id)
-                      )
-                    }
-                  >
-                    Skip
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        );
+      })()}
 
       {unmatched.length > 0 && (
         <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">

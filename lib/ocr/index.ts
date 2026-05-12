@@ -31,6 +31,7 @@
  *    explicitly forbids returning made-up names from prior context.
  */
 import { retry } from "../retry";
+import { detectSuspiciousPatterns } from "./pattern-checks";
 
 /**
  * Confidence level the model reports for a single transcribed cell.
@@ -294,6 +295,36 @@ async function callOpenAI(
 }
 
 /**
+ * Strip a trailing handicap annotation from a player's name as the
+ * model returned it. Real golf scorecards often write the player's
+ * handicap right next to their name — "Cruz (5)", "Mitch (4)" — and
+ * the model dutifully returns the literal text. The application's
+ * fuzzy matcher then can't find "Cruz" in the player list because
+ * it's looking up "Cruz (5)".
+ *
+ * Examples:
+ *   "Cruz (5)"     → { name: "Cruz",        handicap: 5 }
+ *   "P. Cruz (12)" → { name: "P. Cruz",     handicap: 12 }
+ *   "Mitch"        → { name: "Mitch",       handicap: null }
+ *   "Cruz 5"       → { name: "Cruz 5",      handicap: null }  (no parens — be conservative)
+ *
+ * Exported for tests. Pure function.
+ */
+export function stripHandicap(rawName: string): {
+  name: string;
+  handicap: number | null;
+} {
+  const trimmed = (rawName ?? "").trim();
+  // Match a trailing "(<digits-or-decimal>)" with optional whitespace.
+  // The capture group is the handicap.
+  const m = trimmed.match(/^(.+?)\s*\((\d+(?:\.\d+)?)\)\s*$/);
+  if (m) {
+    return { name: m[1].trim(), handicap: parseFloat(m[2]) };
+  }
+  return { name: trimmed, handicap: null };
+}
+
+/**
  * Exported for unit tests in `tests/ocr-confidence.test.ts`. Not part
  * of the public API surface — consumers should call `ocr.parse()`.
  */
@@ -342,8 +373,13 @@ export function parseModelResponse(raw: any, holes: 9 | 18) {
         return "low";
       }
     );
+    const rawName = String(p?.name ?? "");
+    const { name: cleanedName } = stripHandicap(rawName);
     return {
-      name: String(p?.name ?? ""),
+      // Strip trailing "(N)" handicap so the fuzzy matcher can find
+      // "Cruz" instead of trying to match "Cruz (5)". The original
+      // text is preserved in the diagnostic payload via pre_coerce.
+      name: cleanedName,
       scores,
       confidences
     };
@@ -375,6 +411,33 @@ const RETRY_HINT =
   `again carefully at each row. Read the pencil scores literally. If a ` +
   `digit is at all legible, return it. Return null only for cells that ` +
   `are genuinely blank.`;
+
+/**
+ * Different retry hint, used when the first pass returned rows-with-
+ * scores but the pattern detector flagged them as cross-row
+ * templating (multiple players have the same score sequence). The
+ * model fell back to "emit a plausible-looking golf score row"
+ * instead of doing the visual work per row. This hint addresses
+ * that failure mode directly and forces per-row independence.
+ */
+const TEMPLATING_RETRY_HINT =
+  `IMPORTANT: Your previous attempt at this image returned NEAR-` +
+  `IDENTICAL score sequences for multiple players. That is almost ` +
+  `always a sign that you emitted "what a golf round LOOKS LIKE" ` +
+  `instead of reading what each row actually says. Different players ` +
+  `do NOT normally shoot the same number on every hole.\n\n` +
+  `Reset and treat EACH PLAYER ROW INDEPENDENTLY:\n` +
+  `1. Identify the four (or however many) handwritten score rows.\n` +
+  `2. For each row in turn, read its cells left-to-right WITHOUT ` +
+  `looking at other rows. The handwriting varies between players — ` +
+  `their scores will too.\n` +
+  `3. If two rows end up with nearly identical scores, you're ` +
+  `pattern-filling again — re-read carefully.\n` +
+  `4. When uncertain about a digit, return null + null. Empty cells ` +
+  `are SAFE; wrong cells break the user's settlement.\n\n` +
+  `Confidence calibration: most real-world handwritten cards have ` +
+  `at least a few "low" cells. If every cell in your output is ` +
+  `"high", you're almost certainly over-claiming.`;
 
 export const openAIVisionOCR: ScorecardOCR = {
   async parse({ dataUrl, holes, model }) {
@@ -420,16 +483,37 @@ export const openAIVisionOCR: ScorecardOCR = {
     const raw1 = j1.choices?.[0]?.message?.content;
     const { parsed: parsed1, rows: rows1 } = parseModelResponse(raw1, holes);
 
-    // Decide if we need a second pass. Auto-retry ONLY when:
-    //   - we got at least one row back (so the model produced
-    //     structured output), AND
-    //   - every cell across all rows is null (the "gave up" signal).
-    // This avoids doubling the API spend on:
-    //   - empty-array responses (model said "I can't read this") —
-    //     a retry won't help, the image is unreadable.
-    //   - partial parses (some cells filled) — already useful; the
-    //     manual Retry button covers improvement attempts.
-    const needRetry = rows1.length > 0 && countCells(rows1) === 0;
+    // Decide if we need a second pass. Two trigger conditions:
+    //   A) Empty-cells (rows but every cell null) → "gave up"
+    //      failure. Use RETRY_HINT.
+    //   B) Cross-row templating detected by pattern check → the
+    //      classic "model emitted plausible-looking golf scores
+    //      instead of reading the rows" failure mode. Use the
+    //      TEMPLATING_RETRY_HINT.
+    //
+    // Skip retry for empty-array responses (model said "can't read")
+    // and for partial-but-clean parses (already useful).
+    const triggerA = rows1.length > 0 && countCells(rows1) === 0;
+    let triggerB = false;
+    if (rows1.length >= 2 && countCells(rows1) > 0) {
+      const patterns = detectSuspiciousPatterns({
+        rows: rows1.map((r: { name: string; scores: Array<number | null> }) => ({
+          name: r.name,
+          scores: r.scores
+        }))
+      });
+      // Only fire on templating signals — not "matches_par" (server
+      // doesn't have par data) or "low_variance" alone (could be a
+      // real conservative round).
+      triggerB = patterns.warnings.some(
+        (w) =>
+          w.type === "players_similar" ||
+          w.type === "uniform_value" ||
+          w.type === "front_back_identical"
+      );
+    }
+    const needRetry = triggerA || triggerB;
+    const retryHint = triggerA ? RETRY_HINT : TEMPLATING_RETRY_HINT;
 
     if (!needRetry) {
       return {
@@ -447,19 +531,46 @@ export const openAIVisionOCR: ScorecardOCR = {
       };
     }
 
-    // Second attempt — slightly warmer temperature + the
-    // "you returned all nulls last time" addressing.
-    const body2 = buildRequestBody(modelId, dataUrl, holes, RETRY_HINT, 0.4);
+    // Second attempt — warmer temperature + a focused retry hint
+    // addressing the specific failure mode detected on pass 1.
+    const body2 = buildRequestBody(modelId, dataUrl, holes, retryHint, 0.4);
     const j2 = await callOpenAI(apiKey, body2);
     const raw2 = j2.choices?.[0]?.message?.content;
     const { parsed: parsed2, rows: rows2 } = parseModelResponse(raw2, holes);
 
-    // Use the better of the two responses (more cells wins). Tie
-    // goes to the retry since that's our "the model actually looked"
-    // attempt.
+    // Pick the better response.
+    //
+    // For trigger A (empty cells), "better" = more cells parsed.
+    // For trigger B (templating), more cells isn't enough — a second
+    // pass that's ALSO templated isn't an improvement. Score the
+    // retry on (cells, no_templating). Templated retries get demoted.
+    function templatingScore(rows: typeof rows1): number {
+      if (rows.length < 2) return 0;
+      const p = detectSuspiciousPatterns({
+        rows: rows.map((r: { name: string; scores: Array<number | null> }) => ({
+          name: r.name,
+          scores: r.scores
+        }))
+      });
+      return p.warnings.filter(
+        (w) =>
+          w.type === "players_similar" ||
+          w.type === "uniform_value" ||
+          w.type === "front_back_identical"
+      ).length;
+    }
     const cells1 = countCells(rows1);
     const cells2 = countCells(rows2);
-    const winnerIs2 = cells2 >= cells1;
+    let winnerIs2: boolean;
+    if (triggerB) {
+      // Prefer the response with fewer templating warnings. Break
+      // ties by cell count.
+      const t1 = templatingScore(rows1);
+      const t2 = templatingScore(rows2);
+      winnerIs2 = t2 < t1 || (t2 === t1 && cells2 >= cells1);
+    } else {
+      winnerIs2 = cells2 >= cells1;
+    }
     const winnerRows = winnerIs2 ? rows2 : rows1;
     const winnerParsed = winnerIs2 ? parsed2 : parsed1;
     const winnerRaw = winnerIs2 ? raw2 : raw1;

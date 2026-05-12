@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ShareSheet } from "@/components/ShareSheet";
 
@@ -10,6 +11,16 @@ type Props = {
   pin: string | null;
   accessMode: "invited" | "open_to_group";
   isCommissioner: boolean;
+  /** True when the round has been soft-deleted (deleted_at is not null).
+   *  Controls whether the commissioner sees Archive vs Restore. */
+  isArchived?: boolean;
+  /** Status — used by the delete-safety warning so we can hint
+   *  "this round has scores" before the user permanently destroys it. */
+  status?: "draft" | "live" | "pending_finalization" | "finalized";
+  /** True when at least one score row exists on the round. Surfaces
+   *  in the delete dialog: deleting a round with scores is a much
+   *  bigger action than deleting an empty draft. */
+  hasScores?: boolean;
 };
 
 /**
@@ -33,12 +44,84 @@ type Props = {
  * exactly one entry point. Header is now strictly round-meta + share +
  * pre-round prep.
  */
-export function RoundHeaderActions({ roundId, spectatorToken, pin, accessMode, isCommissioner }: Props) {
+export function RoundHeaderActions({
+  roundId,
+  spectatorToken,
+  pin,
+  accessMode,
+  isCommissioner,
+  isArchived = false,
+  status,
+  hasScores = false
+}: Props) {
   const [showPin, setShowPin] = useState(false);
   const [mode, setMode] = useState(accessMode);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const sb = supabaseBrowser();
+  const router = useRouter();
+
+  // Soft-delete the round via fn_archive_round (migration 0021). Hides
+  // from active lists. Restorable.
+  async function archive() {
+    if (!confirm("Archive this round? It hides from active lists but everything is preserved — you can restore it any time.")) {
+      return;
+    }
+    setBusy(true);
+    setActionErr(null);
+    const { error } = await sb.rpc("fn_archive_round", { p_round_id: roundId });
+    setBusy(false);
+    if (error) {
+      setActionErr(error.message);
+      return;
+    }
+    router.push("/dashboard");
+  }
+
+  // Reverse archive — back to active state.
+  async function restore() {
+    setBusy(true);
+    setActionErr(null);
+    const { error } = await sb.rpc("fn_restore_round", { p_round_id: roundId });
+    setBusy(false);
+    if (error) {
+      setActionErr(error.message);
+      return;
+    }
+    router.refresh();
+  }
+
+  // Hard delete via fn_delete_round (migration 0019). Cascades all
+  // related rows. Patrick's principle: distinguish archive (safe,
+  // recoverable) from delete (gone forever) loudly. Two-step confirm
+  // when the round has any scores attached.
+  async function hardDelete() {
+    const scoreWarn = hasScores
+      ? "This round HAS SCORES attached. Deleting will erase every score, press, junk item, and settlement. "
+      : "";
+    const proceed = confirm(
+      `Permanently DELETE this round? ${scoreWarn}This cannot be undone — the round and everything attached to it are gone forever.\n\nFor most cleanup needs, "Archive" is the right choice instead.`
+    );
+    if (!proceed) return;
+    // Second confirm only when there are scores — protects against
+    // muscle-memory clicks on real-data rounds.
+    if (hasScores) {
+      const reallyProceed = confirm(
+        `Last check: type "delete" by pressing OK to proceed, or Cancel to back out.\n\nThis erases ${hasScores ? "real scoring data" : "the round"} forever.`
+      );
+      if (!reallyProceed) return;
+    }
+    setBusy(true);
+    setActionErr(null);
+    const { error } = await sb.rpc("fn_delete_round", { p_round_id: roundId });
+    setBusy(false);
+    if (error) {
+      setActionErr(error.message);
+      return;
+    }
+    router.push("/dashboard");
+  }
 
   function copy(text: string, label: string) {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -159,6 +242,119 @@ export function RoundHeaderActions({ roundId, spectatorToken, pin, accessMode, i
           </Link>
         )}
       </div>
+
+      {/* Commissioner: archive / restore / delete. Surfaced on the
+          round page itself so the destructive actions are findable,
+          per Patrick's "make the trash option obvious" ask. The
+          distinction between archive (safe, recoverable) and delete
+          (permanent) is loud: separate buttons, distinct phrasing,
+          two-step confirm on delete-with-scores. */}
+      {isCommissioner && (
+        <details className="card p-3 group">
+          <summary className="cursor-pointer text-xs uppercase tracking-[0.22em] text-cream-100/55 select-none flex items-center justify-between gap-2">
+            <span>Round settings · archive or delete</span>
+            <span className="text-cream-100/45 group-open:hidden">▸</span>
+            <span className="text-cream-100/45 hidden group-open:inline">▾</span>
+          </summary>
+          <div className="mt-3 space-y-3 text-sm">
+            {isArchived ? (
+              <>
+                <div>
+                  <p className="font-medium text-cream-50">
+                    This round is archived
+                  </p>
+                  <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
+                    Hidden from active lists. Scores, presses, junk, and
+                    settlements are all preserved. Restoring brings it
+                    back to wherever it was in its lifecycle.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-primary text-xs mt-2"
+                    disabled={busy}
+                    onClick={restore}
+                  >
+                    Restore round
+                  </button>
+                </div>
+                <div className="border-t border-red-400/20 pt-3">
+                  <p className="font-medium text-red-200">Danger zone</p>
+                  <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
+                    Permanently deletes this round and{" "}
+                    <span className="font-medium">everything</span>{" "}
+                    attached — scores, presses, junk, settlements. Cannot
+                    be undone.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-ghost text-xs text-red-300 mt-2"
+                    disabled={busy}
+                    onClick={hardDelete}
+                  >
+                    Delete permanently
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="font-medium text-cream-50">Archive round</p>
+                  <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
+                    Hides this round from active lists + the dashboard.
+                    Everything (scores, presses, junk, settlements) stays
+                    intact. <span className="text-emerald-300">Reversible</span>{" "}
+                    — restore from the dashboard or back here any time.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs mt-2"
+                    disabled={busy}
+                    onClick={archive}
+                  >
+                    Archive this round
+                  </button>
+                </div>
+                <div className="border-t border-red-400/20 pt-3">
+                  <p className="font-medium text-red-200">
+                    Delete round permanently
+                  </p>
+                  <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
+                    Erases the round and{" "}
+                    <span className="font-medium">everything</span>{" "}
+                    attached — scores, presses, junk, settlements.{" "}
+                    <span className="text-red-300">Cannot be undone.</span>
+                    {hasScores && (
+                      <>
+                        {" "}This round has scores; you&apos;ll be asked to
+                        confirm twice.
+                      </>
+                    )}{" "}
+                    For most cleanup needs, Archive is the right choice.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-ghost text-xs text-red-300 mt-2"
+                    disabled={busy}
+                    onClick={hardDelete}
+                  >
+                    Delete this round
+                  </button>
+                </div>
+              </>
+            )}
+            {actionErr && (
+              <p className="text-[11px] text-red-300 break-words">
+                {actionErr}
+              </p>
+            )}
+            {status && status !== "finalized" && (
+              <p className="text-[10px] text-cream-100/45">
+                Status: <span className="font-mono">{status}</span>
+              </p>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
