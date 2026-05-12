@@ -4,6 +4,13 @@ import { redirect } from "next/navigation";
 import { SpectatorView } from "./spectator-view";
 import { supabaseServer } from "@/lib/supabase/server";
 
+// Force dynamic rendering. The token-based service-role data path
+// would work statically (no auth needed), but the admin-mode branch
+// uses the signed-in user's cookie to verify Platform Admin status,
+// and the page reads `searchParams.token` + `searchParams.adminMode`
+// — both of which need a real per-request render to be meaningful.
+export const dynamic = "force-dynamic";
+
 // Public, token-keyed leaderboard. No auth required. Reads through service role
 // behind the scenes so RLS doesn't block anonymous access.
 //

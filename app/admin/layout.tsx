@@ -2,6 +2,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 
+// Force dynamic rendering — the admin gate MUST run per-request with
+// the user's auth cookie. Without this, Next.js could (in some build
+// configs) prerender the layout at build time with no user, and the
+// gate would either error or render the "not authorized" 404 for
+// everyone. Belt-and-suspenders: all admin pages already declare
+// dynamic themselves; this guards the parent layout too.
+export const dynamic = "force-dynamic";
+
 /**
  * Admin gate. Anyone hitting /admin/* who isn't a platform admin gets a
  * 404 (not a redirect) so the route is invisible to non-admins. The check

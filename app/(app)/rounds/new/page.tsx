@@ -487,34 +487,39 @@ export default function NewRoundPage() {
     }
     if (!lastSnapshot || !lastLineup) return;
     if (allPlayers.length === 0) return;
-    // Stage 1: set course if not yet set. Bail if the last round's
-    // course no longer exists (archived / deleted).
+    // Stage 1: set course if available. If the last round's course
+    // was archived since (drops out of the courses list), we DO NOT
+    // bail the whole flow anymore — we still apply the lineup +
+    // games and let the user pick a new course manually. Patrick
+    // 2026-05-12: "I tried to start saturday's game and it says we
+    // tried but couldn't auto-fill it" — the previous behavior was
+    // a full-bail when courseExists was false; now we partial-apply.
     const courseExists = courses.some((c) => c.id === lastSnapshot.courseId);
-    if (!courseExists) {
-      // Mark as applied so we don't loop forever; the user falls
-      // through to the normal manual form.
-      setAutoAppliedFromLast(true);
-      return;
-    }
-    if (courseId !== lastSnapshot.courseId) {
+    if (courseExists && courseId !== lastSnapshot.courseId) {
       setCourseId(lastSnapshot.courseId);
       return;
     }
-    // Stage 2: tees must be loaded before we can map per-player tees.
-    if (tees.length === 0) return;
-    // Apply lineup with each player's preferred tee.
+    // Stage 2 prerequisite: if we DO have a course set, tees must be
+    // loaded before we can map per-player tees. If we DON'T have a
+    // course (it was archived), apply lineup with empty tee_id and
+    // let the per-course tees-load effect (the one keyed on courseId)
+    // assign real tee_ids when the user picks a new course.
+    if (courseExists && tees.length === 0) return;
+    // Apply lineup. When tees are available, map each player to
+    // their preferred tee; otherwise leave tee_id empty so the
+    // per-course load effect fills it in once the user picks a course.
     const valid = lastLineup.playerIds.filter((pid) =>
       allPlayers.some((p) => p.id === pid)
     );
     setPickedPlayers(
       valid.map((pid) => ({
         id: pid,
-        tee_id: pickTeeForPlayer(pid),
+        tee_id: courseExists ? pickTeeForPlayer(pid) : "",
         team_id: null
       }))
     );
-    // Apply games from the snapshot. applyPackage handles the
-    // disable-all-other-games-first pattern.
+    // Apply games from the snapshot regardless of course. applyPackage
+    // handles the disable-all-other-games-first pattern.
     if (lastSnapshot.games.length > 0) {
       applyPackage(lastSnapshot.games);
     }
@@ -748,20 +753,32 @@ export default function NewRoundPage() {
       </header>
 
       {/* Soft note when the dashboard's "Start today's round" hero
-          successfully pre-filled the form. Reassures the user that
-          the lineup + course + games came from their last round and
-          they can still change anything below. */}
-      {wantFromLast && autoAppliedFromLast && pickedPlayers.length > 0 && (
+          successfully pre-filled the form. Three states:
+            - Full success (course + lineup + games): emerald notice.
+            - Partial (lineup + games applied, course needs picking):
+              amber notice asking the user to pick a course. Triggered
+              when the last round's course was archived since.
+            - Total miss (no lineup, no games): amber "couldn't
+              auto-fill" notice. Means the recent-rounds query
+              returned nothing usable. */}
+      {wantFromLast && autoAppliedFromLast && pickedPlayers.length > 0 && courseId && (
         <div className="card p-3 border border-emerald-400/30 bg-emerald-500/5 text-xs text-cream-100/85">
           Re-using last round&apos;s course, lineup, and games. Adjust
           anything below before tapping <span className="text-cream-50">Start round</span>.
         </div>
       )}
+      {wantFromLast && autoAppliedFromLast && pickedPlayers.length > 0 && !courseId && (
+        <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85">
+          Re-used last round&apos;s lineup + games, but the previous
+          course isn&apos;t available anymore — pick a new course
+          below. The lineup and games are ready to go.
+        </div>
+      )}
       {wantFromLast && autoAppliedFromLast && pickedPlayers.length === 0 && (
         <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85">
           We tried to re-use your last round but couldn&apos;t auto-fill
-          it — the course or players may have changed. Set up the round
-          manually below.
+          it — the lineup may have changed. Set up the round manually
+          below.
         </div>
       )}
 

@@ -105,7 +105,7 @@ export default function Landing() {
       </section>
 
       <footer className="px-6 py-8 text-center text-xs text-cream-100/40">
-        Cruz Golf · {new Date().getFullYear()}
+        Cruz Golf
       </footer>
     </main>
   );
