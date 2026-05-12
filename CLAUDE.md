@@ -8,12 +8,51 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `c586585` — *feat: ship 10 P1 items from first-time-golfer audit*
+- **Latest commit on main:** `724c917` — *feat: OCR review-first + chaos-QA hardening + engineer-speak sweep*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
 - **Test suite:** **555/555 passing across 36 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
 - **Migrations applied through:** `0045` (fn_archive_round idempotency). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
+
+### Operating model (locked in 2026-05-12)
+
+Patrick's directive: stop treating mobile/PWA testing as secondary,
+stop using passive backlog language, act like a product owner + QA
+lead. Specifics that govern every future stretch in this repo:
+
+1. **Real-device-mindset always.** When walking a flow, the lens is
+   "4 guys standing on the first tee after a couple drinks." Not
+   "tests pass." Not "looks right on desktop." Before any commit
+   claims a flow is done, trace the iPhone-PWA path mentally + grep
+   for safe-area / sticky-footer / floating-chrome interactions.
+2. **No passive placeholders.** "I have notes", "ready when you
+   want", "deferred", "awaiting direction" → do the work, or
+   explicitly reject with reasoning. If something is clearly aligned
+   with the product direction and doesn't need a major architectural
+   /business decision: just do it.
+3. **Batch related work.** Don't ship 8 commits that touch the same
+   directory in sequence — find the surrounding adjacent fixes and
+   roll them in.
+4. **OCR is ASSISTIVE.** Never silently auto-fill questionable scores
+   into a finalize-able flow. Every cell flows through the
+   suggestions panel; the user accepts explicitly. Wrong scores are
+   worse than no scores. (See lib/ocr/index.ts + the upload-view
+   suggestions panel.)
+5. **Engineer-speak is a bug.** Raw `error.message` to a user is the
+   same as exposing a stack trace. Wrap every user-facing `setErr`
+   through `friendlyAuthError()` (or a sibling friendly mapper).
+6. **Chaos-QA before features.** Before introducing a new product
+   feature, walk the named risk flows (start/abandon/return,
+   multiple live rounds, mid-round roster changes, mid-round game
+   changes, finalize↔archive↔unfinalize, junk↔game interactions,
+   spectator surfaces, safe-area, offline/reconnect). Fix what
+   breaks. THEN ship the feature.
+7. **Tone discipline holds.** Statements not exclamations. No
+   cartoon emoji on records / streaks / milestones. The data is
+   the interest.
+
+When in doubt, optimize for "less tooling, more Saturday game."
 
 ### This stretch (2026-05-12)
 
@@ -81,6 +120,30 @@ Also shipped in earlier commits this stretch:
 - `docs/FIRST_TIME_GOLFER_AUDIT.md` — full 30-finding audit.
 - `docs/RECURRING_FRICTION_AUDIT.md` — honest self-accounting of
   10 patterns I've half-fixed across the session.
+
+**OCR safety + chaos-QA pass (`724c917`)**:
+- OCR review-first flip: nothing lands silently in the grid.
+  Every cell flows to suggestions; one-tap bulk "Accept all clear
+  reads" for high-confidence + par-plausible + pattern-clean
+  cells; per-cell tier chips (clear / uncertain / way off par /
+  templated); provenance preserved on acceptance so the user can
+  still see "this came from a photo" later. Per Patrick's
+  "dangerous UX" call: wrong scores are worse than no scores.
+- ActiveRoundPill now picks the live round most likely to be
+  "actually in progress" — drops stale (past-dated + zero scores),
+  prefers today's date, then most-score-writes. Fixes the case
+  where a 3-week-old empty live round shadowed today's actual
+  round on the floating pill.
+- /rounds/new soft guard: top of the form lists existing live
+  rounds with one-tap continue links. Doesn't block (groups can
+  legitimately run parallel rounds) but makes them impossible to
+  ignore.
+- Demo nav + wizard controls: safe-area-inset-bottom padding
+  added so iPhone home indicator clears the tap targets.
+- Engineer-speak sweep: 11 user-facing surfaces in live-round
+  controls (junk, games-editor, pending/unfinalize, claim banner,
+  wagers, invites, join, upload, archive, profile editor) now
+  pipe raw Supabase errors through `friendlyAuthError`.
 
 ### Recent stretch (2026-05-11)
 
@@ -206,14 +269,24 @@ testing, OCR mobile UX, live match clarity. Shipped:
 
 ### Highest priorities for next session
 
-1. **Real-device iPhone PWA QA** — walk through `docs/IPHONE_PWA_QA.md` on an actual iPhone, **PLUS** the first-time-golfer flow refresh now that 5 P0 + 10 P1 just shipped. Most critical re-test surfaces:
-   - `/login` + `/signup`: OAuth-above-email layout + password live-validation + Facebook button (renders but inert until Patrick configures the provider per `docs/FACEBOOK_AUTH_SETUP.md`).
-   - `/rounds/new`: new Quick-Start-first ordering, tap-to-assign team chips, course-handicap inline preview, single-stake Nassau + total-at-risk line, More-games disclosure.
-   - `/rounds/[id]`: leaderboard now above press/junk controls.
+Per the operating model: chaos-QA before features. The priority
+order below reflects that — real-device walkthrough + edge-case
+hardening dominate; new course/feature work is gated behind them.
+
+1. **Real-device iPhone PWA QA** — walk through `docs/IPHONE_PWA_QA.md` on an actual iPhone, **PLUS** the surfaces below now that the chaos-QA pass + OCR review-first + audit P0/P1/P2 fixes just shipped. The risk Patrick called out is reality-vs-grep — most remaining friction lives in real device interaction. Re-test:
+   - `/rounds/new`: existing-live guard banner displays sensibly when you've got an in-progress round. Quick-Start-first ordering. Tap-to-assign team chips. Course-handicap inline preview. Single-stake Nassau + total-at-risk. More-games disclosure.
+   - `/rounds/[id]`: leaderboard above press/junk controls. ActiveRoundPill points at the right round when you've got more than one live (stale one shouldn't shadow today's).
    - `/rounds/[id]/score-group`: Done CTA flips to "Finalize round →" on complete scorecards.
-   - `/rounds/[id]/finalize`: Venmo deep-link button on each settle row — tap one on iPhone, confirm Venmo opens prefilled with recipient + amount + note.
-   - `/dashboard`: swipe-to-archive now shows a 10s Undo banner; new returning-user hero card when there's history but no active round.
-2. **Audit P2 polish (16 items)** — `docs/FIRST_TIME_GOLFER_AUDIT.md` lines 178-194. Smaller copy fixes ("wagers" → "groups" on landing, ISO date → "Saturday, May 12", "stale player" → "missing data", Poley/Pinny tooltips, etc.). Low-risk batch.
+   - `/rounds/[id]/upload`: OCR is review-first. Confirm nothing lands in the grid until "Accept all clear reads" or per-cell ✓. Tier chips show correct visual per cell. Provenance survives acceptance (accepted cells show ocr_high / ocr_low / ocr_suspicious borders, not plain manual).
+   - `/rounds/[id]/finalize`: Venmo deep-link tap → Venmo app opens prefilled. "Settle up" h1 (not "Finalize round").
+   - `/dashboard`: swipe-to-archive 10s Undo banner. Returning-user hero card.
+   - `/login` + `/signup`: OAuth above email, Facebook button render (inert until Supabase provider configured), password live validation.
+2. **More chaos-QA scenarios from Patrick's list still un-exercised:**
+   - Add a player mid-round (via PIN), then finalize — does the new player show in settlements?
+   - Score editing AFTER OCR accept — does the cell update / drop its `ocr_*` source label correctly?
+   - Switch a game's stake or allowance mid-round — settle behavior consistent?
+   - Mark live → pending → live → finalized loop. Does prior-pending state leave any residue?
+   - Junk: enable → record 3 items → disable (active_categories=[]) → finalize. Items still settle?
 3. **Course library expansion** — 6 NE FL placeholders still empty (Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Dye's Valley, San Jose, Pablo Creek). Waiting on official scorecards. **No fabrication.** When a card arrives, follow the 0034 / 0038 pattern: one tee per color, men's-only rating/slope/SI, idempotent migration, status=verified only if rating + slope are printed on the card.
 4. **Manual press dispute end-to-end with a real foursome** — the engine + UI + audit are tested but the dispute workflow (`docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`) hasn't been exercised with a real "Ben says he accepted" scenario.
 5. **(Lower priority) Push notifications for press requests** — not implemented. The active round pill alert (amber) + in-app banner are the only out-of-app signals.
@@ -227,15 +300,19 @@ testing, OCR mobile UX, live match clarity. Shipped:
 
 ### Important files (read first when resuming)
 
-- `CLAUDE.md` (this file) — posture + principles + the "don't re-litigate" list
+- `CLAUDE.md` (this file) — posture + principles + the "don't re-litigate" list + operating model
 - `ISSUE_TRACKER.md` — full migration table + priority list + session execution log
+- `docs/FIRST_TIME_GOLFER_AUDIT.md` — 30-finding audit (P0/P1 all shipped, P2 mostly)
+- `docs/RECURRING_FRICTION_AUDIT.md` — self-accounting of recurring patterns
 - `docs/IPHONE_PWA_QA.md` — 9-scenario real-device checklist
 - `docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md` — admin support walkthrough
 - `lib/games/press.ts` — the press engine (auto + manual)
-- `lib/clubhouse.ts` — the living-clubhouse signal builders (1641 lines, 11 builders)
+- `lib/clubhouse.ts` — the living-clubhouse signal builders
+- `lib/auth-errors.ts` — `friendlyAuthError()` — the canonical user-error mapper. Use this for every user-facing `setErr`.
+- `app/(app)/rounds/[id]/upload/upload-view.tsx` — OCR review-first surface. Read the type-level CellSource doc + the suggestions panel before touching it.
 - `app/(app)/rounds/[id]/press-controls.tsx` — manual press UI (realtime + retry)
-- `app/(app)/rounds/[id]/finalize/finalize-view.tsx` — full settlement composition
-- `supabase/migrations/0038_plantation_pvb_data.sql` — latest applied migration
+- `app/(app)/rounds/[id]/finalize/finalize-view.tsx` — full settlement composition + Venmo deep-link
+- `supabase/migrations/0045_archive_round_idempotency.sql` — latest applied migration
 
 ### Active routes / surfaces (mental map)
 
