@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type Invite = {
   id: string;
@@ -50,7 +51,7 @@ export function InvitesClient({
       .single();
     setBusy(false);
     if (error || !data) {
-      setErr(error?.message ?? "Could not create invite");
+      setErr(error ? friendlyAuthError(error) : "Could not create invite");
       return;
     }
     setInvites((arr) => [data as Invite, ...arr]);

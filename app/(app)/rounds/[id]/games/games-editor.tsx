@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 import {
   GAME_FAMILIES,
   getFamily,
@@ -61,7 +62,7 @@ export function GamesEditor({
     const { error } = await sb.from("round_games").update(patch).eq("id", g.id);
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setGames((arr) => arr.map((x) => (x.id === g.id ? { ...x, ...patch } : x)));
@@ -80,7 +81,7 @@ export function GamesEditor({
     const { error } = await sb.from("round_games").delete().eq("id", g.id);
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setGames((arr) => arr.filter((x) => x.id !== g.id));
@@ -103,7 +104,7 @@ export function GamesEditor({
       .single();
     setBusy(false);
     if (error || !data) {
-      setErr(error?.message ?? "Could not add game.");
+      setErr(error ? friendlyAuthError(error) : "Could not add game.");
       return;
     }
     setGames((arr) => [...arr, data as any]);
@@ -255,7 +256,7 @@ function JunkConfigBlock({
     });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return false;
     }
     setSavedAt(Date.now());

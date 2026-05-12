@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { bestMatch } from "@/lib/ocr/name-match";
 import { prepareImageForOCR, type PrepareImageResult } from "@/lib/ocr/preprocess";
@@ -76,25 +77,37 @@ type Card = {
 /**
  * Per-cell provenance + confidence + suspicious-vs-par status.
  *
+ * Updated 2026-05-12 (Patrick's review-first directive): nothing
+ * lands in the grid silently. All OCR cells flow through the
+ * suggestions panel; the `ocr_*` sources are stamped only when the
+ * user EXPLICITLY accepts a suggestion. Provenance survives
+ * acceptance so a user reviewing the grid later can still see which
+ * cells came from a card photo vs which they typed by hand.
+ *
  *   - "db"             — already in the DB before upload (blue tint)
- *   - "ocr_high"       — OCR-filled, model reported high confidence
+ *   - "ocr_high"       — user accepted from a high-confidence OCR read
  *                        (full-opacity amber border)
- *   - "ocr_low"        — OCR-filled, model reported low confidence
- *                        (dashed amber border, surfaced in "Review
- *                        uncertain" bulk action)
- *   - "ocr_suspicious" — OCR-filled with a value wildly outside the
- *                        plausible range for the hole (par ± window).
- *                        Red ring; "Review suspicious" bulk action
- *                        funnels these too.
- *   - "manual"         — user typed (no marker)
+ *   - "ocr_low"        — user accepted from a low-confidence OCR read
+ *                        (dashed amber border — visible reminder that
+ *                        the model wasn't sure)
+ *   - "ocr_suspicious" — user accepted from an OCR read that was
+ *                        either way-off-par or in a templated-row
+ *                        pattern. Red ring to keep the warning visible
+ *                        even after acceptance.
+ *   - "manual"         — user typed directly (no marker)
  *   - null             — empty cell
  *
- * Order of operations on a per-cell OCR merge:
- *   1. Cell-level confidence comes from the model (high/low/null).
- *   2. The merge step applies par-based validation. If the score is
- *      wildly off par (> par + 5 or < 1), the cell is upgraded to
- *      "ocr_suspicious" regardless of model confidence.
- *   3. The grid renders per the final source label.
+ * Order of operations on an OCR card upload:
+ *   1. Model returns per-cell value + confidence.
+ *   2. Each cell is tier-classified: high+plausible+pattern-clean,
+ *      low-confidence, way-off-par, pattern-quarantined.
+ *   3. Every non-null cell becomes a Suggestion entry. None land
+ *      in the grid yet.
+ *   4. User clicks "Accept all clear reads" OR "Accept all for [name]"
+ *      OR per-cell ✓. On accept, the cell's CellSource is stamped
+ *      per its tier (high → ocr_high, low → ocr_low, suspicious /
+ *      pattern → ocr_suspicious).
+ *   5. The grid renders per the final source label.
  */
 type CellSource =
   | "db"
@@ -375,60 +388,34 @@ export function UploadView({
         )
       );
 
+      // Per Patrick 2026-05-12: OCR is ASSISTIVE, not automatic.
+      // NOTHING lands in the grid without an explicit user accept —
+      // even high-confidence cells. The model can confidently
+      // misread (templating, gross/net notation, circles/slashes
+      // mistaken for digits) and silently corrupting a scorecard
+      // is worse than no OCR at all. The grid stays untouched on
+      // upload; every non-null OCR value flows to the suggestions
+      // panel where the user accepts in bulk ("Accept all
+      // high-confidence reads") or one-by-one.
+      //
+      // We still record the source_filename so the upload card
+      // shows "card-3.jpg → 7 suggestions for Patrick" rather than
+      // "card-3.jpg processed (no effect)".
       setGrid((prev) =>
         prev.map((row) => {
           const matchedIdx = matchAssignments.get(row.round_player_id);
           if (matchedIdx == null) return row;
-          const match = rows[matchedIdx];
-          const matchConfidences = match.confidences ?? [];
-          const rowQuarantined =
-            patternResult.rows_to_quarantine.has(matchedIdx);
-          const nextScores = row.scores.map((existing, idx) => {
-            const ocrVal = match.scores[idx] ?? null;
-            if (ocrVal == null) return existing;
-            // Patrick's stricter rule (2026-05-12): a cell only
-            // auto-fills the grid when it's ALL of:
-            //   - model returned "high" confidence
-            //   - score is within plausible par range
-            //   - the row passed pattern checks
-            // Anything else stays BLANK in the grid and goes into
-            // the suggestions panel for explicit accept/reject.
-            // Wrong scores are worse than no scores.
-            const par = holePars[idx] ?? 4;
-            const suspicious = isSuspiciousVsPar(ocrVal, par);
-            const c = matchConfidences[idx];
-            const autoFill =
-              c === "high" && !suspicious && !rowQuarantined;
-            return autoFill ? ocrVal : existing;
-          });
-          const nextSources = row.sources.map((existingSrc, idx) => {
-            const ocrVal = match.scores[idx] ?? null;
-            if (ocrVal == null) return existingSrc;
-            const par = holePars[idx] ?? 4;
-            const suspicious = isSuspiciousVsPar(ocrVal, par);
-            const c = matchConfidences[idx];
-            const autoFill =
-              c === "high" && !suspicious && !rowQuarantined;
-            // If we did NOT auto-fill, the cell source is unchanged
-            // (preserves prior db/manual state). The suggestion lives
-            // separately in `suggestions` state.
-            return autoFill ? ("ocr_high" as CellSource) : existingSrc;
-          });
           const sources = row.source_filenames.includes(filename)
             ? row.source_filenames
             : [...row.source_filenames, filename];
-          return {
-            ...row,
-            scores: nextScores,
-            sources: nextSources,
-            source_filenames: sources
-          };
+          return { ...row, source_filenames: sources };
         })
       );
 
-      // Build suggestions for every NON-auto-filled OCR cell that
-      // matched a round player. The suggestions panel below the grid
-      // lets the user accept them one at a time (or via bulk action).
+      // Build suggestions for every OCR cell that matched a round
+      // player. Each suggestion carries its confidence class so the
+      // panel can render high / uncertain / suspicious tiers and the
+      // bulk action can target only the high-confidence subset.
       const newSuggestions: Suggestion[] = [];
       for (const [rpId, rowIdx] of matchAssignments) {
         const match = rows[rowIdx];
@@ -443,9 +430,6 @@ export function UploadView({
           const par = holePars[holeIdx] ?? 4;
           const suspicious = isSuspiciousVsPar(ocrVal, par);
           const c = matchConfidences[holeIdx];
-          const autoFilled =
-            c === "high" && !suspicious && !rowQuarantined;
-          if (autoFilled) return;
           const reasons: string[] = [];
           if (c !== "high") reasons.push("model is uncertain");
           if (suspicious) reasons.push(`way off par (${par})`);
@@ -756,7 +740,7 @@ export function UploadView({
       .upsert(inserts, { onConflict: "round_player_id,hole_number" });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.push(`/rounds/${roundId}`);
@@ -801,10 +785,13 @@ export function UploadView({
         </h1>
         <div className="rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-xs text-cream-100/85 space-y-1 leading-snug">
           <p>
-            <span className="font-medium text-amber-200">OCR is experimental.</span>{" "}
-            It works best on flat, well-lit, machine-printed or
-            cleanly-handwritten cards. Cursive and rotated photos
-            often produce wrong scores.
+            <span className="font-medium text-amber-200">OCR is assistive, not automatic.</span>{" "}
+            We read your card and surface every cell as a{" "}
+            <span className="text-cream-50">suggestion</span> below the
+            grid — nothing lands in your scorecard until you accept it.
+            Works best on flat, well-lit, machine-printed or cleanly-
+            handwritten cards. Cursive, gross/net notation, and circles
+            often misread.
           </p>
           <p className="text-cream-100/65">
             For most rounds, typing scores by hand on the round page
@@ -1124,10 +1111,10 @@ export function UploadView({
                               Pattern warnings ({c.pattern_warnings.length})
                             </p>
                             <p className="text-[10px] text-red-100/80 leading-snug">
-                              The OCR output tripped these heuristics. Rows
-                              flagged here had ALL their cells funneled to
-                              the Suggestions panel — none of them
-                              auto-filled the grid.
+                              The OCR output tripped these heuristics. Cells
+                              from flagged rows are tagged{" "}
+                              <span className="text-amber-200">templated</span>{" "}
+                              in the Suggestions panel — review carefully.
                             </p>
                             <ul className="space-y-0.5">
                               {c.pattern_warnings.map((w, i) => (
@@ -1180,198 +1167,12 @@ export function UploadView({
         </p>
       </div>
 
-      {/* OCR auto-fill summary + Clear-OCR escape hatch. With the
-          strict auto-fill rule (high confidence + par-plausible +
-          pattern-clean), the grid only contains trustworthy OCR
-          cells. The suggestions panel (above) handles the rest.
-          The single "Clear OCR values" action is the safety net
-          for "wipe everything OCR touched, start over". */}
-      {(() => {
-        let nHigh = 0;
-        let nLow = 0;
-        let nSuspicious = 0;
-        for (const r of grid) {
-          for (const src of r.sources) {
-            if (src === "ocr_high") nHigh += 1;
-            else if (src === "ocr_low") nLow += 1;
-            else if (src === "ocr_suspicious") nSuspicious += 1;
-          }
-        }
-        const anyOcr = nHigh + nLow + nSuspicious > 0;
-        if (!anyOcr) return null;
-        return (
-          <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85 space-y-2">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 rounded-sm ring-1 ring-amber-400/60 bg-amber-500/15 shrink-0" />
-                <span className="tabular-nums">{nHigh} high-confidence</span>
-              </span>
-              {nLow > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm border border-dashed border-amber-400/70 bg-amber-500/5 shrink-0" />
-                  <span className="tabular-nums">{nLow} uncertain</span>
-                </span>
-              )}
-              {nSuspicious > 0 && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm ring-2 ring-red-400/70 bg-red-500/10 shrink-0" />
-                  <span className="tabular-nums text-red-200">
-                    {nSuspicious} suspicious vs par
-                  </span>
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn-ghost text-[11px] text-cream-100/85"
-                disabled={busy}
-                onClick={() => {
-                  // Clear every OCR-sourced cell. Existing DB +
-                  // manual edits stay put.
-                  setGrid((prev) =>
-                    prev.map((row) => ({
-                      ...row,
-                      scores: row.scores.map((s, i) => {
-                        const src = row.sources[i];
-                        return src === "ocr_high" ||
-                          src === "ocr_low" ||
-                          src === "ocr_suspicious"
-                          ? null
-                          : s;
-                      }),
-                      sources: row.sources.map((src) =>
-                        src === "ocr_high" ||
-                        src === "ocr_low" ||
-                        src === "ocr_suspicious"
-                          ? null
-                          : src
-                      )
-                    }))
-                  );
-                }}
-                title="Wipe every cell the OCR filled in. Manual edits + existing scores stay."
-              >
-                Clear OCR values
-              </button>
-              {(nLow > 0 || nSuspicious > 0) && (
-                <button
-                  type="button"
-                  className="btn-ghost text-[11px] text-cream-100/85"
-                  disabled={busy}
-                  onClick={() => {
-                    // Keep only the high-confidence cells. The
-                    // low + suspicious ones get wiped — the user
-                    // can re-enter them by hand or retry the OCR.
-                    setGrid((prev) =>
-                      prev.map((row) => ({
-                        ...row,
-                        scores: row.scores.map((s, i) => {
-                          const src = row.sources[i];
-                          return src === "ocr_low" || src === "ocr_suspicious"
-                            ? null
-                            : s;
-                        }),
-                        sources: row.sources.map((src) =>
-                          src === "ocr_low" || src === "ocr_suspicious"
-                            ? null
-                            : src
-                        )
-                      }))
-                    );
-                  }}
-                  title="Drop the uncertain + suspicious cells, keep the high-confidence reads."
-                >
-                  Accept high-confidence only
-                </button>
-              )}
-              {nSuspicious > 0 && (
-                <button
-                  type="button"
-                  className="btn-ghost text-[11px] text-red-200"
-                  disabled={busy}
-                  onClick={() => {
-                    // Scroll the first suspicious cell into view to
-                    // start the review. Cells are tagged with
-                    // data-suspicious for this.
-                    const first = document.querySelector(
-                      "[data-suspicious=\"true\"]"
-                    );
-                    first?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    (first as HTMLElement | null)?.focus?.();
-                  }}
-                  title="Jump to the first cell flagged as way off par."
-                >
-                  Review suspicious cells →
-                </button>
-              )}
-            </div>
-            <p className="text-[10px] text-cream-100/55 leading-snug">
-              Solid amber = OCR read clearly. Dashed amber = uncertain
-              guess — verify. Red ring = score is way off par for the
-              hole — almost certainly wrong. Cells with a dashed
-              outline are still blank.
-            </p>
-          </div>
-        );
-      })()}
-
-      {/* Plain-English empty state when OCR finished but no cells
-          auto-filled AND every row is quarantined as a pattern
-          warning. Tells the user clearly: we found something, it
-          looked unreliable, your next step is manual entry. Replaces
-          the prior "nothing happened" feeling Patrick called out. */}
-      {(() => {
-        if (suggestions.length === 0) return null;
-        const anyAutoFilled = grid.some((r) =>
-          r.sources.some((s) => s === "ocr_high")
-        );
-        if (anyAutoFilled) return null;
-        return (
-          <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-2">
-            <p className="h-eyebrow text-amber-300">
-              We read the card, but the scores look unreliable
-            </p>
-            <p className="text-sm text-cream-50 leading-snug">
-              Possible scores came back from OCR, but they showed
-              signs of duplication / templating across players.
-              Nothing was auto-filled — wrong scores are worse than
-              no scores.
-            </p>
-            <p className="text-xs text-cream-100/65 leading-snug">
-              Your options:
-            </p>
-            <ul className="text-xs text-cream-100/75 space-y-1 ml-4 list-disc">
-              <li>
-                <span className="font-medium text-cream-50">
-                  Type the scores manually below.
-                </span>{" "}
-                Fastest path — the grid takes numeric input directly.
-              </li>
-              <li>
-                Review suggestions per player below. If one row looks
-                right at a glance, tap{" "}
-                <span className="font-medium">Accept all for [name]</span>{" "}
-                to take that player&apos;s suggestions wholesale.
-              </li>
-              <li>
-                In the card&apos;s diagnostics panel above, try{" "}
-                <span className="font-medium">↻ Retry</span>,{" "}
-                <span className="font-medium">⟳ Rotate 90°</span>{" "}
-                (if the card looks sideways), or{" "}
-                <span className="font-medium">✂ Crop & retry</span> to
-                run OCR on just one half of the card.
-              </li>
-            </ul>
-          </div>
-        );
-      })()}
-
-      {/* OCR suggestions panel — every cell the OCR proposed that
-          did NOT meet the strict auto-fill bar (high confidence AND
-          par-plausible AND pattern-clean). Grouped by player so the
-          user can accept a whole player's row in one tap when it
-          looks right, even though pattern checks fired across rows. */}
+      {/* OCR suggestions panel. Cruz Golf treats OCR as ASSISTIVE:
+          every cell the model proposed is shown here for explicit
+          accept, including the high-confidence ones. Grouped by
+          player so the user can accept a whole row in one tap when
+          it looks right, with a top-level "Accept all
+          high-confidence reads" bulk action for the fast path. */}
       {suggestions.length > 0 && (() => {
         // Group suggestions by player for the per-player bulk action
         // ("Accept all for Cruz"). Stable order: in the round's
@@ -1394,7 +1195,28 @@ export function UploadView({
             entries: byPlayer.get(p.round_player_id) ?? []
           }));
 
+        // Resolve the right CellSource for an accepted suggestion.
+        // High + clean → ocr_high (solid amber). Low confidence →
+        // ocr_low (dashed amber). Way-off-par or pattern-flagged →
+        // ocr_suspicious (red ring). Preserving the tier in the
+        // accepted cell means the user can still see "you accepted
+        // this from a low-confidence OCR read" when reviewing the
+        // grid later. Per Patrick 2026-05-12: provenance survives
+        // acceptance.
+        function sourceFor(s: Suggestion): CellSource {
+          const isSuspicious = s.reasons.some((r) =>
+            r.startsWith("way off par")
+          );
+          const isPattern = s.reasons.includes(
+            "row matches a suspicious pattern"
+          );
+          if (isSuspicious || isPattern) return "ocr_suspicious";
+          if (s.confidence === "low" || s.confidence == null) return "ocr_low";
+          return "ocr_high";
+        }
+
         function acceptOne(s: Suggestion) {
+          const src = sourceFor(s);
           setGrid((prev) =>
             prev.map((row) =>
               row.round_player_id === s.round_player_id
@@ -1403,10 +1225,8 @@ export function UploadView({
                     scores: row.scores.map((v, i) =>
                       i === s.hole_index ? s.value : v
                     ),
-                    sources: row.sources.map((src, i) =>
-                      i === s.hole_index
-                        ? ("manual" as CellSource)
-                        : src
+                    sources: row.sources.map((existingSrc, i) =>
+                      i === s.hole_index ? src : existingSrc
                     )
                   }
                 : row
@@ -1418,18 +1238,20 @@ export function UploadView({
         function acceptPlayer(rpId: string) {
           const entries = byPlayer.get(rpId) ?? [];
           if (entries.length === 0) return;
-          const byHole = new Map<number, number>();
-          for (const e of entries) byHole.set(e.hole_index, e.value);
+          const byHole = new Map<number, { value: number; src: CellSource }>();
+          for (const e of entries) {
+            byHole.set(e.hole_index, { value: e.value, src: sourceFor(e) });
+          }
           setGrid((prev) =>
             prev.map((row) =>
               row.round_player_id === rpId
                 ? {
                     ...row,
                     scores: row.scores.map((v, i) =>
-                      byHole.has(i) ? byHole.get(i)! : v
+                      byHole.has(i) ? byHole.get(i)!.value : v
                     ),
-                    sources: row.sources.map((src, i) =>
-                      byHole.has(i) ? ("manual" as CellSource) : src
+                    sources: row.sources.map((existingSrc, i) =>
+                      byHole.has(i) ? byHole.get(i)!.src : existingSrc
                     )
                   }
                 : row
@@ -1446,22 +1268,119 @@ export function UploadView({
           );
         }
 
+        // Tier the suggestions for the header summary + the
+        // "Accept all high-confidence reads" bulk action. A
+        // suggestion is "clean high" only if the model reported
+        // high confidence AND we didn't tag the cell with any
+        // reason (par-suspicious, pattern-quarantined). Anything
+        // with a reason needs human judgment regardless of model
+        // confidence.
+        const cleanHigh = suggestions.filter(
+          (s) => s.confidence === "high" && s.reasons.length === 0
+        );
+        const uncertainCount = suggestions.filter(
+          (s) => s.confidence === "low"
+        ).length;
+        const suspiciousCount = suggestions.filter((s) =>
+          s.reasons.some((r) => r.startsWith("way off par"))
+        ).length;
+        const patternCount = suggestions.filter((s) =>
+          s.reasons.includes("row matches a suspicious pattern")
+        ).length;
+
+        function acceptAllHighConfidence() {
+          if (cleanHigh.length === 0) return;
+          // Map round_player_id → (hole_index → value).
+          const byPlayerByHole = new Map<string, Map<number, number>>();
+          for (const s of cleanHigh) {
+            const inner =
+              byPlayerByHole.get(s.round_player_id) ??
+              new Map<number, number>();
+            inner.set(s.hole_index, s.value);
+            byPlayerByHole.set(s.round_player_id, inner);
+          }
+          setGrid((prev) =>
+            prev.map((row) => {
+              const inner = byPlayerByHole.get(row.round_player_id);
+              if (!inner) return row;
+              return {
+                ...row,
+                scores: row.scores.map((v, i) =>
+                  inner.has(i) ? inner.get(i)! : v
+                ),
+                sources: row.sources.map((src, i) =>
+                  inner.has(i) ? ("ocr_high" as CellSource) : src
+                )
+              };
+            })
+          );
+          const acceptedIds = new Set(cleanHigh.map((s) => s.id));
+          setSuggestions((prev) =>
+            prev.filter((x) => !acceptedIds.has(x.id))
+          );
+        }
+
         return (
           <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className="h-eyebrow text-amber-300">
-                  Review {suggestions.length} OCR suggestion
-                  {suggestions.length === 1 ? "" : "s"}
-                </p>
-                <p className="text-xs text-cream-100/75 mt-1 leading-snug">
-                  These cells were read from the photo but didn&apos;t
-                  clear the strict auto-fill bar. Accept per player if
-                  a whole row looks right, or pick cell by cell. You
-                  can also just type values in the grid directly.
-                </p>
+            <div className="space-y-2">
+              <p className="h-eyebrow text-amber-300">
+                OCR · review {suggestions.length} read
+                {suggestions.length === 1 ? "" : "s"} before they
+                land in your scorecard
+              </p>
+              {/* Tier breakdown — gives the user the right mental
+                  model up front so they know what kind of review is
+                  needed. Per Patrick 2026-05-12: OCR is Beta, OCR is
+                  assistive, nothing lands silently. */}
+              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm ring-1 ring-emerald-400/60 bg-emerald-500/15 shrink-0" />
+                  <span className="tabular-nums text-cream-100/85">
+                    {cleanHigh.length} read clearly
+                  </span>
+                </span>
+                {uncertainCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm border border-dashed border-amber-400/70 bg-amber-500/5 shrink-0" />
+                    <span className="tabular-nums text-cream-100/85">
+                      {uncertainCount} uncertain
+                    </span>
+                  </span>
+                )}
+                {suspiciousCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm ring-2 ring-red-400/70 bg-red-500/10 shrink-0" />
+                    <span className="tabular-nums text-red-200">
+                      {suspiciousCount} way off par
+                    </span>
+                  </span>
+                )}
+                {patternCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm ring-2 ring-amber-500/70 bg-amber-500/10 shrink-0" />
+                    <span className="tabular-nums text-amber-200">
+                      {patternCount} row looks templated
+                    </span>
+                  </span>
+                )}
               </div>
-              <div className="flex gap-2 shrink-0 flex-wrap">
+              <p className="text-[11px] text-cream-100/65 leading-snug">
+                Cruz Golf treats OCR as <span className="text-cream-50">assistive</span>{" "}
+                — nothing lands in your scorecard until you accept it.
+                Wrong scores are worse than no scores.
+              </p>
+              <div className="flex gap-2 flex-wrap pt-1">
+                {cleanHigh.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-primary text-xs"
+                    onClick={acceptAllHighConfidence}
+                    title="Accepts every cell the model read clearly (high confidence + par-plausible + pattern-clean). Uncertain / off-par / templated cells stay below for individual review."
+                  >
+                    ✓ Accept all {cleanHigh.length} clear read
+                    {cleanHigh.length === 1 ? "" : "s"}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn-ghost text-xs text-cream-100/85"
@@ -1505,40 +1424,70 @@ export function UploadView({
                     </div>
                   </div>
                   <ul className="flex flex-wrap gap-1.5 text-xs">
-                    {p.entries.map((s) => (
-                      <li
-                        key={s.id}
-                        className="rounded-md bg-brand-900/50 px-2 py-1 flex items-center gap-1.5 group"
-                        title={s.reasons.join(" · ")}
-                      >
-                        <span className="text-cream-100/55 tabular-nums text-[10px]">
-                          h{s.hole_index + 1}
-                        </span>
-                        <span className="font-serif text-cream-50 tabular-nums">
-                          {s.value}
-                        </span>
-                        <button
-                          type="button"
-                          className="text-emerald-300 hover:text-emerald-200 text-[10px] px-1"
-                          onClick={() => acceptOne(s)}
-                          title="Use this single cell"
+                    {p.entries.map((s) => {
+                      // Confidence tier visual: emerald ring = read
+                      // clearly; dashed amber = uncertain; red ring =
+                      // way off par; amber ring = row matches a
+                      // templated pattern. The tier follows the same
+                      // legend as the summary at the top of the panel
+                      // so the user can match counts to specific cells.
+                      const isClean =
+                        s.confidence === "high" && s.reasons.length === 0;
+                      const isSuspicious = s.reasons.some((r) =>
+                        r.startsWith("way off par")
+                      );
+                      const isPattern = s.reasons.includes(
+                        "row matches a suspicious pattern"
+                      );
+                      const isUncertain = s.confidence !== "high";
+                      const chipClass = isSuspicious
+                        ? "ring-2 ring-red-400/70 bg-red-500/10"
+                        : isPattern
+                        ? "ring-2 ring-amber-500/70 bg-amber-500/10"
+                        : isUncertain
+                        ? "border border-dashed border-amber-400/70 bg-amber-500/5"
+                        : isClean
+                        ? "ring-1 ring-emerald-400/60 bg-emerald-500/10"
+                        : "bg-brand-900/50";
+                      const title =
+                        s.reasons.length > 0
+                          ? s.reasons.join(" · ")
+                          : "Model read this clearly";
+                      return (
+                        <li
+                          key={s.id}
+                          className={`rounded-md px-2 py-1 flex items-center gap-1.5 group ${chipClass}`}
+                          title={title}
                         >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          className="text-cream-100/45 hover:text-red-300 text-[10px] px-1"
-                          onClick={() =>
-                            setSuggestions((prev) =>
-                              prev.filter((x) => x.id !== s.id)
-                            )
-                          }
-                          title="Skip this cell"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
+                          <span className="text-cream-100/55 tabular-nums text-[10px]">
+                            h{s.hole_index + 1}
+                          </span>
+                          <span className="font-serif text-cream-50 tabular-nums">
+                            {s.value}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-emerald-300 hover:text-emerald-200 text-[10px] px-1"
+                            onClick={() => acceptOne(s)}
+                            title="Use this single cell"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            type="button"
+                            className="text-cream-100/45 hover:text-red-300 text-[10px] px-1"
+                            onClick={() =>
+                              setSuggestions((prev) =>
+                                prev.filter((x) => x.id !== s.id)
+                              )
+                            }
+                            title="Skip this cell"
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ))}
@@ -1573,10 +1522,10 @@ export function UploadView({
                     (u) => u.suggested_rp_id
                   );
                   if (toMerge.length === 0) return;
-                  // Mirror the strict per-cell rule used in the main
-                  // matched-row merge: only high-confidence + par-
-                  // plausible + non-pattern-warned cells auto-fill.
-                  // The rest become suggestions.
+                  // Review-first: every non-null cell becomes a
+                  // suggestion (nothing lands in the grid silently).
+                  // Same model as the matched-row path. Per Patrick
+                  // 2026-05-12.
                   const newSugs: Suggestion[] = [];
                   setGrid((prev) =>
                     prev.map((row) => {
@@ -1584,56 +1533,34 @@ export function UploadView({
                         (u) => u.suggested_rp_id === row.round_player_id
                       );
                       if (!match) return row;
-                      const nextScores = row.scores.map((existing, idx) => {
-                        const ocrVal = match.scores[idx] ?? null;
-                        if (ocrVal == null) return existing;
+                      match.scores.forEach((ocrVal, idx) => {
+                        if (ocrVal == null) return;
                         const par = holePars[idx] ?? 4;
                         const suspicious = isSuspiciousVsPar(ocrVal, par);
                         const c = match.confidences[idx];
-                        const autoFill =
-                          c === "high" && !suspicious && !match.pattern_warned;
-                        if (!autoFill) {
-                          const reasons: string[] = [];
-                          if (c !== "high") reasons.push("model is uncertain");
-                          if (suspicious) reasons.push(`way off par (${par})`);
-                          if (match.pattern_warned)
-                            reasons.push("row matches a suspicious pattern");
-                          newSugs.push({
-                            id: `sug-${match.id}-h${idx}`,
-                            card_id: match.card_id,
-                            round_player_id: row.round_player_id,
-                            player_name: row.name,
-                            hole_index: idx,
-                            value: ocrVal,
-                            confidence: c ?? null,
-                            reasons
-                          });
-                        }
-                        return autoFill ? ocrVal : existing;
+                        const reasons: string[] = [];
+                        if (c !== "high") reasons.push("model is uncertain");
+                        if (suspicious) reasons.push(`way off par (${par})`);
+                        if (match.pattern_warned)
+                          reasons.push("row matches a suspicious pattern");
+                        newSugs.push({
+                          id: `sug-${match.id}-h${idx}`,
+                          card_id: match.card_id,
+                          round_player_id: row.round_player_id,
+                          player_name: row.name,
+                          hole_index: idx,
+                          value: ocrVal,
+                          confidence: c ?? null,
+                          reasons
+                        });
                       });
-                      const nextSources = row.sources.map(
-                        (existingSrc, idx) => {
-                          const ocrVal = match.scores[idx] ?? null;
-                          if (ocrVal == null) return existingSrc;
-                          const par = holePars[idx] ?? 4;
-                          const suspicious = isSuspiciousVsPar(ocrVal, par);
-                          const c = match.confidences[idx];
-                          const autoFill =
-                            c === "high" && !suspicious && !match.pattern_warned;
-                          return autoFill
-                            ? ("ocr_high" as CellSource)
-                            : existingSrc;
-                        }
-                      );
+                      // Record source filename so the user can see
+                      // which card the suggestions came from, but the
+                      // grid scores + sources stay untouched.
                       const sources = row.source_filenames.includes(match.filename)
                         ? row.source_filenames
                         : [...row.source_filenames, match.filename];
-                      return {
-                        ...row,
-                        scores: nextScores,
-                        sources: nextSources,
-                        source_filenames: sources
-                      };
+                      return { ...row, source_filenames: sources };
                     })
                   );
                   if (newSugs.length > 0) {
@@ -1709,69 +1636,44 @@ export function UploadView({
                         disabled={!u.suggested_rp_id}
                         onClick={() => {
                           if (!u.suggested_rp_id) return;
-                          // Same strict per-cell rule as the matched-
-                          // row merge path. Only high+plausible+clean
-                          // auto-fills; the rest go to suggestions.
+                          // Review-first: every non-null cell flows
+                          // to suggestions. Nothing lands in the grid
+                          // silently. Per Patrick 2026-05-12.
                           const newSugsHere: Suggestion[] = [];
                           const targetRpId = u.suggested_rp_id;
                           setGrid((prev) =>
                             prev.map((row) => {
                               if (row.round_player_id !== targetRpId)
                                 return row;
-                              const nextScores = row.scores.map((existing, idx) => {
-                                const ocrVal = u.scores[idx] ?? null;
-                                if (ocrVal == null) return existing;
+                              u.scores.forEach((ocrVal, idx) => {
+                                if (ocrVal == null) return;
                                 const par = holePars[idx] ?? 4;
                                 const suspicious = isSuspiciousVsPar(ocrVal, par);
                                 const c = u.confidences[idx];
-                                const autoFill =
-                                  c === "high" && !suspicious && !u.pattern_warned;
-                                if (!autoFill) {
-                                  const reasons: string[] = [];
-                                  if (c !== "high")
-                                    reasons.push("model is uncertain");
-                                  if (suspicious)
-                                    reasons.push(`way off par (${par})`);
-                                  if (u.pattern_warned)
-                                    reasons.push(
-                                      "row matches a suspicious pattern"
-                                    );
-                                  newSugsHere.push({
-                                    id: `sug-${u.id}-h${idx}`,
-                                    card_id: u.card_id,
-                                    round_player_id: targetRpId,
-                                    player_name: row.name,
-                                    hole_index: idx,
-                                    value: ocrVal,
-                                    confidence: c ?? null,
-                                    reasons
-                                  });
-                                }
-                                return autoFill ? ocrVal : existing;
+                                const reasons: string[] = [];
+                                if (c !== "high")
+                                  reasons.push("model is uncertain");
+                                if (suspicious)
+                                  reasons.push(`way off par (${par})`);
+                                if (u.pattern_warned)
+                                  reasons.push(
+                                    "row matches a suspicious pattern"
+                                  );
+                                newSugsHere.push({
+                                  id: `sug-${u.id}-h${idx}`,
+                                  card_id: u.card_id,
+                                  round_player_id: targetRpId,
+                                  player_name: row.name,
+                                  hole_index: idx,
+                                  value: ocrVal,
+                                  confidence: c ?? null,
+                                  reasons
+                                });
                               });
-                              const nextSources = row.sources.map(
-                                (existingSrc, idx) => {
-                                  const ocrVal = u.scores[idx] ?? null;
-                                  if (ocrVal == null) return existingSrc;
-                                  const par = holePars[idx] ?? 4;
-                                  const suspicious = isSuspiciousVsPar(ocrVal, par);
-                                  const c = u.confidences[idx];
-                                  const autoFill =
-                                    c === "high" && !suspicious && !u.pattern_warned;
-                                  return autoFill
-                                    ? ("ocr_high" as CellSource)
-                                    : existingSrc;
-                                }
-                              );
                               const sources = row.source_filenames.includes(u.filename)
                                 ? row.source_filenames
                                 : [...row.source_filenames, u.filename];
-                              return {
-                                ...row,
-                                scores: nextScores,
-                                sources: nextSources,
-                                source_filenames: sources
-                              };
+                              return { ...row, source_filenames: sources };
                             })
                           );
                           if (newSugsHere.length > 0) {

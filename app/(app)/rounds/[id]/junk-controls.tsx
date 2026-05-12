@@ -25,6 +25,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 import {
   buildLiveJunkTotals,
   categoryDescription,
@@ -233,7 +234,7 @@ export function JunkControls({
     });
     setPending(null);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     const name = nameById.get(selectedRp) ?? "Player";
@@ -285,7 +286,7 @@ export function JunkControls({
       p_reason: trimmed
     });
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setRemovingItem(null);

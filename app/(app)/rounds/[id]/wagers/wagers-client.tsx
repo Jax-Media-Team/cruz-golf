@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type Game = {
   id: string;
@@ -67,7 +68,7 @@ export function WagerAckClient({
       .upsert({ round_id: roundId, profile_id: user.id });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setAcked(true);

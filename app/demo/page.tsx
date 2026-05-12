@@ -149,8 +149,15 @@ export default function DemoTour() {
         {current.id === "cta" && <CtaStage />}
       </div>
 
-      {/* Sticky bottom controls on mobile, inline on desktop */}
-      <div className="fixed bottom-20 inset-x-0 sm:static sm:bottom-auto px-4 sm:px-0">
+      {/* Sticky bottom controls on mobile, inline on desktop. Pad the
+          bottom for the iPhone home indicator + 5rem clearance for
+          the demo's own bottom nav. Audit + chaos QA 2026-05-12. */}
+      <div
+        className="fixed inset-x-0 sm:static sm:bottom-auto px-4 sm:px-0"
+        style={{
+          bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))"
+        }}
+      >
         <div className="max-w-5xl mx-auto flex gap-2">
           <button className="btn-secondary flex-1" disabled={step === 0} onClick={prev}>
             ← Prev

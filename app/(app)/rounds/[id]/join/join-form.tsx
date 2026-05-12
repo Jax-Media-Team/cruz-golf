@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 export function JoinForm({
   roundId,
@@ -25,7 +26,7 @@ export function JoinForm({
     const { data, error } = await sb.rpc("fn_redeem_invite", { p_token: inviteToken });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     if (!data) {
@@ -42,7 +43,7 @@ export function JoinForm({
     setBusy(true);
     const { data, error } = await sb.rpc("fn_join_round", { p_round_id: roundId, p_pin: pin });
     setBusy(false);
-    if (error) return setErr(error.message);
+    if (error) return setErr(friendlyAuthError(error));
     if (data !== true) return setErr("Wrong PIN. Ask Cruz for the correct code.");
     router.push(`/rounds/${roundId}`);
     router.refresh();

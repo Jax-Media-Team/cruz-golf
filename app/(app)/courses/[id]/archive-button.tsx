@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
  * Commissioner / Platform-admin Archive / Restore for a course.
@@ -31,7 +32,7 @@ export function CourseArchiveButton({
     const { error } = await sb.rpc("fn_archive_course", { p_course_id: courseId });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.push("/courses");
@@ -44,7 +45,7 @@ export function CourseArchiveButton({
     const { error } = await sb.rpc("fn_restore_course", { p_course_id: courseId });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.refresh();

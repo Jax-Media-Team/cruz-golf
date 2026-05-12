@@ -33,7 +33,13 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
         </div>
       </header>
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">{children}</main>
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-4">
+      <nav
+        // Demo mobile nav — mirror the main app's safe-area padding
+        // so the home indicator on installed iPhones doesn't overlap
+        // the tab targets. (Chaos QA, 2026-05-12.)
+        className="sm:hidden fixed bottom-0 inset-x-0 bg-brand-950/95 backdrop-blur border-t border-cream-100/10 grid grid-cols-4"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         <Tab href="/demo/round" label="Leaderboard" />
         <Tab href="/demo/round/score" label="Score" />
         <Tab href="/demo/profile" label="Profile" />

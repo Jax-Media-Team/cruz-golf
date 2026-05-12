@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { courseHandicap, playingHandicap } from "@/lib/handicap";
@@ -231,6 +232,16 @@ export default function NewRoundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Existing live rounds for this group — surfaced as a soft guard
+  // at the top of the form so the user doesn't accidentally start a
+  // second round while the first is mid-play. Per Patrick 2026-05-12
+  // chaos-QA pass: we don't BLOCK creation (some groups legitimately
+  // run parallel rounds), but we make the existing one one-tap to
+  // resume.
+  const [existingLive, setExistingLive] = useState<
+    Array<{ id: string; date: string; courseName: string | null }>
+  >([]);
+
   useEffect(() => {
     (async () => {
       const { data: g } = await sb.from("groups").select("id").limit(1);
@@ -238,7 +249,7 @@ export default function NewRoundPage() {
       setGroupId(gid ?? null);
       if (!gid) return;
 
-      const [coursesRes, playersRes, recentRoundsRes, userRes] = await Promise.all([
+      const [coursesRes, playersRes, recentRoundsRes, userRes, liveRoundsRes] = await Promise.all([
         sb.from("courses").select("id, name, status").eq("group_id", gid).is("deleted_at", null),
         sb.from("players").select("id, display_name, handicap_index, profile_id, default_tee_name").eq("group_id", gid).is("deleted_at", null),
         sb
@@ -247,8 +258,24 @@ export default function NewRoundPage() {
           .eq("group_id", gid)
           .order("date", { ascending: false })
           .limit(20),
-        sb.auth.getUser()
+        sb.auth.getUser(),
+        sb
+          .from("rounds")
+          .select("id, date, courses(name)")
+          .eq("group_id", gid)
+          .eq("status", "live")
+          .is("deleted_at", null)
+          .order("date", { ascending: false })
+          .limit(5)
       ]);
+
+      setExistingLive(
+        ((liveRoundsRes.data as any[]) ?? []).map((r) => ({
+          id: r.id as string,
+          date: r.date as string,
+          courseName: (r.courses?.name as string | undefined) ?? null
+        }))
+      );
 
       setCourses(coursesRes.data ?? []);
 
@@ -598,6 +625,39 @@ export default function NewRoundPage() {
         <p className="h-eyebrow">New</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">New round</h1>
       </header>
+
+      {/* Soft guard against accidentally creating a second live round.
+          Per Patrick 2026-05-12 chaos-QA pass: nothing blocks the
+          user from creating a parallel round (some groups legitimately
+          do A/B rounds), but the existing live round(s) are one tap
+          to continue from here, so the user can't pretend they don't
+          exist. */}
+      {existingLive.length > 0 && (
+        <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-sm space-y-2">
+          <div className="font-medium text-cream-50">
+            You&apos;ve already got {existingLive.length} live round
+            {existingLive.length === 1 ? "" : "s"} going
+          </div>
+          <ul className="space-y-1">
+            {existingLive.map((r) => (
+              <li key={r.id}>
+                <Link
+                  href={`/rounds/${r.id}`}
+                  className="text-gold-400 hover:underline inline-flex items-center gap-1.5"
+                >
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Continue: {r.courseName ?? "Round"} · {r.date}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Starting a new round below creates another. Finalize or
+            archive the existing one first if you only meant to play
+            once today.
+          </p>
+        </div>
+      )}
 
       <section className="card p-4 space-y-3">
         <h2 className="font-serif text-xl text-cream-50">Basics</h2>

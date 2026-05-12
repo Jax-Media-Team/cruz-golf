@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type Player = {
   player_id: string;
@@ -44,7 +45,7 @@ export function ClaimBanner({
       .is("profile_id", null);
     setBusy(null);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setDismissed(true);

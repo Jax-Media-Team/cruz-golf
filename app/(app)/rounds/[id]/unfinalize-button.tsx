@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
  * Commissioner-only unlock for a finalized round.
@@ -32,7 +33,7 @@ export function UnfinalizeButton({ roundId }: { roundId: string }) {
       .eq("id", roundId);
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.refresh();

@@ -40,36 +40,93 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isPlatformAdmin = false;
   }
 
-  // Newest live round (if any) — used by the floating "Back to round" pill.
-  // Skip archived rounds (migration 0021 adds rounds.deleted_at). If the
-  // column isn't there yet we silently retry without the filter so the
-  // pill keeps working pre-migration.
+  // Pick the live round most likely to be "actually in progress."
+  // Per Patrick 2026-05-12 chaos-QA pass: a stale empty live round
+  // (left over from a week ago) was shadowing today's real round on
+  // the floating pill. New ordering:
+  //   1. Drop archived (deleted_at not null) and stale (past-dated +
+  //      zero scores) live rounds.
+  //   2. Prefer rounds dated TODAY.
+  //   3. Among today's rounds (or all if none today), pick the one
+  //      with the most recent score write — that's the round the user
+  //      is most likely walking with.
+  //   4. Fall back to newest date.
+  // Pulls top 5 live rounds (any group, RLS narrows to the user's
+  // own) so the picker has room to choose. Stale rounds still appear
+  // on the dashboard rounds list — this is purely about which one
+  // anchors the floating pill.
   let activeRound: { id: string; courseName: string | null } | null = null;
   try {
-    const filtered = await sb
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const live = await sb
       .from("rounds")
-      .select("id, status, courses(name)")
+      .select("id, date, courses(name)")
       .eq("status", "live")
       .is("deleted_at", null)
       .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    let data = filtered.data;
-    if (filtered.error) {
-      const r = await sb
+      .limit(5);
+    type LiveRound = {
+      id: string;
+      date: string;
+      courses?: { name?: string } | null;
+    };
+    let candidates: LiveRound[] = (live.data ?? []) as any;
+    if (live.error) {
+      // Pre-migration env without deleted_at — retry without the filter.
+      const fallback = await sb
         .from("rounds")
-        .select("id, status, courses(name)")
+        .select("id, date, courses(name)")
         .eq("status", "live")
         .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      data = r.data;
+        .limit(5);
+      candidates = (fallback.data ?? []) as any;
     }
-    if (data) {
-      activeRound = {
-        id: data.id as string,
-        courseName: ((data as any).courses?.name as string | undefined) ?? null
-      };
+    if (candidates.length > 0) {
+      // Drop stale (past-dated AND zero scores). Cheap N+1: 5 rounds
+      // max, single short count query each. Keeps the layout fetch
+      // under ~50ms in practice.
+      const enriched = await Promise.all(
+        candidates.map(async (r) => {
+          const { count: scoreCount } = await sb
+            .from("scores")
+            .select("round_player_id", { count: "exact", head: true })
+            .in(
+              "round_player_id",
+              (
+                await sb
+                  .from("round_players")
+                  .select("id")
+                  .eq("round_id", r.id)
+              ).data?.map((rp: any) => rp.id) ?? []
+            );
+          // `lastScoreAt` ordering would be nicer but scores doesn't
+          // ship updated_at on every deploy. Score count + date are
+          // the reliable signals.
+          return {
+            ...r,
+            score_count: scoreCount ?? 0,
+            is_stale: r.date < todayStr && (scoreCount ?? 0) === 0
+          };
+        })
+      );
+      const live2 = enriched.filter((r) => !r.is_stale);
+      const today = live2.filter((r) => r.date === todayStr);
+      const pool = today.length > 0 ? today : live2;
+      // Prefer the round with the most score writes (proxy for "most
+      // recently active"). Ties broken by newest date.
+      pool.sort((a, b) => {
+        if (b.score_count !== a.score_count) {
+          return b.score_count - a.score_count;
+        }
+        return b.date.localeCompare(a.date);
+      });
+      const pick = pool[0] ?? null;
+      if (pick) {
+        activeRound = {
+          id: pick.id,
+          courseName: (pick.courses?.name as string | undefined) ?? null
+        };
+      }
     }
   } catch {
     /* ignore — pill is non-critical */

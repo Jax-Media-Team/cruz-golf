@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
  * Commissioner controls for the pending_finalization lifecycle.
@@ -41,7 +42,7 @@ export function MarkPendingButton({
     });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.refresh();
@@ -103,7 +104,7 @@ export function ResumeRoundButton({ roundId }: { roundId: string }) {
     });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.refresh();
