@@ -322,10 +322,18 @@ export function RoundHeaderActions({
                 <div>
                   <p className="font-medium text-cream-50">Archive round</p>
                   <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
-                    Hides this round from active lists + the dashboard.
-                    Everything (scores, presses, junk, settlements) stays
-                    intact. <span className="text-emerald-300">Reversible</span>{" "}
-                    — restore from the dashboard or back here any time.
+                    Hides this round from active lists + the dashboard.{" "}
+                    <span className="text-emerald-300">Reversible</span>{" "}
+                    — restore any time from the dashboard&apos;s{" "}
+                    &ldquo;Archived rounds&rdquo; section.
+                  </p>
+                  <p className="text-[11px] text-cream-100/55 mt-1 leading-snug">
+                    <span className="text-cream-100/85">Important:</span>{" "}
+                    finalized archived rounds <em>still</em> count in
+                    your group&apos;s records, leaderboards, and stats —
+                    they really happened. If you want a test round to
+                    not count, <span className="font-medium">Delete</span>{" "}
+                    it instead.
                   </p>
                   <button
                     type="button"

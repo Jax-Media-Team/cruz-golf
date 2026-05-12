@@ -9,10 +9,10 @@
 | **Working tree** | clean, in sync with origin |
 | **Production URL** | https://cruz-golf.vercel.app |
 | **Vercel deployment** | success (id 4642248168, sha a9a2723, picked up 2026-05-11 01:36 UTC) |
-| **Tests** | 550/550 passing across 36 files |
+| **Tests** | 553/553 passing across 36 files |
 | **Typecheck** | clean |
-| **Migrations applied through** | `0043` (junk RPC reapply — Patrick applied 2026-05-12) |
-| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033`, `0040`, `0044` (see migration table) |
+| **Migrations applied through** | `0045` (fn_archive_round idempotency — Patrick applied 2026-05-12) |
+| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033`, `0040` (see migration table — none blocking) |
 | **Open issues blocking ship** | none |
 | **Safe to reboot machine** | ✅ yes |
 
@@ -415,7 +415,8 @@ including the override-always-wins safety property.
 | 0041 | applied 2026-05-11 | Junk side-bet schema + RPCs. Two new tables (`round_junk_config`, `round_junk_items` with soft-delete). Four SECURITY DEFINER RPCs: `fn_set_junk_config` (commissioner-only), `fn_record_junk` (server-side authoritative pricing — client cannot supply amount_cents), `fn_edit_junk` (commissioner or original recorder), `fn_remove_junk` (commissioner-only soft-delete with required reason). Helper `fn_compute_junk_amount` mirrors the engine's pricing math. All audit-logged with `junk.*` kinds. Finalize round refuses junk edits. Idempotent. |
 | 0042 | applied 2026-05-11 | Adds `round_junk_items` + `round_junk_config` to the `supabase_realtime` publication so the JunkControls realtime subscription delivers INSERT events to other players' clients. |
 | 0043 | applied 2026-05-12 | Defensive re-apply of junk RPCs after Patrick hit "Could not find the function public.fn_set_junk_config(...) in the schema cache". Drops + recreates all five junk RPCs, re-grants execute, NOTIFY pgrst 'reload schema'. Also flips the table default `mode` to `'flat'`. |
-| 0044 | **awaiting your apply** | Updates `fn_delete_round` to delete `round_junk_items`, `round_junk_config`, and `round_presses` explicitly (today they cascade via FK, but the function should be self-documenting and not silently depend on every future FK author remembering `ON DELETE CASCADE`). Each new delete is wrapped in `exception when undefined_table` so the function still works on pre-0035/pre-0041 schemas. Includes `NOTIFY pgrst, 'reload schema'`. Single `CREATE OR REPLACE FUNCTION`. Idempotent. |
+| 0044 | applied 2026-05-12 | Updates `fn_delete_round` to delete `round_junk_items`, `round_junk_config`, and `round_presses` explicitly so the function is self-documenting and doesn't silently depend on every future FK author remembering `ON DELETE CASCADE`. Each new delete is wrapped in `exception when undefined_table` for pre-0035/pre-0041 schemas. |
+| 0045 | applied 2026-05-12 | Makes `fn_archive_round` idempotent (only stamps `deleted_at` when null) and preserves the original `status` across archive — restore brings the round back exactly where it was instead of coercing to draft. NOTIFY pgrst at end. |
 
 ---
 

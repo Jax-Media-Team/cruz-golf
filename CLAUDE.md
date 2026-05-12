@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `883a4d4` — *fix: 8 bugs caught by hostile code review*
+- **Latest commit on main:** `9d13306` — *feat(junk,rounds): + Other custom category + restore success message*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
-- **Test suite:** **550/550 passing across 36 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **553/553 passing across 36 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0043` (junk RPC reapply — Patrick applied 2026-05-12). Migration 0040 (event lifecycle RPCs) still awaiting apply. **0044 drafted — updates `fn_delete_round` to handle the post-0029 child tables (junk + presses) explicitly. Single CREATE OR REPLACE FUNCTION + NOTIFY pgrst. Idempotent.**
+- **Migrations applied through:** `0045` (fn_archive_round idempotency — Patrick applied 2026-05-12 alongside 0044). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
 
 ### Recent stretch (2026-05-11)
 

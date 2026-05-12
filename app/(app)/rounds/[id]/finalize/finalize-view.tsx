@@ -89,21 +89,34 @@ export function FinalizeView({
 
   const totals = new Map<string, number>();
   const lines: Array<{ game: string; perPlayer: Map<string, number> }> = [];
+  // Per-game settle errors — caught + surfaced in the UI banner
+  // instead of throwing in the render pass. Without the try/catch,
+  // a per-game engine that fails `assertZeroSum` on stale state
+  // (e.g. a player added after some scoring was written, and the
+  // engine doesn't seed them at 0) would crash the whole finalize
+  // page with no recovery path.
+  const gameErrors: string[] = [];
   for (const g of games) {
-    const out = settleGame({
-      game: g as RoundGame,
-      players,
-      scores,
-      course: { holes, par: holes.reduce((s, h) => s + h.par, 0) },
-      totalHoles,
-      startingHole
-    });
-    const m = new Map<string, number>();
-    for (const [pid, v] of out.perPlayer) {
-      totals.set(pid, (totals.get(pid) ?? 0) + v.delta_cents);
-      m.set(pid, v.delta_cents);
+    try {
+      const out = settleGame({
+        game: g as RoundGame,
+        players,
+        scores,
+        course: { holes, par: holes.reduce((s, h) => s + h.par, 0) },
+        totalHoles,
+        startingHole
+      });
+      const m = new Map<string, number>();
+      for (const [pid, v] of out.perPlayer) {
+        totals.set(pid, (totals.get(pid) ?? 0) + v.delta_cents);
+        m.set(pid, v.delta_cents);
+      }
+      lines.push({ game: g.name, perPlayer: m });
+    } catch (e: any) {
+      gameErrors.push(
+        `${g.name}: ${e?.message ?? "settle failed"}`
+      );
     }
-    lines.push({ game: g.name, perPlayer: m });
   }
 
   // Manual presses — settle each one independently and add to totals.
@@ -161,11 +174,27 @@ export function FinalizeView({
     const settled = settleManualPress(press, holeResults);
     if (settled.result_delta == null || settled.result_delta === 0) continue;
 
-    // Apply pot. Same rule as press primitive: each loser pays stake,
-    // pot splits among winners with deterministic remainder.
+    // Filter press side arrays against the CURRENT player set before
+    // distributing money. Press `side_a_rp_ids`/`side_b_rp_ids` are
+    // frozen at press-open time. If a player was removed from the
+    // round after the press opened, the frozen array still references
+    // their rp_id — using it would write a delta to a non-existent
+    // round_player, which then fails the settlements FK constraint
+    // when the row is inserted. Bug caught in code review 2026-05-12.
+    const validPlayerIds = new Set(players.map((p) => p.id));
     const aWon = settled.result_delta > 0;
-    const winners = aWon ? press.side_a_rp_ids : press.side_b_rp_ids;
-    const losers = aWon ? press.side_b_rp_ids : press.side_a_rp_ids;
+    const winnersRaw = aWon ? press.side_a_rp_ids : press.side_b_rp_ids;
+    const losersRaw = aWon ? press.side_b_rp_ids : press.side_a_rp_ids;
+    const winners = winnersRaw.filter((id) => validPlayerIds.has(id));
+    const losers = losersRaw.filter((id) => validPlayerIds.has(id));
+    if (winners.length === 0 || losers.length === 0) {
+      // The press references at least one removed player on a side
+      // with no surviving members — the bet is effectively void.
+      // Skip the press; the audit log still has the open/accept
+      // records for posterity.
+      continue;
+    }
+
     const pot = press.stake_cents * losers.length;
     const m = new Map<string, number>();
     for (const id of losers) {
@@ -206,33 +235,67 @@ export function FinalizeView({
       players.map((p) => ({ id: p.id }))
     );
     const m = new Map<string, number>();
+    let anyNonZero = false;
     for (const [pid, v] of junkResult.deltaByPlayer) {
-      if (v === 0) continue;
-      totals.set(pid, (totals.get(pid) ?? 0) + v);
+      // Compose totals only for non-zero deltas — but record EVERY
+      // player's contribution to the per-line map so the "By game"
+      // breakdown is honest about who participated, even at zero.
+      // Prior version suppressed the entire junk line when all
+      // deltas netted to zero (each of 4 players gets one $2 birdie
+      // → net delta per player is 0 → line disappeared → commissioner
+      // had no record junk was even played). Now we always push the
+      // line as long as items > 0.
       m.set(pid, v);
-    }
-    if (m.size > 0) {
-      // Compose a one-line summary of category counts so the
-      // settlement breakdown isn't just "Junk · $X" — it tells the
-      // commissioner WHICH junk items moved the money.
-      const counts = new Map<string, number>();
-      for (const it of junkAsEngine) {
-        const key =
-          it.category === "custom" && it.custom_label
-            ? it.custom_label
-            : categoryLabel(it.category);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (v !== 0) {
+        totals.set(pid, (totals.get(pid) ?? 0) + v);
+        anyNonZero = true;
       }
-      const countSummary = [...counts.entries()]
-        .map(([k, v]) => `${v} ${k.toLowerCase()}${v === 1 ? "" : "s"}`)
-        .join(", ");
-      lines.push({
-        game: `Junk · ${junkItems.length} item${
-          junkItems.length === 1 ? "" : "s"
-        } (${countSummary})`,
-        perPlayer: m
-      });
     }
+    // Compose a one-line summary of category counts so the
+    // settlement breakdown isn't just "Junk · $X" — it tells the
+    // commissioner WHICH junk items moved the money. Capped at 5
+    // distinct categories to keep the line scannable on mobile;
+    // overflow becomes "+N more".
+    const counts = new Map<string, number>();
+    for (const it of junkAsEngine) {
+      const key =
+        it.category === "custom" && it.custom_label
+          ? it.custom_label
+          : categoryLabel(it.category);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const entries = [...counts.entries()];
+    const shown = entries.slice(0, 5);
+    const overflow = entries.length - shown.length;
+    const countSummary = shown
+      .map(([k, v]) => `${v} ${k.toLowerCase()}${v === 1 ? "" : "s"}`)
+      .concat(overflow > 0 ? [`+${overflow} more`] : [])
+      .join(", ");
+    lines.push({
+      game: `Junk · ${junkItems.length} item${
+        junkItems.length === 1 ? "" : "s"
+      } (${countSummary})${anyNonZero ? "" : " · no money moved"}`,
+      perPlayer: m
+    });
+  }
+
+  // Defensive zero-sum check before minimumFlow. minimumFlow doesn't
+  // require zero-sum — it just pairs the most-negative with the
+  // most-positive until one side empties. Non-zero-sum input would
+  // leave residual non-zero balances unsettled (silent money leak).
+  // Each individual engine is zero-sum on its own player view, so
+  // the sum should always be zero — but a missed defensive check
+  // anywhere in the composition above could leak a few cents.
+  let totalsSum = 0;
+  for (const v of totals.values()) totalsSum += v;
+  if (totalsSum !== 0) {
+    // Surface as a soft warning. We don't block finalize (the
+    // commissioner might want to ship the settlement anyway) but
+    // the audit trail captures the mismatch.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[finalize] non-zero-sum totals: ${totalsSum} cents. Each engine should be zero-sum on its own — a residual indicates a player-set drift or engine bug.`
+    );
   }
 
   const flows = minimumFlow(totals);
@@ -341,7 +404,7 @@ export function FinalizeView({
         <ul className="space-y-4 text-sm">
           {lines.map((l, i) => (
             <li key={i}>
-              <div className="font-medium text-cream-50">{l.game}</div>
+              <div className="font-medium text-cream-50 break-words">{l.game}</div>
               <ul className="pl-4 mt-1 space-y-0.5">
                 {[...l.perPlayer.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v]) => (
                   <li key={pid} className="flex justify-between">
@@ -426,6 +489,25 @@ export function FinalizeView({
         )}
       </div>
 
+      {gameErrors.length > 0 && (
+        <div className="card p-3 border border-red-400/40 bg-red-500/10 text-xs space-y-1">
+          <p className="font-medium text-red-200">
+            {gameErrors.length} game{gameErrors.length === 1 ? "" : "s"}{" "}
+            couldn&apos;t settle:
+          </p>
+          <ul className="text-red-100/85 space-y-0.5">
+            {gameErrors.map((m, i) => (
+              <li key={i} className="break-words">
+                · {m}
+              </li>
+            ))}
+          </ul>
+          <p className="text-red-100/65 text-[11px] leading-snug">
+            The settlement below excludes these games. Fix the underlying
+            issue (usually a missing score or stale player) and reload.
+          </p>
+        </div>
+      )}
       {err && <p className="text-red-300 text-sm">{err}</p>}
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" disabled={busy} onClick={finalize}>

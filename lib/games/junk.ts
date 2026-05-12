@@ -211,6 +211,14 @@ export type JunkSettlement = {
  *
  * Players not present in the input are not paid by anyone — that's
  * what makes this safe to call mid-round with a subset of foursomes.
+ *
+ * **Caller responsibility — soft-delete filtering.** The engine does
+ * NOT filter `deleted_at` (the field isn't even part of `JunkItem`).
+ * Callers MUST pass only non-deleted items. Both surfaces that call
+ * this today (`finalize-view.tsx` and `junk-controls.tsx`) filter at
+ * fetch via `.is("deleted_at", null)`. Any new caller MUST do the
+ * same — passing a soft-deleted item will settle it as if it were
+ * live, polluting the totals.
  */
 export function settleJunk(
   items: JunkItem[],
