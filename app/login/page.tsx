@@ -148,7 +148,7 @@ function LoginInner() {
         </div>
         <GoogleAuthButton next="/dashboard" />
         <p className="text-sm text-cream-100/60 text-center">
-          New here? <Link href="/signup" className="text-cream-50 underline">Create a group</Link>
+          New here? <Link href="/signup" className="text-cream-50 underline">Create an account</Link>
         </p>
       </form>
     </main>

@@ -144,21 +144,55 @@ describe("buildLiveRoundSignals", () => {
     expect(out[0].leader?.thru).toBe(1);
   });
 
-  it("returns leader: null when nobody has scored yet", () => {
+  it("returns leader: null when nobody has scored yet (today's date)", () => {
+    // 2026-05-12 fix: stale-live filtering suppresses past-dated
+    // zero-score rounds, so "leader: null" only applies to a round
+    // dated TODAY or in the future. Anchor `now` so the test date
+    // is today.
     const rounds = [r("r1", "2026-05-10", "live")];
     const rps = [rp("rp-a", "r1", "p-a", "A")];
-    const out = buildLiveRoundSignals(rounds, rps, []);
+    const out = buildLiveRoundSignals(rounds, rps, [], {
+      now: new Date("2026-05-10T12:00:00Z")
+    });
     expect(out[0].leader).toBeNull();
     expect(out[0].active_players).toBe(0);
   });
 
+  it("suppresses past-dated rounds with zero scores (stale-live filter)", () => {
+    // Patrick's bug: rounds stuck at status=live with no scores
+    // showed up as "Just teed off" indefinitely. The engine now
+    // skips them if the round date is in the past AND no one
+    // has recorded a score.
+    const rounds = [r("r1", "2026-05-08", "live")];
+    const rps = [rp("rp-a", "r1", "p-a", "A")];
+    const out = buildLiveRoundSignals(rounds, rps, [], {
+      now: new Date("2026-05-12T12:00:00Z")
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("keeps a past-dated round when at least one score exists (real play in progress)", () => {
+    const rounds = [r("r1", "2026-05-08", "live")];
+    const rps = [rp("rp-a", "r1", "p-a", "A")];
+    const scores = [score("rp-a", 1, 4, 4)];
+    const out = buildLiveRoundSignals(rounds, rps, scores, {
+      now: new Date("2026-05-12T12:00:00Z")
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].leader?.thru).toBe(1);
+  });
+
   it("sorts most-recent-dated round first", () => {
+    // Same fix: anchor `now` so all three dates qualify as today
+    // or future.
     const rounds = [
       r("old", "2026-05-08", "live"),
       r("new", "2026-05-10", "live"),
       r("mid", "2026-05-09", "live")
     ];
-    const out = buildLiveRoundSignals(rounds, [], []);
+    const out = buildLiveRoundSignals(rounds, [], [], {
+      now: new Date("2026-05-08T00:00:00Z")
+    });
     expect(out.map((s) => s.round_id)).toEqual(["new", "mid", "old"]);
   });
 });

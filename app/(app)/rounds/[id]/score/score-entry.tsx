@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { strokesPerHole } from "@/lib/handicap";
 import { ScorePad } from "@/components/ScorePad";
@@ -38,8 +37,10 @@ export function ScoreEntry({
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <Link href={`/rounds/${roundId}`} className="btn-ghost text-sm">← Back</Link>
+      {/* Back-nav lives in the parent page's <RoundBreadcrumb> — no
+          duplicate "← Back" here (2026-05-12 fix per Patrick:
+          "multiple back options are confusing"). */}
+      <header className="flex items-center justify-end gap-3">
         <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">
           {roundStatus === "draft"
             ? "Draft round"

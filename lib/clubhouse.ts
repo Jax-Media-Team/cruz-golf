@@ -304,9 +304,21 @@ export type ClubhouseBundle = {
 export function buildLiveRoundSignals(
   rounds: ClubhouseRound[],
   rps: ClubhouseRoundPlayer[],
-  scores: ClubhouseScore[]
+  scores: ClubhouseScore[],
+  opts: { now?: Date } = {}
 ): LiveRoundSignal[] {
-  const liveRounds = rounds.filter((r) => r.status === "live");
+  // Dedupe by round_id defensively. If the upstream join ever
+  // produces a duplicate (e.g. a query that fans out via a related
+  // table without GROUP BY), the dashboard would render two cards
+  // for the same round — Patrick saw exactly this in real-world
+  // testing.
+  const seen = new Set<string>();
+  const liveRounds = rounds.filter((r) => {
+    if (r.status !== "live") return false;
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
   if (liveRounds.length === 0) return [];
 
   const rpsByRound = new Map<string, ClubhouseRoundPlayer[]>();
@@ -322,6 +334,20 @@ export function buildLiveRoundSignals(
     arr.push(s);
     scoresByRp.set(s.round_player_id, arr);
   }
+
+  // "Stale-live" detection. A round can sit at status=live indefinitely
+  // if the commissioner never finalizes (no auto-close cron exists, per
+  // product decision — see CLAUDE.md "lifecycle"). The dashboard then
+  // shows ghost "Just teed off" cards for rounds that have actually
+  // been abandoned. The fix: a round counts as live for the dashboard
+  // only if EITHER:
+  //   - the round date is today (or in the future — scheduled), OR
+  //   - the round has at least one recorded score (someone is actually
+  //     playing it)
+  // Past-dated zero-score rounds are treated as stale and suppressed.
+  // This is a UI heuristic only; the round's actual status is unchanged.
+  const today = opts.now ?? new Date();
+  const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
 
   const out: LiveRoundSignal[] = [];
   for (const round of liveRounds) {
@@ -351,6 +377,13 @@ export function buildLiveRoundSignals(
         };
       }
     }
+
+    // Suppress stale-live rounds: past-dated AND zero recorded scores.
+    const isPastDated = round.date < todayStr;
+    if (isPastDated && active === 0) {
+      continue;
+    }
+
     out.push({
       round_id: round.id,
       course_name: round.course_name ?? "Course",

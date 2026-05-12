@@ -229,7 +229,11 @@ export function GroupScorePad({ holes, players, scores, initialHole, onSave, onF
           bottom-nav is gone so we anchor at 0. We also pad-bottom with
           env(safe-area-inset-bottom) for notched iPhones. */}
       <div
-        className="sticky -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-brand-950 via-brand-950/95 to-transparent bottom-16 sm:bottom-0"
+        // bottom-16 (4rem) was overlapping the top 1rem + safe-area of
+        // the mobile bottom nav (5rem). Patrick reported "buttons
+        // partially off-window or hidden behind the bottom nav". Move
+        // sticky bottom to sit flush ABOVE the nav.
+        className="sticky -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-brand-950 via-brand-950/95 to-transparent bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] sm:bottom-0"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="flex gap-2">

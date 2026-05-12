@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { strokesPerHole } from "@/lib/handicap";
@@ -87,18 +86,9 @@ export function GroupScoreEntry({
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3 flex-wrap">
-        <Link
-          href={`/rounds/${roundId}#leaderboard`}
-          className="btn-ghost text-sm"
-        >
-          ← Leaderboard
-        </Link>
-        <span className="text-xs uppercase tracking-[0.22em] text-cream-100/55">
-          Group scoring
-        </span>
-      </header>
-
+      {/* Back-nav lives in the parent page's <RoundBreadcrumb> — no
+          duplicate "← Leaderboard" here (2026-05-12 fix per Patrick:
+          "multiple back options are confusing"). */}
       <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
 
       <div>

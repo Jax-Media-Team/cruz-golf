@@ -70,7 +70,16 @@ export default async function RoundGamesPage({
       .from("round_players")
       .select("id, players(display_name)")
       .eq("round_id", id)
-      .order("created_at", { ascending: true }),
+      // 2026-05-12 fix: `round_players` has NO `created_at` column
+      // (see 0001_init.sql:104). Ordering by it caused the entire
+      // query to error out silently, returning null → empty
+      // `players` array → SixSixSixRotationEditor flagged "4 players
+      // required" even though 4 round_players existed in the DB.
+      // Patrick saw the rotation-editor warning, interpreted it as
+      // a junk error. Use `display_order` (the column that actually
+      // exists, per the schema's `unique(round_id, player_id)` +
+      // `round_players_idx on (round_id, display_order)`).
+      .order("display_order", { ascending: true }),
     sb
       .from("scores")
       .select("round_player_id", { count: "exact", head: true })

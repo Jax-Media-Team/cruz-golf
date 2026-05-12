@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { PhotoPicker } from "@/components/PhotoPicker";
@@ -57,6 +58,11 @@ type Card = {
    *  the Retry button after one attempt and surface "retry count" in
    *  the diagnostics panel. */
   retry_count?: number;
+  /** Timestamp (ms since epoch) when the current OCR call started.
+   *  Used by the stepped loading state to cycle progress messages
+   *  ("Preparing image…" → "Reading scorecard…" → …). Cleared when
+   *  the call returns. */
+  uploading_started_at?: number;
   /** Client-side preprocessing diagnostic — source size, scaling
    *  applied, output bytes. Surfaced in the diagnostics panel so
    *  "did EXIF rotation apply / was it downscaled?" is answerable. */
@@ -188,6 +194,28 @@ export function UploadView({
   };
   const [unmatched, setUnmatched] = useState<UnmatchedRow[]>([]);
 
+  // Tick once per second while any card is uploading so the
+  // stepped-progress text re-renders. Idle when no card is in
+  // flight — interval clears.
+  const [, setTick] = useState(0);
+  const anyUploading = cards.some((c) => c.status === "uploading");
+  useEffect(() => {
+    if (!anyUploading) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [anyUploading]);
+
+  function ocrProgressMessage(startedAt: number | undefined): string {
+    if (startedAt == null) return "OCR in progress…";
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed < 2) return "Preparing image…";
+    if (elapsed < 8) return "Reading scorecard…";
+    if (elapsed < 16) return "Detecting players…";
+    if (elapsed < 24) return "Checking scores…";
+    if (elapsed < 32) return "Reviewing confidence…";
+    return `Still working (${Math.round(elapsed)}s)…`;
+  }
+
   /**
    * A per-cell OCR suggestion that did NOT auto-fill the grid (failed
    * one or more of: high-confidence, par-plausible, pattern-clean).
@@ -271,7 +299,12 @@ export function UploadView({
     setCards((prev) =>
       prev.map((c) =>
         c.id === cardId
-          ? { ...c, status: "uploading", err: undefined }
+          ? {
+              ...c,
+              status: "uploading",
+              err: undefined,
+              uploading_started_at: Date.now()
+            }
           : c
       )
     );
@@ -758,13 +791,33 @@ export function UploadView({
 
   return (
     <div className="space-y-4 max-w-5xl">
-      <header>
+      <header className="space-y-2">
         <p className="h-eyebrow">Card upload</p>
-        <h1 className="h-display text-3xl text-cream-50 mt-1">Upload scorecard photos</h1>
-        <p className="text-sm text-cream-100/65 mt-1">
-          Snap a photo per foursome (or front/back nine) and we&apos;ll OCR each one
-          into the same grid. Confirm and edit before saving.
-        </p>
+        <h1 className="h-display text-3xl text-cream-50 mt-1 flex items-center gap-2 flex-wrap">
+          <span>Upload scorecard photos</span>
+          <span className="text-[10px] uppercase tracking-[0.22em] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/30 align-middle font-sans">
+            Beta
+          </span>
+        </h1>
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-xs text-cream-100/85 space-y-1 leading-snug">
+          <p>
+            <span className="font-medium text-amber-200">OCR is experimental.</span>{" "}
+            It works best on flat, well-lit, machine-printed or
+            cleanly-handwritten cards. Cursive and rotated photos
+            often produce wrong scores.
+          </p>
+          <p className="text-cream-100/65">
+            For most rounds, typing scores by hand on the round page
+            is faster and more reliable. This page is here for the
+            lucky-card cases — if it doesn&apos;t work,{" "}
+            <Link
+              href={`/rounds/${roundId}/score-group`}
+              className="text-gold-400 hover:underline"
+            >
+              type scores instead →
+            </Link>
+          </p>
+        </div>
       </header>
 
       {ocrNoop && (
@@ -833,7 +886,7 @@ export function UploadView({
                     }`}
                   >
                     {c.status === "uploading"
-                      ? "OCR in progress…"
+                      ? ocrProgressMessage(c.uploading_started_at)
                       : c.status === "failed"
                       ? `Failed: ${c.err ?? ""}`
                       : (() => {
