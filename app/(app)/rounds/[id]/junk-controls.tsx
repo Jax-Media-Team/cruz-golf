@@ -329,9 +329,40 @@ export function JunkControls({
         </span>
       </header>
 
+      {/* Junk-closed state. The commissioner can disable junk mid-
+          round by clearing active_categories on the config; the row
+          is preserved (active_categories=[]) so historic items still
+          settle at finalize. When that happens we hide the entry
+          chips and show this notice so the panel doesn't read as
+          broken. (Chaos QA 2026-05-12.) */}
+      {config.active_categories.length === 0 && (
+        <div className="rounded-lg border border-cream-100/10 bg-brand-900/30 p-3 text-xs text-cream-100/75">
+          Junk recording is closed for this round. The{" "}
+          <span className="text-cream-50 tabular-nums">{items.length}</span>{" "}
+          existing item{items.length === 1 ? "" : "s"} still settle at
+          finalize.
+          {isCommissioner && (
+            <>
+              {" "}Re-enable from{" "}
+              <a
+                href={`/rounds/${roundId}/games`}
+                className="text-gold-400 hover:underline"
+              >
+                Games & bets
+              </a>
+              .
+            </>
+          )}
+        </div>
+      )}
+
       {/* Hole picker — defaults to current hole but commissioner / scorer
           can shift back for "I forgot to log Mit's birdie on 4". */}
-      <div className="flex items-center gap-2 flex-wrap text-xs">
+      <div
+        className={`flex items-center gap-2 flex-wrap text-xs ${
+          config.active_categories.length === 0 ? "hidden" : ""
+        }`}
+      >
         <label className="text-cream-100/65">Hole:</label>
         <select
           className="input text-sm px-2 py-1 w-auto"
@@ -349,8 +380,14 @@ export function JunkControls({
         </select>
       </div>
 
-      {/* Player chip row */}
-      <div className="space-y-1.5">
+      {/* Player chip row — hidden when junk recording is closed
+          (active_categories=[]) so the panel collapses to "items
+          still settle" + live totals only. */}
+      <div
+        className={`space-y-1.5 ${
+          config.active_categories.length === 0 ? "hidden" : ""
+        }`}
+      >
         <p className="text-[10px] uppercase tracking-wider text-cream-100/55">
           Who got it?
         </p>
@@ -379,8 +416,13 @@ export function JunkControls({
 
       {/* Category chip row — disabled when no player selected so a stray
           tap doesn't error. Each chip records on tap (no "Confirm" gate
-          — Patrick's "tap the extras" UX). */}
-      <div className="space-y-1.5">
+          — Patrick's "tap the extras" UX). Also hidden when junk is
+          closed for this round. */}
+      <div
+        className={`space-y-1.5 ${
+          config.active_categories.length === 0 ? "hidden" : ""
+        }`}
+      >
         <p className="text-[10px] uppercase tracking-wider text-cream-100/55">
           What?
         </p>

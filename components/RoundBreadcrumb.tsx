@@ -65,6 +65,18 @@ export function RoundBreadcrumb({
 }) {
   const pill = statusPillFor(status);
 
+  // Humanize the ISO date the same way the round page does. Locale-
+  // fixed (en-US) so the display is stable across device locales.
+  // Falls back to the raw ISO string on parse failure.
+  const niceDate = (() => {
+    const d = new Date((date ?? "") + "T00:00:00");
+    if (isNaN(d.getTime())) return date;
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric"
+    });
+  })();
+
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap">
       <Link
@@ -78,7 +90,7 @@ export function RoundBreadcrumb({
           <span className="text-cream-50 font-medium">
             {courseName ?? "Round"}
           </span>
-          <span className="text-cream-100/55"> · {date}</span>
+          <span className="text-cream-100/55"> · {niceDate}</span>
           {page && (
             <span className="text-cream-100/45 hidden sm:inline">
               {" · "}

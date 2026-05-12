@@ -230,11 +230,11 @@ export function UploadView({
   }
 
   /**
-   * A per-cell OCR suggestion that did NOT auto-fill the grid (failed
-   * one or more of: high-confidence, par-plausible, pattern-clean).
-   * Lives in the "Review suggestions" panel below the grid. User
-   * accepts or skips each — accepted suggestions land in the cell as
-   * a manual edit (no longer marked as OCR).
+   * A per-cell OCR suggestion. Lives in the "Review suggestions"
+   * panel below the grid. User accepts or skips each — on accept the
+   * cell is stamped per its OCR tier (ocr_high / ocr_low /
+   * ocr_suspicious) so provenance survives the explicit accept
+   * (Patrick 2026-05-12 review-first directive).
    */
   type Suggestion = {
     id: string;

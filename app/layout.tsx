@@ -33,9 +33,18 @@ export const metadata: Metadata = {
   applicationName: "Cruz Golf",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/cruz-logo.png", type: "image/png" }],
-    apple: [{ url: "/cruz-logo.png" }],
-    shortcut: ["/cruz-logo.png"]
+    // Square versions for home-screen / browser tab. cruz-logo.png is
+    // 1536x1024 (3:2 brand mark, used as the full lockup in the app
+    // chrome); the cruz-icon-* assets are center-cropped + resized to
+    // the standard PWA sizes so iOS / Android don't squash the logo
+    // when installed. cruz-icon-180 is the explicit Apple touch icon
+    // size (180x180 per iOS HIG for Retina home-screen).
+    icon: [
+      { url: "/cruz-icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/cruz-icon-512.png", sizes: "512x512", type: "image/png" }
+    ],
+    apple: [{ url: "/cruz-icon-180.png", sizes: "180x180" }],
+    shortcut: ["/cruz-icon-192.png"]
   },
   appleWebApp: {
     capable: true,

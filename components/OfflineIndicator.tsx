@@ -32,7 +32,12 @@ export function OfflineIndicator() {
 
   return (
     <div
-      className="fixed top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+      // top is padded for env(safe-area-inset-top) so the iPhone
+      // PWA status bar / Dynamic Island doesn't overlap the pill.
+      // The base offset of 0.5rem (top-2 = 8px) is kept on top of
+      // the safe-area inset.
+      className="fixed left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+      style={{ top: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
       role="status"
       aria-live="polite"
     >

@@ -1,9 +1,11 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { buildPlayerSheet, leaderboard } from "@/lib/scoring";
 import { Leaderboard, type LeaderboardTab } from "@/components/Leaderboard";
 import { AdminSpectatorBanner } from "@/components/AdminSpectatorBanner";
+import { BrandLockup } from "@/components/BrandLockup";
 import type { CourseHole, RoundPlayer, Score } from "@/lib/types";
 
 export function SpectatorView({
@@ -103,7 +105,18 @@ export function SpectatorView({
         />
       )}
       <div className="max-w-3xl mx-auto space-y-4 px-4 py-6 sm:py-10">
-        <div className="flex items-center justify-end">
+        {/* Anonymous spectators have no app nav. Tapping the brand
+            lockup takes them to the marketing site, the "Share link"
+            button is the only outbound action on this page. Without
+            this header the only exit was closing the tab. */}
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center hover:opacity-90 transition-opacity"
+            aria-label="Cruz Golf home"
+          >
+            <BrandLockup iconHeight={28} />
+          </Link>
           <button className="btn-secondary text-xs" onClick={copyLink}>
             {shareNote ?? "Share link"}
           </button>

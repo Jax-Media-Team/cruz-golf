@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { SaverState } from "@/lib/useScoreSaver";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type Diagnosis = {
   ok: boolean;
@@ -69,7 +70,7 @@ export function SaveStatusBanner({
             </div>
             {sample && (
               <div className="text-[12px] text-red-200/85 mt-0.5 break-words">
-                {sample}
+                {friendlyAuthError(sample)}
               </div>
             )}
             {isRls && (
@@ -156,8 +157,13 @@ export function SaveStatusBanner({
   // Compact "saving" pill that floats top-right and never reflows the page.
   // Each tap was rendering this in normal flow and pushing content down for
   // ~150ms then back up — felt like the page was jumping mid-tap.
+  // Top offset is padded for env(safe-area-inset-top) so the iPhone PWA
+  // status bar / Dynamic Island doesn't overlap the pill.
   return (
-    <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-30 px-2.5 py-1 rounded-full border border-gold-500/30 bg-gold-500/15 backdrop-blur flex items-center gap-2 text-[11px] shadow-soft">
+    <div
+      className="fixed right-3 sm:right-4 z-30 px-2.5 py-1 rounded-full border border-gold-500/30 bg-gold-500/15 backdrop-blur flex items-center gap-2 text-[11px] shadow-soft"
+      style={{ top: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}
+    >
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-gold-500 animate-pulse" />
       <span className="text-cream-100">
         Saving{savingCount > 1 ? ` ${savingCount}` : ""}…
