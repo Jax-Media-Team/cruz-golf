@@ -44,7 +44,8 @@ export function FinalizeView({
   totalHoles = 18,
   startingHole = 1,
   courseName = null,
-  roundDate = null
+  roundDate = null,
+  spectatorToken = null
 }: {
   roundId: string;
   rps: any[];
@@ -63,6 +64,10 @@ export function FinalizeView({
    *  JGCC · May 12"). Null = falls back to "Cruz Golf settlement". */
   courseName?: string | null;
   roundDate?: string | null;
+  /** Spectator-link token for the round. Required by the share URL —
+   *  the public /rounds/[id]/leaderboard page rejects requests without
+   *  it. Null disables the Share button. */
+  spectatorToken?: string | null;
 }) {
   const router = useRouter();
   const sb = supabaseBrowser();
@@ -634,14 +639,25 @@ export function FinalizeView({
         <button className="btn-primary" disabled={busy} onClick={finalize}>
           {busy ? "Finalizing…" : "Finalize round"}
         </button>
-        <ShareSheet
-          title="Round results"
-          url={typeof window !== "undefined" ? window.location.origin + `/rounds/${roundId}/leaderboard` : ""}
-          imageUrl={`/api/share/round/${roundId}/image`}
-          imageFilename={`cruz-golf-${roundId}.png`}
-          triggerLabel="Share"
-          triggerClassName="btn-secondary"
-        />
+        {spectatorToken && (
+          <ShareSheet
+            title="Round results"
+            // Public spectator leaderboard requires the token —
+            // without it the page redirects anonymous viewers home.
+            // Include the token in BOTH the shared URL and the
+            // generated image route so the OG image renders for
+            // unauthenticated previews too.
+            url={
+              typeof window !== "undefined"
+                ? `${window.location.origin}/rounds/${roundId}/leaderboard?token=${encodeURIComponent(spectatorToken)}`
+                : ""
+            }
+            imageUrl={`/api/share/round/${roundId}/image?token=${encodeURIComponent(spectatorToken)}`}
+            imageFilename={`cruz-golf-${roundId}.png`}
+            triggerLabel="Share"
+            triggerClassName="btn-secondary"
+          />
+        )}
       </div>
       <p className="text-[11px] text-cream-100/55">
         After finalizing, the commissioner can still unlock the round to fix

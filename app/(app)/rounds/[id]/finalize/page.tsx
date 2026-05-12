@@ -8,7 +8,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
   const sb = await supabaseServer();
   const { data: round } = await sb
     .from("rounds")
-    .select("id, status, holes, starting_hole, date, courses(name)")
+    .select("id, status, holes, starting_hole, date, spectator_token, courses(name)")
     .eq("id", id)
     .single();
   if (!round) redirect("/dashboard");
@@ -95,6 +95,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
         startingHole={round.starting_hole ?? 1}
         courseName={(round as any).courses?.name ?? null}
         roundDate={round.date ?? null}
+        spectatorToken={(round as any).spectator_token ?? null}
       />
     </div>
   );

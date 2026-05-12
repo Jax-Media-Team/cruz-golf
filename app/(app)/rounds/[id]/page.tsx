@@ -437,6 +437,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
             }))}
             rps={(rps ?? []).map((r: any) => ({
               id: r.id,
+              player_id: r.player_id,
               display_name: r.players?.display_name ?? "Player",
               venmo_handle: r.players?.venmo_handle ?? null
             }))}
@@ -445,6 +446,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
             isCommissioner={isCommissioner}
             courseName={(round as any).courses?.name ?? null}
             roundDate={round.date ?? null}
+            spectatorToken={(round as any).spectator_token ?? null}
           />
           {isCommissioner && (
             <div className="card p-3 flex items-center justify-between gap-3 border border-cream-100/15">

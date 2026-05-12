@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `724c917` — *feat: OCR review-first + chaos-QA hardening + engineer-speak sweep*
+- **Latest commit on main:** `784d19c` — *feat: player socials (ig/x/web/bio) + one-tap "Start today's round"* (+ pending trust-layer share-fix commit below)
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
 - **Test suite:** **555/555 passing across 36 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0045` (fn_archive_round idempotency). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
+- **Migrations applied through:** `0045` (fn_archive_round idempotency). **Migration 0046 (player social fields) awaiting apply** — non-blocking but the new profile editor + stats-page surfacing needs it to write/read ig_handle / x_handle / website_url / bio_line. Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
 
 ### Product framing (the why behind everything below)
 

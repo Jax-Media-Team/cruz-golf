@@ -14,6 +14,7 @@
  * the single source of truth.
  */
 import Link from "next/link";
+import { ShareSheet } from "./ShareSheet";
 
 export type SettlementFlow = {
   from_round_player_id: string;
@@ -34,12 +35,17 @@ export function SettlementSummary({
   viewerRpId,
   isCommissioner,
   courseName,
-  roundDate
+  roundDate,
+  spectatorToken = null
 }: {
   roundId: string;
   flows: SettlementFlow[];
   rps: Array<{
     id: string;
+    /** Global player_id (not round_player_id). Used to build the
+     *  /players/{id}/stats link when the viewer is owed money but
+     *  hasn't put a Venmo handle on their own profile yet. */
+    player_id: string;
     display_name: string;
     venmo_handle: string | null;
   }>;
@@ -51,14 +57,32 @@ export function SettlementSummary({
   isCommissioner: boolean;
   courseName: string | null;
   roundDate: string | null;
+  /** Spectator-link token. When set the Share button surfaces a public
+   *  leaderboard URL anyone in the group chat can open. */
+  spectatorToken?: string | null;
 }) {
   const labelByPlayer = new Map(rps.map((p) => [p.id, p.display_name]));
+  const playerIdByRp = new Map(rps.map((p) => [p.id, p.player_id]));
   const venmoByPlayer = new Map<string, string>();
   for (const r of rps) {
     if (!r.venmo_handle) continue;
     const cleaned = r.venmo_handle.replace(/^@/, "").trim();
     if (cleaned) venmoByPlayer.set(r.id, cleaned);
   }
+
+  // Viewer's own Venmo-on-file state. When the viewer is owed money on
+  // any flow AND hasn't put a Venmo handle on their profile, show one
+  // calm nudge to fix it — otherwise the payer sees "No Venmo on file
+  // for [you]" and they have to coordinate offline. Trust-math /
+  // payment-clarity move per Patrick 2026-05-12.
+  const viewerIsRecipient =
+    viewerRpId != null &&
+    flows.some((f) => f.to_round_player_id === viewerRpId);
+  const viewerHasVenmo = viewerRpId != null && venmoByPlayer.has(viewerRpId);
+  const viewerPlayerId =
+    viewerRpId != null ? playerIdByRp.get(viewerRpId) ?? null : null;
+  const showViewerVenmoNudge =
+    viewerIsRecipient && !viewerHasVenmo && viewerPlayerId != null;
 
   const fmt = (c: number) => "$" + (Math.abs(c) / 100).toFixed(2);
 
@@ -113,6 +137,21 @@ export function SettlementSummary({
           </span>
         )}
       </header>
+
+      {showViewerVenmoNudge && (
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-xs leading-snug">
+          <p className="text-cream-50">
+            You&apos;re owed money this round — but you haven&apos;t put a
+            Venmo handle on your profile yet.
+          </p>
+          <Link
+            href={`/players/${viewerPlayerId}/stats`}
+            className="inline-flex items-center gap-1 mt-1 text-gold-400 hover:underline"
+          >
+            Set your Venmo →
+          </Link>
+        </div>
+      )}
 
       {flows.length === 0 ? (
         <p className="text-sm text-cream-100/65">
@@ -303,10 +342,22 @@ export function SettlementSummary({
         >
           View on settlement editor →
         </Link>
-        {isCommissioner && (
-          <p className="text-[11px] text-cream-100/45">
-            Need to fix something? Unlock the round below.
-          </p>
+        {spectatorToken && (
+          <ShareSheet
+            title="Round results"
+            // Same token-included URL pattern as the finalize view.
+            // Tested: anonymous viewers reach the public leaderboard
+            // when the token is present; redirected to "/" without it.
+            url={
+              typeof window !== "undefined"
+                ? `${window.location.origin}/rounds/${roundId}/leaderboard?token=${encodeURIComponent(spectatorToken)}`
+                : ""
+            }
+            imageUrl={`/api/share/round/${roundId}/image?token=${encodeURIComponent(spectatorToken)}`}
+            imageFilename={`cruz-golf-${roundId}.png`}
+            triggerLabel="Share"
+            triggerClassName="btn-secondary text-xs"
+          />
         )}
       </div>
     </section>
