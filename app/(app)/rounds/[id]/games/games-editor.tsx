@@ -551,7 +551,142 @@ function JunkConfigBlock({
         </div>
       </div>
 
+      {/* Custom categories — group-specific labels (e.g. "Blue Plate",
+          "Woodie") that the commissioner adds once and gets a chip for
+          every live-entry session, instead of typing "+ Other → label"
+          each time. Persists in junk_config.custom_categories JSONB
+          column (per migration 0041). Per-round only — different
+          rounds can have different custom names. */}
+      <CustomCategoriesBlock
+        config={config}
+        disabled={disabled || busy}
+        onSave={(next) => {
+          setConfig(next);
+          save(next);
+        }}
+      />
+
       {err && <p className="text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+/**
+ * Add / remove custom category labels. Persisted in
+ * junk_config.custom_categories as `[{ key, label }, ...]`. The `key`
+ * is a stable slug derived from the label (so the chip key stays
+ * stable across edits + the live entry can write a deterministic
+ * custom_label). Tapping a saved-custom chip in JunkControls records
+ * with category="custom" + custom_label=label.
+ *
+ * The "+ Other" one-off path in JunkControls still exists for
+ * truly ad-hoc labels — this block is for the labels worth keeping
+ * around all round.
+ */
+function CustomCategoriesBlock({
+  config,
+  disabled,
+  onSave
+}: {
+  config: JunkConfig;
+  disabled: boolean;
+  onSave: (next: JunkConfig) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const existing = config.custom_categories ?? [];
+
+  function slugify(label: string): string {
+    return label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 32);
+  }
+
+  function add() {
+    const label = draft.trim();
+    if (label.length === 0) return;
+    const key = slugify(label);
+    if (key.length === 0) return;
+    // Skip duplicates by key.
+    if (existing.some((c) => c.key === key)) {
+      setDraft("");
+      return;
+    }
+    const next: JunkConfig = {
+      ...config,
+      custom_categories: [...existing, { key, label }]
+    };
+    setDraft("");
+    onSave(next);
+  }
+
+  function remove(key: string) {
+    const next: JunkConfig = {
+      ...config,
+      custom_categories: existing.filter((c) => c.key !== key)
+    };
+    onSave(next);
+  }
+
+  return (
+    <div>
+      <p className="label">Saved custom categories</p>
+      <p className="text-[11px] text-cream-100/55 mb-2 leading-snug">
+        Group-specific labels you want as one-tap chips during play.
+        Add things like &ldquo;Woodie&rdquo;, &ldquo;Blue Plate on
+        par 5s&rdquo;, &ldquo;Wilson Special&rdquo;. The built-in
+        + Other button is still there for one-off labels you don&apos;t
+        want to save.
+      </p>
+      {existing.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {existing.map((c) => (
+            <span
+              key={c.key}
+              className="inline-flex items-center gap-1.5 pill text-xs px-3 py-1.5 bg-brand-900/60 border border-dashed border-cream-100/30 text-cream-50"
+            >
+              {c.label}
+              <button
+                type="button"
+                onClick={() => remove(c.key)}
+                disabled={disabled}
+                className="text-cream-100/45 hover:text-red-300 text-[11px] leading-none"
+                aria-label={`Remove ${c.label}`}
+                title="Remove this custom category"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          className="input text-sm flex-1 min-w-0"
+          placeholder="e.g. Blue Plate"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          maxLength={40}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={disabled || draft.trim().length === 0}
+          className="btn-secondary text-xs shrink-0 disabled:opacity-50"
+        >
+          + Add
+        </button>
+      </div>
     </div>
   );
 }

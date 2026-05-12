@@ -102,7 +102,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     const { data: cfgRow } = await sb
       .from("round_junk_config")
       .select(
-        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope"
+        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope, custom_categories"
       )
       .eq("round_id", id)
       .maybeSingle();
@@ -111,9 +111,17 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     // historic items still settle, but no new entries can be
     // recorded — and the round page should NOT render the entry
     // panel (or the discoverability hint should come back).
+    //
+    // Treat saved custom_categories as "enabled" too: a commissioner
+    // who disabled every built-in but added a custom ("Blue Plate")
+    // wants the entry surface for that one. The closed-state notice
+    // in JunkControls is keyed off BOTH lists being empty (per the
+    // chip-row visibility check), so this stays consistent.
     const hasActiveCats =
-      Array.isArray((cfgRow as any)?.active_categories) &&
-      ((cfgRow as any).active_categories as string[]).length > 0;
+      (Array.isArray((cfgRow as any)?.active_categories) &&
+        ((cfgRow as any).active_categories as string[]).length > 0) ||
+      (Array.isArray((cfgRow as any)?.custom_categories) &&
+        ((cfgRow as any).custom_categories as any[]).length > 0);
     junkConfig = hasActiveCats ? cfgRow : null;
     if (cfgRow) {
       const { data: jItems } = await sb

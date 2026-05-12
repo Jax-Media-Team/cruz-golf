@@ -50,6 +50,11 @@ export type JunkConfigRow = {
     | "per_category"
     | "per_player_per_category"
     | null;
+  /** Group-specific labels managed by the commissioner in the
+   *  games-editor. Rendered as dashed-border chips alongside the
+   *  built-in active_categories. JSONB column on junk_config —
+   *  may be null on older rounds. */
+  custom_categories?: Array<{ key: string; label: string }> | null;
 };
 
 export type JunkItemRow = {
@@ -258,6 +263,39 @@ export function JunkControls({
     setCustomLabel("");
   }
 
+  /**
+   * Record a junk item using one of the commissioner's saved custom
+   * categories. Wraps recordJunk so the spinner/toast state matches
+   * the built-in chips, but uses a distinct pending key
+   * (`custom:${key}`) so the chip-press visual targets the right
+   * chip and not the generic "Other" button.
+   */
+  async function recordSavedCustom(key: string, label: string) {
+    if (!selectedRp) {
+      setErr("Pick the player who got it first.");
+      return;
+    }
+    setPending(`custom:${key}`);
+    setErr(null);
+    const { error } = await sb.rpc("fn_record_junk", {
+      p_round_id: roundId,
+      p_round_player_id: selectedRp,
+      p_hole_number: hole,
+      p_category: "custom",
+      p_custom_label: label,
+      p_note: null
+    });
+    setPending(null);
+    if (error) {
+      setErr(friendlyAuthError(error));
+      return;
+    }
+    const name = nameById.get(selectedRp) ?? "Player";
+    setToast(`${name} · ${label} · hole ${hole}`);
+    setTimeout(() => setToast(null), 2200);
+    router.refresh();
+  }
+
   // Inline "remove with reason" — the item being removed + its
   // pending reason text. window.prompt() works on desktop but is
   // blocked or terrible on iOS Safari PWA, which is the primary
@@ -334,8 +372,11 @@ export function JunkControls({
           is preserved (active_categories=[]) so historic items still
           settle at finalize. When that happens we hide the entry
           chips and show this notice so the panel doesn't read as
-          broken. (Chaos QA 2026-05-12.) */}
-      {config.active_categories.length === 0 && (
+          broken. (Chaos QA 2026-05-12.) Treats saved custom
+          categories as "open" too — a round can be running entirely
+          on custom labels with no built-ins. */}
+      {config.active_categories.length === 0 &&
+        (config.custom_categories ?? []).length === 0 && (
         <div className="rounded-lg border border-cream-100/10 bg-brand-900/30 p-3 text-xs text-cream-100/75">
           Junk recording is closed for this round. The{" "}
           <span className="text-cream-50 tabular-nums">{items.length}</span>{" "}
@@ -360,7 +401,10 @@ export function JunkControls({
           can shift back for "I forgot to log Mit's birdie on 4". */}
       <div
         className={`flex items-center gap-2 flex-wrap text-xs ${
-          config.active_categories.length === 0 ? "hidden" : ""
+          config.active_categories.length === 0 &&
+          (config.custom_categories ?? []).length === 0
+            ? "hidden"
+            : ""
         }`}
       >
         <label className="text-cream-100/65">Hole:</label>
@@ -381,11 +425,14 @@ export function JunkControls({
       </div>
 
       {/* Player chip row — hidden when junk recording is closed
-          (active_categories=[]) so the panel collapses to "items
-          still settle" + live totals only. */}
+          (both built-in + saved-custom lists are empty) so the panel
+          collapses to "items still settle" + live totals only. */}
       <div
         className={`space-y-1.5 ${
-          config.active_categories.length === 0 ? "hidden" : ""
+          config.active_categories.length === 0 &&
+          (config.custom_categories ?? []).length === 0
+            ? "hidden"
+            : ""
         }`}
       >
         <p className="text-[10px] uppercase tracking-wider text-cream-100/55">
@@ -420,7 +467,10 @@ export function JunkControls({
           closed for this round. */}
       <div
         className={`space-y-1.5 ${
-          config.active_categories.length === 0 ? "hidden" : ""
+          config.active_categories.length === 0 &&
+          (config.custom_categories ?? []).length === 0
+            ? "hidden"
+            : ""
         }`}
       >
         <p className="text-[10px] uppercase tracking-wider text-cream-100/55">
@@ -446,6 +496,38 @@ export function JunkControls({
                 onClick={() => recordJunk(cat)}
               >
                 <span>{categoryLabel(cat)}</span>
+                <span className="text-gold-400 tabular-nums text-[10px]">
+                  {fmtFlat$(amt)}
+                </span>
+              </button>
+            );
+          })}
+          {/* Saved custom-category chips. Commissioner-managed via
+              the games-editor (custom_categories JSONB on junk_config).
+              Recorded as category="custom" + custom_label=<label> so
+              the engine + settlement treat them like one-off customs,
+              but the user gets one-tap entry instead of typing each
+              time. Dashed border keeps them visually distinct from the
+              built-in active_categories. */}
+          {(config.custom_categories ?? []).map((c) => {
+            const amt = previewAmount("custom");
+            const isPending = pending === `custom:${c.key}`;
+            return (
+              <button
+                key={`custom-${c.key}`}
+                type="button"
+                disabled={!selectedRp || pending !== null}
+                title={`Saved custom: ${c.label}`}
+                className={`pill text-xs px-3 py-1.5 transition-colors flex items-center gap-1.5 ${
+                  !selectedRp
+                    ? "bg-brand-900/30 text-cream-100/30 cursor-not-allowed"
+                    : isPending
+                    ? "bg-gold-500/40 text-cream-50"
+                    : "bg-brand-900/60 border border-dashed border-cream-100/30 text-cream-100/85 hover:bg-gold-500/15 hover:border-gold-500/50"
+                }`}
+                onClick={() => recordSavedCustom(c.key, c.label)}
+              >
+                <span>{c.label}</span>
                 <span className="text-gold-400 tabular-nums text-[10px]">
                   {fmtFlat$(amt)}
                 </span>
