@@ -101,6 +101,11 @@ export default function NewRoundPage() {
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Junk side-bets — opt-in at round creation (so the commissioner
+  // doesn't have to come back to /rounds/[id]/games to set it up).
+  // Default $2 flat per item; mirror DEFAULT_JUNK_CONFIG categories.
+  const [junkEnabled, setJunkEnabled] = useState(false);
+  const [junkFlatDollars, setJunkFlatDollars] = useState<number>(2);
 
   // User-saved Quick Start presets.
   const [myPresets, setMyPresets] = useState<any[]>([]);
@@ -234,7 +239,7 @@ export default function NewRoundPage() {
       if (!gid) return;
 
       const [coursesRes, playersRes, recentRoundsRes, userRes] = await Promise.all([
-        sb.from("courses").select("id, name").eq("group_id", gid).is("deleted_at", null),
+        sb.from("courses").select("id, name, status").eq("group_id", gid).is("deleted_at", null),
         sb.from("players").select("id, display_name, handicap_index, profile_id, default_tee_name").eq("group_id", gid).is("deleted_at", null),
         sb
           .from("rounds")
@@ -548,6 +553,39 @@ export default function NewRoundPage() {
       }));
     if (gameRows.length > 0) await sb.from("round_games").insert(gameRows);
 
+    // 5) Junk side-bets — only if the commissioner toggled it on
+    //    during creation. Defaults match DEFAULT_JUNK_CONFIG (flat
+    //    mode, $2/item, 7 active categories). They can edit any of
+    //    this from /rounds/[id]/games after the round is live.
+    //    Defensive try/catch so the round still creates if junk's
+    //    RPC isn't available (pre-0041 env, network blip).
+    if (junkEnabled) {
+      const cents = Math.max(0, Math.round(junkFlatDollars * 100));
+      try {
+        await sb.rpc("fn_set_junk_config", {
+          p_round_id: round.id,
+          p_active_categories: [
+            "birdie",
+            "eagle",
+            "greenie",
+            "sandy",
+            "chip_in",
+            "poley",
+            "pinny"
+          ],
+          p_mode: "flat",
+          p_flat_amount_cents: cents,
+          p_base_amount_cents: 200,
+          p_escalation_step_cents: 200,
+          p_escalation_scope: "per_round",
+          p_custom_categories: null
+        });
+      } catch {
+        /* round still proceeds; commissioner can enable junk from
+           /rounds/[id]/games */
+      }
+    }
+
     setBusy(false);
     router.push(`/rounds/${round.id}`);
   }
@@ -589,26 +627,37 @@ export default function NewRoundPage() {
                 </a>
               </p>
             )}
-            {courseId && courseIssues.errors > 0 && (
-              <div className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs">
-                <div className="font-medium text-amber-200">
-                  ⚠ {courseIssues.errors} course data issue{courseIssues.errors === 1 ? "" : "s"} detected
+            {/* Course-data warning — suppressed on verified courses
+                even when the audit fires. The audit is for admins,
+                not for first-time golfers. A new user picking JGCC
+                (verified) and seeing "net handicap math will be off"
+                will lose trust in the app on their home course.
+                Verified-with-issues is an internal bug — log it
+                server-side, don't surface it to the round-creator. */}
+            {courseId &&
+              courseIssues.errors > 0 &&
+              (courses.find((c) => c.id === courseId)?.status !== "verified") && (
+                <div className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs">
+                  <div className="font-medium text-amber-200">
+                    ⚠ {courseIssues.errors} course data issue
+                    {courseIssues.errors === 1 ? "" : "s"} detected
+                  </div>
+                  <p className="text-amber-100/75 mt-0.5 leading-snug">
+                    This course has incomplete data (missing par,
+                    duplicate stroke indexes, or missing tee ratings).
+                    Net handicap math will be off until it&apos;s
+                    fixed.{" "}
+                    <a
+                      href={`/courses/${courseId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gold-400 underline font-medium"
+                    >
+                      Fix the course →
+                    </a>
+                  </p>
                 </div>
-                <p className="text-amber-100/75 mt-0.5 leading-snug">
-                  This course has incomplete data (missing par, duplicate stroke
-                  indexes, or missing tee ratings). Net handicap math will be
-                  off until it&apos;s fixed.{" "}
-                  <a
-                    href={`/courses/${courseId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gold-400 underline font-medium"
-                  >
-                    Fix the course →
-                  </a>
-                </p>
-              </div>
-            )}
+              )}
             {courseId && tees.length > 1 && (
               <p className="text-[11px] text-cream-100/45 mt-1.5">
                 {tees.length} tee boxes available · pick per player below
@@ -919,6 +968,66 @@ export default function NewRoundPage() {
             >
               ★ Save these games as a preset
             </button>
+          </div>
+        )}
+      </section>
+
+      {/* Junk side-bets — opt-in at round creation. Single toggle +
+          flat amount, defaults to off. Commissioner can configure
+          escalating mode + category toggles from
+          /rounds/[id]/games after the round is live. This block
+          exists so a commissioner setting up a round doesn't have
+          to come back to a separate page to enable junk. */}
+      <section className="card p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-serif text-xl text-cream-50">
+              Junk side-bets
+            </h2>
+            <p className="text-xs text-cream-100/55 mt-0.5 leading-snug">
+              Birdies, greenies, sandies, chip-ins, poleys, pinnies —
+              tap-the-extras tracking that runs alongside the main
+              game.
+            </p>
+          </div>
+          <label className="inline-flex items-center gap-2 text-sm text-cream-50 select-none cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-gold-500"
+              checked={junkEnabled}
+              onChange={(e) => setJunkEnabled(e.target.checked)}
+            />
+            <span>{junkEnabled ? "On" : "Off"}</span>
+          </label>
+        </div>
+        {junkEnabled && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-cream-100/8">
+            <div>
+              <label className="label">Amount per item (USD)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.50"
+                min={0.5}
+                value={junkFlatDollars}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!Number.isFinite(v) || v <= 0) return;
+                  setJunkFlatDollars(v);
+                }}
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Flat $ per item by default. Switch to escalating from
+                the games editor after the round is live if you want
+                the pot to grow.
+              </p>
+            </div>
+            <div className="text-[11px] text-cream-100/55 leading-snug self-end">
+              <span className="text-cream-100/85">Default categories:</span>{" "}
+              Birdie, Eagle, Greenie, Sandy, Chip-in, Poley, Pinny. Tap
+              <span className="text-cream-100/85"> + Other</span> in the
+              live entry strip to record one-offs like &ldquo;Woodie&rdquo;.
+            </div>
           </div>
         )}
       </section>
@@ -1656,9 +1765,70 @@ function TeamsSection({
       ) : (
         <>
           <p className="text-xs text-cream-100/55">
-            Drag a player onto a team. Or hit Random to spin pairings up.
+            Tap a team chip per player to assign — or hit Random to spin
+            pairings up. (Desktop: drag players between buckets below.)
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+          {/* Tap-to-assign — primary mobile path. Each player gets a
+              row with team chips (Team 1 / Team 2 / … / —). Universal
+              on iPhone Safari where drag-and-drop inside a scrolling
+              page is unreliable. */}
+          <ul className="space-y-1.5">
+            {pickedPlayers.map((p) => {
+              const player = allPlayers.find((x) => x.id === p.id);
+              return (
+                <li
+                  key={p.id}
+                  className="surface rounded-lg p-2.5 flex items-center justify-between gap-3 flex-wrap"
+                >
+                  <span className="text-sm text-cream-50 truncate flex-1 min-w-0">
+                    {player?.display_name ?? p.id}
+                    <span className="text-[11px] text-cream-100/45 ml-1.5">
+                      HI {formatHi(player?.handicap_index)}
+                    </span>
+                  </span>
+                  <div className="flex flex-wrap gap-1 shrink-0">
+                    {Array.from({ length: teamCount }, (_, i) => {
+                      const tid = String(i);
+                      const active = p.team_id === tid;
+                      return (
+                        <button
+                          key={tid}
+                          type="button"
+                          onClick={() => setTeam(p.id, tid)}
+                          className={`pill text-[11px] px-2.5 py-1 transition-colors ${
+                            active
+                              ? "bg-gold-500 text-brand-900"
+                              : "bg-brand-900/60 border border-cream-100/15 text-cream-100/85 hover:bg-brand-900"
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {active ? "✓ " : ""}Team {i + 1}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setTeam(p.id, null)}
+                      className={`pill text-[11px] px-2.5 py-1 transition-colors ${
+                        !p.team_id
+                          ? "bg-cream-100/15 text-cream-50"
+                          : "bg-brand-900/60 border border-cream-100/15 text-cream-100/55 hover:bg-brand-900"
+                      }`}
+                      aria-pressed={!p.team_id}
+                    >
+                      {!p.team_id ? "✓ " : ""}—
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Bucket view — visual summary + desktop drag-and-drop
+              fallback. Hidden on small screens to avoid duplicating
+              the tap-to-assign list on mobile. */}
+          <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             {buckets.map((b) => (
               <div
                 key={b.id}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { BrandLockup } from "@/components/BrandLockup";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { FacebookAuthButton } from "@/components/FacebookAuthButton";
 import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function LoginPage() {
@@ -121,8 +122,11 @@ function LoginInner() {
         {needsConfirm && (
           <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs space-y-2">
             <p className="text-amber-100/90">
-              Your email address hasn&apos;t been confirmed. Look for an email
-              from Supabase and click the confirmation link.
+              Your email address hasn&apos;t been confirmed yet. Look for an
+              email from <span className="font-medium">Cruz Golf</span>{" "}
+              (the sender may show as a noreply@ address) and click the
+              confirmation link. Check your spam / Promotions folder if
+              you don&apos;t see it within a minute or two.
             </p>
             <button
               type="button"
@@ -147,6 +151,7 @@ function LoginInner() {
           <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or</span></div>
         </div>
         <GoogleAuthButton next="/dashboard" />
+        <FacebookAuthButton next="/dashboard" />
         <p className="text-sm text-cream-100/60 text-center">
           New here? <Link href="/signup" className="text-cream-50 underline">Create an account</Link>
         </p>

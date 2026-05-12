@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { BrandLockup } from "@/components/BrandLockup";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { FacebookAuthButton } from "@/components/FacebookAuthButton";
 import { friendlyAuthError } from "@/lib/auth-errors";
 
 export default function SignupPage() {
@@ -87,7 +88,7 @@ export default function SignupPage() {
               <span className="font-medium">{confirmedEmail}</span>.
             </p>
             <ol className="text-cream-100/85 space-y-1 list-decimal list-inside text-[13px]">
-              <li>Open the email from <span className="text-cream-50">noreply@mail.app.supabase.io</span> (or similar).</li>
+              <li>Open the email from <span className="text-cream-50">Cruz Golf</span> (sender may show as <code className="text-cream-100/70 text-[11px]">noreply@…supabase.io</code>).</li>
               <li>Click <span className="text-cream-50 font-medium">Confirm your mail</span>.</li>
               <li>You&apos;ll be returned here to finish setup.</li>
             </ol>
@@ -171,6 +172,7 @@ export default function SignupPage() {
           <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or</span></div>
         </div>
         <GoogleAuthButton next="/dashboard" />
+        <FacebookAuthButton next="/dashboard" />
         <p className="text-sm text-cream-100/60 text-center">
           Have an account? <Link href="/login" className="text-cream-50 underline">Sign in</Link>
         </p>
