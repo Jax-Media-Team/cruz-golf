@@ -426,38 +426,49 @@ export default async function DashboardPage() {
         </Link>
       )}
 
-      {/* Returning-user hero card — only when there's already history and
-          NO active round in progress. Audit P1 #14: the top-right "New
-          round" text button is too small to anchor a Saturday-morning
-          return visit. The big gold card draws the eye to the next
-          action; the sub-link below cues the "re-use last lineup"
-          feature that already lives on /rounds/new. */}
+      {/* Returning-user hero card. Per Patrick 2026-05-12 product framing:
+          setup welcome > configurability. When there's history we pre-fill
+          everything from the last round (course, lineup, games, stakes)
+          via /rounds/new?fromLast=1. The user lands on a form that's
+          already configured — one scroll to "Start round". A small "or
+          customize" link routes to the same form without the pre-fill
+          for power users / different game days. */}
       {hasRounds && !activeRound && (
         <div className="card p-5 sm:p-6 border border-gold-500/40 bg-brand-900/40 flex items-center justify-between gap-4 flex-wrap">
           <div className="min-w-0">
             <p className="h-eyebrow text-gold-400">Saturday game</p>
             <div className="font-serif text-xl sm:text-2xl text-cream-50 mt-0.5">
-              Start a new round
+              Start today&apos;s round
             </div>
             {(rounds?.[0] as any)?.courses?.name ? (
               <p className="text-[12px] text-cream-100/65 mt-1 leading-snug">
-                Last round was at{" "}
+                We&apos;ll re-use last round at{" "}
                 <span className="text-cream-50">
                   {(rounds?.[0] as any).courses.name}
                 </span>
-                . The lineup, games, and stakes are one tap to re-use.
+                {" "}— same lineup, same games. One tap to start.
               </p>
             ) : (
               <p className="text-[12px] text-cream-100/65 mt-1">
                 Course, players, games — set up in under a minute.
               </p>
             )}
+            <Link
+              href="/rounds/new"
+              className="text-[11px] text-cream-100/55 hover:text-cream-100 underline underline-offset-2 mt-1.5 inline-block"
+            >
+              Or customize →
+            </Link>
           </div>
           <Link
-            href="/rounds/new"
+            href={
+              (rounds?.[0] as any)?.courses?.name
+                ? "/rounds/new?fromLast=1"
+                : "/rounds/new"
+            }
             className="btn-primary text-sm shrink-0"
           >
-            New round →
+            Start round →
           </Link>
         </div>
       )}

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { courseHandicap, playingHandicap } from "@/lib/handicap";
 import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
@@ -79,6 +79,13 @@ function findFamilyForType(
 
 export default function NewRoundPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // "Start today's round" hero on /dashboard links here with
+  // ?fromLast=1. When the flag is set, we auto-apply last round's
+  // course + lineup + games on first render — the form lands fully
+  // pre-filled so a returning user only has to tap Start. Per Patrick
+  // 2026-05-12 product framing: setup welcome > configurability.
+  const wantFromLast = searchParams?.get("fromLast") === "1";
   const sb = supabaseBrowser();
   const [groupId, setGroupId] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -90,6 +97,21 @@ export default function NewRoundPage() {
   const [lastPlayedAt, setLastPlayedAt] = useState<Record<string, string>>({});
   const [hiEdits, setHiEdits] = useState<Record<string, string>>({});
   const [lastLineup, setLastLineup] = useState<{ playerIds: string[]; courseName: string; date: string } | null>(null);
+  // Snapshot of the last round's course + games. Sibling to lastLineup
+  // — kept separate so the existing "Re-play with last lineup" button
+  // doesn't change behavior (it only applies the lineup; this snapshot
+  // drives the full fromLast=1 auto-apply path). Null when there's no
+  // history.
+  const [lastSnapshot, setLastSnapshot] = useState<{
+    courseId: string;
+    games: Array<{
+      game_type: GameType;
+      stake_cents: number;
+      allowance_pct: number;
+      config: any;
+    }>;
+  } | null>(null);
+  const [autoAppliedFromLast, setAutoAppliedFromLast] = useState(false);
   const [pickedPlayers, setPickedPlayers] = useState<{ id: string; tee_id: string; team_id: string | null }[]>([]);
   const [teamCount, setTeamCount] = useState(0);
   const [games, setGames] = useState<Record<GameType, { enabled: boolean; stake_cents: number; allowance_pct: number; config: any }>>(
@@ -254,8 +276,9 @@ export default function NewRoundPage() {
         sb.from("players").select("id, display_name, handicap_index, profile_id, default_tee_name").eq("group_id", gid).is("deleted_at", null),
         sb
           .from("rounds")
-          .select("id, date, courses(name), round_players(player_id)")
+          .select("id, date, course_id, courses(name), round_players(player_id), round_games(game_type, stake_cents, allowance_pct, config)")
           .eq("group_id", gid)
+          .is("deleted_at", null)
           .order("date", { ascending: false })
           .limit(20),
         sb.auth.getUser(),
@@ -305,7 +328,11 @@ export default function NewRoundPage() {
       });
       setAllPlayers(players);
 
-      // Capture last round's lineup for the quick "use last lineup" button.
+      // Capture last round's lineup for the quick "use last lineup" button
+      // AND the broader snapshot (course + games) for the ?fromLast=1
+      // auto-apply path triggered from /dashboard's "Start today's round"
+      // hero. The lineup state is left exactly as before so the existing
+      // manual button is unchanged.
       const lastRound = (recentRoundsRes.data as any[])?.[0];
       if (lastRound) {
         const ids = (lastRound.round_players ?? []).map((rp: any) => rp.player_id);
@@ -314,6 +341,17 @@ export default function NewRoundPage() {
             playerIds: ids,
             courseName: lastRound.courses?.name ?? "last round",
             date: lastRound.date
+          });
+        }
+        if (lastRound.course_id) {
+          setLastSnapshot({
+            courseId: lastRound.course_id as string,
+            games: ((lastRound.round_games as any[]) ?? []).map((g) => ({
+              game_type: g.game_type as GameType,
+              stake_cents: g.stake_cents ?? 0,
+              allowance_pct: g.allowance_pct ?? 100,
+              config: g.config ?? {}
+            }))
           });
         }
       }
@@ -410,6 +448,68 @@ export default function NewRoundPage() {
     }
     return (tees.length >= 2 ? tees[1]?.id : tees[0]?.id) ?? "";
   }
+
+  // Auto-apply from /dashboard's "Start today's round" hero.
+  //
+  // The flow runs as a small state machine:
+  //   1. Wait until lastSnapshot + lastLineup + allPlayers are loaded.
+  //   2. Set courseId to the last round's course (triggers tees load).
+  //   3. Once tees finish loading for the new course, apply the player
+  //      lineup (with each player's preferred tee) AND the last round's
+  //      games. Flip autoAppliedFromLast so the effect doesn't fire again
+  //      if the user edits state afterwards.
+  //
+  // Skipped silently when: the URL flag isn't set, no last round exists,
+  // or the last round's course has since been archived (drops out of the
+  // courses list, courseId can't resolve, user falls through to the
+  // normal form).
+  useEffect(() => {
+    if (!wantFromLast || autoAppliedFromLast) return;
+    if (!lastSnapshot || !lastLineup) return;
+    if (allPlayers.length === 0) return;
+    // Stage 1: set course if not yet set. Bail if the last round's
+    // course no longer exists (archived / deleted).
+    const courseExists = courses.some((c) => c.id === lastSnapshot.courseId);
+    if (!courseExists) {
+      // Mark as applied so we don't loop forever; the user falls
+      // through to the normal manual form.
+      setAutoAppliedFromLast(true);
+      return;
+    }
+    if (courseId !== lastSnapshot.courseId) {
+      setCourseId(lastSnapshot.courseId);
+      return;
+    }
+    // Stage 2: tees must be loaded before we can map per-player tees.
+    if (tees.length === 0) return;
+    // Apply lineup with each player's preferred tee.
+    const valid = lastLineup.playerIds.filter((pid) =>
+      allPlayers.some((p) => p.id === pid)
+    );
+    setPickedPlayers(
+      valid.map((pid) => ({
+        id: pid,
+        tee_id: pickTeeForPlayer(pid),
+        team_id: null
+      }))
+    );
+    // Apply games from the snapshot. applyPackage handles the
+    // disable-all-other-games-first pattern.
+    if (lastSnapshot.games.length > 0) {
+      applyPackage(lastSnapshot.games);
+    }
+    setAutoAppliedFromLast(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    wantFromLast,
+    autoAppliedFromLast,
+    lastSnapshot,
+    lastLineup,
+    allPlayers,
+    courses,
+    courseId,
+    tees
+  ]);
 
   function togglePlayer(id: string) {
     setPickedPlayers((arr) => {
@@ -625,6 +725,24 @@ export default function NewRoundPage() {
         <p className="h-eyebrow">New</p>
         <h1 className="h-display text-3xl text-cream-50 mt-1">New round</h1>
       </header>
+
+      {/* Soft note when the dashboard's "Start today's round" hero
+          successfully pre-filled the form. Reassures the user that
+          the lineup + course + games came from their last round and
+          they can still change anything below. */}
+      {wantFromLast && autoAppliedFromLast && pickedPlayers.length > 0 && (
+        <div className="card p-3 border border-emerald-400/30 bg-emerald-500/5 text-xs text-cream-100/85">
+          Re-using last round&apos;s course, lineup, and games. Adjust
+          anything below before tapping <span className="text-cream-50">Start round</span>.
+        </div>
+      )}
+      {wantFromLast && autoAppliedFromLast && pickedPlayers.length === 0 && (
+        <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85">
+          We tried to re-use your last round but couldn&apos;t auto-fill
+          it — the course or players may have changed. Set up the round
+          manually below.
+        </div>
+      )}
 
       {/* Soft guard against accidentally creating a second live round.
           Per Patrick 2026-05-12 chaos-QA pass: nothing blocks the

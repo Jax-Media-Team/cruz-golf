@@ -24,7 +24,7 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
 
   const { data: player } = await sb
     .from("players")
-    .select("id, group_id, display_name, handicap_index, ghin_number, email, phone, venmo_handle, avatar_url, profile_id, profiles(avatar_url, display_name)")
+    .select("id, group_id, display_name, handicap_index, ghin_number, email, phone, venmo_handle, ig_handle, x_handle, website_url, bio_line, avatar_url, profile_id, profiles(avatar_url, display_name)")
     .eq("id", id)
     .single();
   if (!player) redirect("/players");
@@ -37,6 +37,12 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
     .eq("profile_id", user.id)
     .maybeSingle();
   const isCommissioner = gm?.role === "commissioner";
+  // Players can edit their OWN profile (socials, bio, venmo handle, etc.)
+  // even when they're not a commissioner. RLS already gates which rows
+  // a non-commissioner can update server-side; this just decides whether
+  // to show the editor in the UI. Commissioner edits anyone in the group.
+  const isOwnProfile = player.profile_id === user.id;
+  const canEdit = isCommissioner || isOwnProfile;
 
   const photo: string | null =
     (player as any).avatar_url || (player as any).profiles?.avatar_url || null;
@@ -554,7 +560,62 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
         )}
       </div>
 
-      {isCommissioner && (
+      {/* Bio + social links — visible to every group member. The bio
+          line and socials are read-only display here; only the
+          commissioner gets the editor below (via PlayerProfileEditor).
+          Renders nothing when no fields are set, so the page stays
+          tight for players who haven't filled in any details. */}
+      {(player.bio_line ||
+        player.ig_handle ||
+        player.x_handle ||
+        player.website_url) && (
+        <div className="card p-5 space-y-3">
+          {player.bio_line && (
+            <p className="text-sm text-cream-50 leading-snug">
+              {player.bio_line}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {player.ig_handle && (
+              <a
+                href={`https://instagram.com/${player.ig_handle.replace(/^@/, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-900/40 border border-cream-100/15 px-3 py-1 hover:border-cream-100/30 transition-colors"
+              >
+                <span className="text-cream-100/55">Instagram</span>
+                <span className="text-cream-50">@{player.ig_handle.replace(/^@/, "")}</span>
+              </a>
+            )}
+            {player.x_handle && (
+              <a
+                href={`https://x.com/${player.x_handle.replace(/^@/, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-900/40 border border-cream-100/15 px-3 py-1 hover:border-cream-100/30 transition-colors"
+              >
+                <span className="text-cream-100/55">X</span>
+                <span className="text-cream-50">@{player.x_handle.replace(/^@/, "")}</span>
+              </a>
+            )}
+            {player.website_url && (
+              <a
+                href={player.website_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-900/40 border border-cream-100/15 px-3 py-1 hover:border-cream-100/30 transition-colors"
+              >
+                <span className="text-cream-100/55">Web</span>
+                <span className="text-cream-50 truncate max-w-[14rem]">
+                  {player.website_url.replace(/^https?:\/\//, "")}
+                </span>
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {canEdit && (
         <PlayerProfileEditor
           playerId={player.id}
           initial={{
@@ -564,7 +625,11 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
             ghin_number: player.ghin_number,
             handicap_index: player.handicap_index,
             venmo_handle: player.venmo_handle,
-            avatar_url: player.avatar_url
+            avatar_url: player.avatar_url,
+            ig_handle: player.ig_handle,
+            x_handle: player.x_handle,
+            website_url: player.website_url,
+            bio_line: player.bio_line
           }}
         />
       )}

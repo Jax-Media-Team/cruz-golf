@@ -13,6 +13,14 @@ type Initial = {
   venmo_handle: string | null;
   avatar_url: string | null;
   default_tee_name?: string | null;
+  // Social profile fields. All optional, free-form text — surfaced on
+  // /players/[id]/stats below the Venmo block. Per Patrick 2026-05-12:
+  // group-private personal expression, not discovery. No cross-group
+  // bleeding, no public timeline. (Migration 0046.)
+  ig_handle?: string | null;
+  x_handle?: string | null;
+  website_url?: string | null;
+  bio_line?: string | null;
 };
 
 const TEE_OPTIONS = ["Black", "Blue", "White", "Gold", "Red", "Green", "Tournament", "Senior"];
@@ -25,6 +33,26 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Normalize a social handle: strip leading "@" and surrounding
+  // whitespace, return null when empty. The DB trigger in migration
+  // 0046 mirrors this so direct SQL inserts behave the same way.
+  function cleanHandle(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const t = raw.replace(/^@/, "").trim();
+    return t.length === 0 ? null : t;
+  }
+
+  // Coerce a website URL to a usable form: if the user typed
+  // "example.com" we prepend "https://"; if they typed
+  // "https://example.com" we leave it alone. Empty → null.
+  function cleanUrl(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const t = raw.trim();
+    if (t.length === 0) return null;
+    if (/^https?:\/\//i.test(t)) return t;
+    return `https://${t}`;
+  }
+
   async function save() {
     setBusy(true);
     setErr(null);
@@ -36,9 +64,13 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
         phone: draft.phone || null,
         ghin_number: draft.ghin_number || null,
         handicap_index: draft.handicap_index,
-        venmo_handle: (draft.venmo_handle ?? "").replace(/^@/, "") || null,
+        venmo_handle: cleanHandle(draft.venmo_handle),
         avatar_url: draft.avatar_url || null,
-        default_tee_name: draft.default_tee_name || null
+        default_tee_name: draft.default_tee_name || null,
+        ig_handle: cleanHandle(draft.ig_handle),
+        x_handle: cleanHandle(draft.x_handle),
+        website_url: cleanUrl(draft.website_url),
+        bio_line: draft.bio_line?.trim() || null
       })
       .eq("id", playerId);
     setBusy(false);
@@ -118,6 +150,59 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
           <input className="input" value={draft.avatar_url ?? ""} onChange={(e) => setDraft({ ...draft, avatar_url: e.target.value })} placeholder="https://…" />
         </div>
       </div>
+
+      {/* Social / personal expression. All optional. Surfaced on the
+          /players/[id]/stats page below the Venmo block when set.
+          Group-private — no public discovery. */}
+      <div className="pt-3 border-t border-cream-100/10 space-y-3">
+        <div className="flex items-baseline justify-between">
+          <p className="h-eyebrow text-cream-100/55">Socials</p>
+          <p className="text-[10px] text-cream-100/40">All optional</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Instagram</label>
+            <input
+              className="input"
+              value={draft.ig_handle ?? ""}
+              onChange={(e) => setDraft({ ...draft, ig_handle: e.target.value })}
+              placeholder="@yourhandle"
+            />
+          </div>
+          <div>
+            <label className="label">X (Twitter)</label>
+            <input
+              className="input"
+              value={draft.x_handle ?? ""}
+              onChange={(e) => setDraft({ ...draft, x_handle: e.target.value })}
+              placeholder="@yourhandle"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Website</label>
+            <input
+              className="input"
+              value={draft.website_url ?? ""}
+              onChange={(e) => setDraft({ ...draft, website_url: e.target.value })}
+              placeholder="example.com (we&rsquo;ll add https://)"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">One-line bio</label>
+            <input
+              className="input"
+              value={draft.bio_line ?? ""}
+              onChange={(e) => setDraft({ ...draft, bio_line: e.target.value })}
+              placeholder="e.g. JGCC since 2018 · 8.4 index · all of it for the action on 18"
+              maxLength={140}
+            />
+            <p className="text-[10px] text-cream-100/45 mt-0.5">
+              Shows up on your stats page. Max 140 characters.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {err && <p className="text-sm text-red-300">{err}</p>}
       <div className="flex gap-2">
         <button className="btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>
