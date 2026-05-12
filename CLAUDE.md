@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `b18cb2b` — *feat(6-6-6,junk): partner-rotation editor + junk engine + design doc*
+- **Latest commit on main:** `814afdb` — *feat(ocr): per-cell confidence + par-suspicion + review bulk actions*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **506/506 passing across 33 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **512/512 passing across 34 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0041` (junk side-bet schema + RPCs — Patrick applied 2026-05-11). Migration 0040 (event lifecycle RPCs) drafted and awaiting apply. Migration 0042 (realtime publication for junk tables) drafted — small one-statement-per-table file, paste-and-run.
+- **Migrations applied through:** `0042` (junk realtime publication — Patrick applied 2026-05-11). Migration 0040 (event lifecycle RPCs) still awaiting apply.
 
 ### Recent stretch (2026-05-11)
 
