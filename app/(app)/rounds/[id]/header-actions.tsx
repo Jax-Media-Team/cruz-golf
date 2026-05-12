@@ -17,10 +17,12 @@ type Props = {
   /** Status — used by the delete-safety warning so we can hint
    *  "this round has scores" before the user permanently destroys it. */
   status?: "draft" | "live" | "pending_finalization" | "finalized";
-  /** True when at least one score row exists on the round. Surfaces
-   *  in the delete dialog: deleting a round with scores is a much
-   *  bigger action than deleting an empty draft. */
-  hasScores?: boolean;
+  /** True when the round has ANY non-trivial data attached — scores,
+   *  junk items, or accepted/pending manual presses. Surfaces in the
+   *  delete dialog: deleting a round with real data is a much
+   *  bigger action than deleting an empty draft. Includes junk +
+   *  presses (2026-05-12 fix; previously was scores-only). */
+  hasRealData?: boolean;
 };
 
 /**
@@ -52,7 +54,7 @@ export function RoundHeaderActions({
   isCommissioner,
   isArchived = false,
   status,
-  hasScores = false
+  hasRealData = false
 }: Props) {
   const [showPin, setShowPin] = useState(false);
   const [mode, setMode] = useState(accessMode);
@@ -92,25 +94,36 @@ export function RoundHeaderActions({
     router.refresh();
   }
 
-  // Hard delete via fn_delete_round (migration 0019). Cascades all
-  // related rows. Patrick's principle: distinguish archive (safe,
-  // recoverable) from delete (gone forever) loudly. Two-step confirm
-  // when the round has any scores attached.
+  // Hard delete via fn_delete_round. Cascades through scores,
+  // presses, junk, settlements, etc. (see migration 0044). Distinct
+  // from archive: gone forever, no recovery.
+  //
+  // Two-step confirm when the round has real data attached. The
+  // second prompt uses window.prompt() so the user must literally
+  // type a word — confirm() alone is too easy to muscle-memory.
   async function hardDelete() {
-    const scoreWarn = hasScores
-      ? "This round HAS SCORES attached. Deleting will erase every score, press, junk item, and settlement. "
+    const scoreWarn = hasRealData
+      ? "This round HAS REAL DATA attached (scores, junk, presses, or settlements). Deleting will erase ALL of it. "
       : "";
     const proceed = confirm(
-      `Permanently DELETE this round? ${scoreWarn}This cannot be undone — the round and everything attached to it are gone forever.\n\nFor most cleanup needs, "Archive" is the right choice instead.`
+      `Permanently DELETE this round? ${scoreWarn}This cannot be undone — the round and everything attached to it are gone forever.\n\nFor most cleanup needs, "Archive" is the right choice instead — it hides the round but keeps everything restorable.`
     );
     if (!proceed) return;
-    // Second confirm only when there are scores — protects against
-    // muscle-memory clicks on real-data rounds.
-    if (hasScores) {
-      const reallyProceed = confirm(
-        `Last check: type "delete" by pressing OK to proceed, or Cancel to back out.\n\nThis erases ${hasScores ? "real scoring data" : "the round"} forever.`
+    // Real second-step gate: the user has to type the word "delete"
+    // into the prompt. Cancel + empty + wrong word all back out.
+    // confirm() doesn't validate input; prompt() does.
+    if (hasRealData) {
+      const typed = window.prompt(
+        `Last check.\n\nThis erases real scoring data forever. Type "delete" (lowercase, no quotes) to confirm.`
       );
-      if (!reallyProceed) return;
+      if (typed !== "delete") {
+        setActionErr(
+          typed == null
+            ? null
+            : `Didn't see "delete" — round NOT deleted. Try again if you really meant it.`
+        );
+        return;
+      }
     }
     setBusy(true);
     setActionErr(null);
@@ -323,7 +336,7 @@ export function RoundHeaderActions({
                     <span className="font-medium">everything</span>{" "}
                     attached — scores, presses, junk, settlements.{" "}
                     <span className="text-red-300">Cannot be undone.</span>
-                    {hasScores && (
+                    {hasRealData && (
                       <>
                         {" "}This round has scores; you&apos;ll be asked to
                         confirm twice.

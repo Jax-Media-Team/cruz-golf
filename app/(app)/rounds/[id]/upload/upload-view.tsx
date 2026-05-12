@@ -166,6 +166,12 @@ export function UploadView({
   // dropped, so a card with "Pat" couldn't reach "Patrick Cruz".
   type UnmatchedRow = {
     id: string;
+    /** Stable card id this row came from. Stored explicitly because
+     *  the prior approach (`u.id.split("-")[0]`) returned the literal
+     *  string "c" — card ids are `c-<timestamp>-<idx>`, so splitting
+     *  on "-" loses the timestamp. That broke retry / removeCard
+     *  state cleanup. Bug caught in code review 2026-05-12. */
+    card_id: string;
     ocr_name: string;
     scores: Array<number | null>;
     /** Parallel to scores. "high" / "low" / null. Carried so when the
@@ -421,7 +427,7 @@ export function UploadView({
 
       // Drop any unmatched rows previously captured for THIS card —
       // a retry should replace them, not duplicate.
-      setUnmatched((prev) => prev.filter((u) => !u.id.startsWith(`${cardId}-`)));
+      setUnmatched((prev) => prev.filter((u) => u.card_id !== cardId));
 
       const matchedRowIndexes = new Set(matchAssignments.values());
       const newUnmatched: UnmatchedRow[] = [];
@@ -468,7 +474,8 @@ export function UploadView({
           outcome: "unmatched_panel"
         });
         newUnmatched.push({
-          id: `${cardId}-${idx}`,
+          id: `unmatched-${cardId}-r${idx}`,
+          card_id: cardId,
           ocr_name: row.name || `Row ${idx + 1}`,
           scores: row.scores,
           confidences:
@@ -539,9 +546,7 @@ export function UploadView({
    */
   function removeCard(cardId: string) {
     setCards((prev) => prev.filter((c) => c.id !== cardId));
-    setUnmatched((prev) =>
-      prev.filter((u) => !u.id.startsWith(`${cardId}-`))
-    );
+    setUnmatched((prev) => prev.filter((u) => u.card_id !== cardId));
     setSuggestions((prev) => prev.filter((s) => s.card_id !== cardId));
   }
 
@@ -1528,8 +1533,8 @@ export function UploadView({
                           if (match.pattern_warned)
                             reasons.push("row matches a suspicious pattern");
                           newSugs.push({
-                            id: `${match.id}-cell-${idx}`,
-                            card_id: match.id.split("-")[0],
+                            id: `sug-${match.id}-h${idx}`,
+                            card_id: match.card_id,
                             round_player_id: row.round_player_id,
                             player_name: row.name,
                             hole_index: idx,
@@ -1666,8 +1671,8 @@ export function UploadView({
                                       "row matches a suspicious pattern"
                                     );
                                   newSugsHere.push({
-                                    id: `${u.id}-cell-${idx}`,
-                                    card_id: u.id.split("-")[0],
+                                    id: `sug-${u.id}-h${idx}`,
+                                    card_id: u.card_id,
                                     round_player_id: targetRpId,
                                     player_name: row.name,
                                     hole_index: idx,
@@ -1850,9 +1855,15 @@ export function UploadView({
                             setCell(
                               idx,
                               i,
-                              e.target.value === ""
-                                ? null
-                                : parseInt(e.target.value)
+                              (() => {
+                                // Guard against parseInt-without-radix
+                                // accepting partial numerics and the
+                                // result writing NaN to the grid + DB.
+                                const raw = e.target.value;
+                                if (raw === "") return null;
+                                const n = Number.parseInt(raw, 10);
+                                return Number.isFinite(n) ? n : null;
+                              })()
                             )
                           }
                         />

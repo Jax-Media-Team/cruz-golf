@@ -22,7 +22,7 @@
  * everything reachable. The "live totals" footer is the at-a-glance
  * answer to "am I up or down on junk?".
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import {
@@ -97,9 +97,16 @@ export function JunkControls({
 
   // Realtime: any junk recorded by another player should appear here
   // within ~1 socket roundtrip.
+  //
+  // Channel topic includes a per-instance useId() suffix so two tabs
+  // open to the same round (or React Strict Mode's double-mount in
+  // dev) don't collide on the same topic. Supabase Realtime silently
+  // no-ops the second subscribe when topics collide, and the user
+  // gets "junk doesn't sync" with no error.
+  const realtimeChannelId = useId();
   useEffect(() => {
     const channel = sb
-      .channel(`junk-${roundId}`)
+      .channel(`junk-${roundId}-${realtimeChannelId}`)
       .on(
         "postgres_changes",
         {
@@ -127,7 +134,7 @@ export function JunkControls({
     return () => {
       sb.removeChannel(channel);
     };
-  }, [roundId, sb]);
+  }, [roundId, sb, realtimeChannelId]);
 
   // Compute the live-amount preview for the currently-selected (player,
   // category) tuple. Same math as the server's fn_compute_junk_amount —

@@ -204,7 +204,13 @@ function JunkConfigBlock({
 }) {
   const sb = supabaseBrowser();
   const router = useRouter();
-  const [enabled, setEnabled] = useState(initialConfig !== null);
+  // "Enabled" iff a config row exists AND at least one category is
+  // active. Disable persists the row with active_categories=[] so
+  // historic items still settle — but treating that as enabled would
+  // re-open the config panel on reload, confusing the commissioner.
+  const initialHasActiveCats =
+    initialConfig !== null && (initialConfig.active_categories?.length ?? 0) > 0;
+  const [enabled, setEnabled] = useState(initialHasActiveCats);
   const [config, setConfig] = useState<JunkConfig>(
     initialConfig ?? DEFAULT_JUNK_CONFIG
   );
@@ -286,8 +292,9 @@ function JunkConfigBlock({
         <p className="text-xs text-cream-100/65 leading-snug">
           Side bets on birdies, greenies, sandies, chip-ins, poleys, pinnies
           — tap-the-extras tracking that runs alongside the main game.
-          Default is <span className="font-medium">$2 escalating</span>{" "}
-          (each new junk costs $2 more than the previous one).
+          Default is <span className="font-medium">$2 flat</span> per item
+          — toggle to escalating below if you prefer the pot growing as
+          junk piles up.
         </p>
         <button
           type="button"

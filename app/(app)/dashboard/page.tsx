@@ -52,14 +52,35 @@ export default async function DashboardPage() {
       .limit(10);
   }
 
+  // Archived rounds — separate, smaller bucket. Surfaces in a
+  // collapsed "Archived rounds" section at the bottom so commissioners
+  // can find them to Restore (the round detail page promised a
+  // restore path, and "from the dashboard" only works if we list
+  // them somewhere). Defensive against pre-0021 envs (no deleted_at).
+  async function fetchArchivedRounds() {
+    try {
+      const out = await sb
+        .from("rounds")
+        .select("id, date, status, courses(name)")
+        .not("deleted_at", "is", null)
+        .order("date", { ascending: false })
+        .limit(20);
+      return out.error ? null : out.data;
+    } catch {
+      return null;
+    }
+  }
+
   const [
     { count: courseCount },
     { count: playerCount },
-    { data: rounds }
+    { data: rounds },
+    archivedRounds
   ] = await Promise.all([
     sb.from("courses").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
     sb.from("players").select("id", { count: "exact", head: true }).eq("group_id", groupId ?? "").is("deleted_at", null),
-    fetchRounds()
+    fetchRounds(),
+    fetchArchivedRounds()
   ]);
 
   // Platform-admin nav surface: also unlocks the Admin quick-link below.
@@ -505,6 +526,44 @@ export default async function DashboardPage() {
           </p>
           <RoundsList initialRounds={(rounds as any) ?? []} />
         </>
+      )}
+
+      {/* Archived rounds — a separate collapsed section so commissioners
+          can find a round they archived to restore it. The round-detail
+          page's commissioner block promises "restore from the dashboard
+          or back here" — this fulfills that promise. */}
+      {archivedRounds && archivedRounds.length > 0 && (
+        <details className="card p-3">
+          <summary className="cursor-pointer text-xs uppercase tracking-[0.22em] text-cream-100/55 select-none flex items-center justify-between gap-2">
+            <span>
+              Archived rounds · {archivedRounds.length}
+            </span>
+            <span className="text-cream-100/45">▾</span>
+          </summary>
+          <p className="text-[11px] text-cream-100/55 mt-2 leading-snug">
+            Hidden from the main list. Tap a round to open it, then use
+            the &ldquo;Restore round&rdquo; button in its settings.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {archivedRounds.map((r: any) => (
+              <li key={r.id}>
+                <Link
+                  href={`/rounds/${r.id}`}
+                  className="block rounded-md bg-brand-900/30 px-3 py-2 hover:bg-brand-900/50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-cream-50 text-sm truncate">
+                      {r.courses?.name ?? "Round"}
+                    </span>
+                    <span className="text-[11px] text-cream-100/55 tabular-nums shrink-0">
+                      {r.date} · {r.status}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

@@ -104,7 +104,15 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       )
       .eq("round_id", id)
       .maybeSingle();
-    junkConfig = cfgRow;
+    // Treat "all categories disabled" as "junk is off". The
+    // commissioner's "Disable" action sets active_categories=[] so
+    // historic items still settle, but no new entries can be
+    // recorded — and the round page should NOT render the entry
+    // panel (or the discoverability hint should come back).
+    const hasActiveCats =
+      Array.isArray((cfgRow as any)?.active_categories) &&
+      ((cfgRow as any).active_categories as string[]).length > 0;
+    junkConfig = hasActiveCats ? cfgRow : null;
     if (cfgRow) {
       const { data: jItems } = await sb
         .from("round_junk_items")
@@ -214,7 +222,11 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           isCommissioner={isCommissioner}
           isArchived={(round as any).deleted_at != null}
           status={round.status as any}
-          hasScores={(scores ?? []).some((s: any) => s.gross != null)}
+          hasRealData={
+            (scores ?? []).some((s: any) => s.gross != null) ||
+            junkItems.length > 0 ||
+            presses.length > 0
+          }
         />
       </header>
 
@@ -292,7 +304,8 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
               <p className="h-eyebrow text-gold-400">Junk side-bets</p>
               <p className="text-xs text-cream-100/65 mt-0.5 leading-snug">
                 Birdies, greenies, sandies, chip-ins, poleys, pinnies —
-                tap-the-extras tracking. Default is $2 escalating.
+                tap-the-extras tracking. Default is $2 flat per item
+                (toggle to escalating in setup if you prefer).
               </p>
             </div>
             <span className="text-xs text-gold-400 shrink-0">
