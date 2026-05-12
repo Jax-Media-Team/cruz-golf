@@ -274,6 +274,30 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
         <ClaimBanner roundId={id} candidates={claimCandidates} />
       )}
 
+      {/* Junk discoverability hint — surfaces the feature on the round
+          page itself when junk hasn't been enabled yet. Commissioner-
+          only, live or pending rounds only. Real-world tester feedback:
+          junk lived behind /games and people couldn't find it. */}
+      {!junkConfig &&
+        isCommissioner &&
+        (round.status === "live" || round.status === "pending_finalization") && (
+          <Link
+            href={`/rounds/${id}/games`}
+            className="card p-3 border border-dashed border-gold-500/30 flex items-center justify-between gap-3 flex-wrap hover:bg-gold-500/5 transition-colors"
+          >
+            <div className="min-w-0">
+              <p className="h-eyebrow text-gold-400">Junk side-bets</p>
+              <p className="text-xs text-cream-100/65 mt-0.5 leading-snug">
+                Birdies, greenies, sandies, chip-ins, poleys, pinnies —
+                tap-the-extras tracking. Default is $2 escalating.
+              </p>
+            </div>
+            <span className="text-xs text-gold-400 shrink-0">
+              + Enable for this round →
+            </span>
+          </Link>
+        )}
+
       {/* Junk side-bet panel — entry + live totals + commissioner edits.
           Only renders when junk config exists for this round AND the
           round is editable. Tap-the-extras UX per Patrick's principle. */}

@@ -5,6 +5,10 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { bestMatch } from "@/lib/ocr/name-match";
 import { prepareImageForOCR, type PrepareImageResult } from "@/lib/ocr/preprocess";
+import {
+  detectSuspiciousPatterns,
+  type PatternWarning
+} from "@/lib/ocr/pattern-checks";
 
 type Card = {
   id: string;
@@ -56,6 +60,10 @@ type Card = {
    *  applied, output bytes. Surfaced in the diagnostics panel so
    *  "did EXIF rotation apply / was it downscaled?" is answerable. */
   preprocess?: PrepareImageResult;
+  /** Pattern-detector warnings (row duplicated across players,
+   *  matches par, low variance, front=back, uniform value).
+   *  Stashed so the diagnostics panel can render them per card. */
+  pattern_warnings?: PatternWarning[];
 };
 
 /**
@@ -162,12 +170,37 @@ export function UploadView({
     /** Parallel to scores. "high" / "low" / null. Carried so when the
      *  user maps the row, the merge writes the right CellSource. */
     confidences: Array<"high" | "low" | null>;
+    /** True when the parent OCR row tripped a pattern check. Carried
+     *  forward so the unmatched-merge path applies the same
+     *  suggestion-only treatment as matched rows. */
+    pattern_warned: boolean;
     /** Suggested round_player_id from bestMatch (may be null). */
     suggested_rp_id: string | null;
     suggested_score: number; // bestMatch score, 0-100
     filename: string;
   };
   const [unmatched, setUnmatched] = useState<UnmatchedRow[]>([]);
+
+  /**
+   * A per-cell OCR suggestion that did NOT auto-fill the grid (failed
+   * one or more of: high-confidence, par-plausible, pattern-clean).
+   * Lives in the "Review suggestions" panel below the grid. User
+   * accepts or skips each — accepted suggestions land in the cell as
+   * a manual edit (no longer marked as OCR).
+   */
+  type Suggestion = {
+    id: string;
+    card_id: string;
+    round_player_id: string;
+    player_name: string;
+    /** 0-indexed hole number. */
+    hole_index: number;
+    value: number;
+    confidence: "high" | "low" | null;
+    /** Why this didn't auto-fill — shown on the row as chips. */
+    reasons: string[];
+  };
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
   // Pull existing scores once on mount so we can warn if uploads would overwrite.
   useEffect(() => {
@@ -273,32 +306,62 @@ export function UploadView({
         if (best) matchAssignments.set(best.round_player_id, rowIdx);
       });
 
+      // Pattern detection — runs on the model's raw rows BEFORE any
+      // merge. Catches the failure mode Patrick caught in real-world
+      // testing: the model emits a plausible-looking score sequence
+      // (5,4,4,3,5,4,...) that doesn't match the card. Quarantined
+      // rows have their cells downgraded to suggestion-only (they
+      // do NOT auto-fill the grid).
+      const patternResult = detectSuspiciousPatterns({
+        rows: rows.map((r) => ({ name: r.name, scores: r.scores })),
+        pars: holePars
+      });
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? { ...c, pattern_warnings: patternResult.warnings }
+            : c
+        )
+      );
+
       setGrid((prev) =>
         prev.map((row) => {
           const matchedIdx = matchAssignments.get(row.round_player_id);
           if (matchedIdx == null) return row;
           const match = rows[matchedIdx];
           const matchConfidences = match.confidences ?? [];
+          const rowQuarantined =
+            patternResult.rows_to_quarantine.has(matchedIdx);
           const nextScores = row.scores.map((existing, idx) => {
             const ocrVal = match.scores[idx] ?? null;
-            return ocrVal != null ? ocrVal : existing;
+            if (ocrVal == null) return existing;
+            // Patrick's stricter rule (2026-05-12): a cell only
+            // auto-fills the grid when it's ALL of:
+            //   - model returned "high" confidence
+            //   - score is within plausible par range
+            //   - the row passed pattern checks
+            // Anything else stays BLANK in the grid and goes into
+            // the suggestions panel for explicit accept/reject.
+            // Wrong scores are worse than no scores.
+            const par = holePars[idx] ?? 4;
+            const suspicious = isSuspiciousVsPar(ocrVal, par);
+            const c = matchConfidences[idx];
+            const autoFill =
+              c === "high" && !suspicious && !rowQuarantined;
+            return autoFill ? ocrVal : existing;
           });
           const nextSources = row.sources.map((existingSrc, idx) => {
             const ocrVal = match.scores[idx] ?? null;
             if (ocrVal == null) return existingSrc;
-            // Classify the new OCR cell using BOTH the model's
-            // self-reported confidence AND the par-suspicion check.
-            // Par-suspicion overrides confidence — a "high"-confidence
-            // 11 on a par 3 should still be funneled into the Review
-            // bucket so the user verifies it.
             const par = holePars[idx] ?? 4;
-            if (isSuspiciousVsPar(ocrVal, par)) {
-              return "ocr_suspicious" as CellSource;
-            }
+            const suspicious = isSuspiciousVsPar(ocrVal, par);
             const c = matchConfidences[idx];
-            return c === "high"
-              ? ("ocr_high" as CellSource)
-              : ("ocr_low" as CellSource);
+            const autoFill =
+              c === "high" && !suspicious && !rowQuarantined;
+            // If we did NOT auto-fill, the cell source is unchanged
+            // (preserves prior db/manual state). The suggestion lives
+            // separately in `suggestions` state.
+            return autoFill ? ("ocr_high" as CellSource) : existingSrc;
           });
           const sources = row.source_filenames.includes(filename)
             ? row.source_filenames
@@ -311,6 +374,49 @@ export function UploadView({
           };
         })
       );
+
+      // Build suggestions for every NON-auto-filled OCR cell that
+      // matched a round player. The suggestions panel below the grid
+      // lets the user accept them one at a time (or via bulk action).
+      const newSuggestions: Suggestion[] = [];
+      for (const [rpId, rowIdx] of matchAssignments) {
+        const match = rows[rowIdx];
+        const matchConfidences = match.confidences ?? [];
+        const rowQuarantined =
+          patternResult.rows_to_quarantine.has(rowIdx);
+        const matchedRp = players.find(
+          (p) => p.round_player_id === rpId
+        );
+        match.scores.forEach((ocrVal, holeIdx) => {
+          if (ocrVal == null) return;
+          const par = holePars[holeIdx] ?? 4;
+          const suspicious = isSuspiciousVsPar(ocrVal, par);
+          const c = matchConfidences[holeIdx];
+          const autoFilled =
+            c === "high" && !suspicious && !rowQuarantined;
+          if (autoFilled) return;
+          const reasons: string[] = [];
+          if (c !== "high") reasons.push("model is uncertain");
+          if (suspicious) reasons.push(`way off par (${par})`);
+          if (rowQuarantined) reasons.push("row matches a suspicious pattern");
+          newSuggestions.push({
+            id: `${cardId}-${rowIdx}-${holeIdx}`,
+            card_id: cardId,
+            round_player_id: rpId,
+            player_name: matchedRp?.name ?? "Player",
+            hole_index: holeIdx,
+            value: ocrVal,
+            confidence: c ?? null,
+            reasons
+          });
+        });
+      }
+      // Replace any prior suggestions for this card (a Retry should
+      // refresh, not duplicate).
+      setSuggestions((prev) => [
+        ...prev.filter((s) => s.card_id !== cardId),
+        ...newSuggestions
+      ]);
 
       // Drop any unmatched rows previously captured for THIS card —
       // a retry should replace them, not duplicate.
@@ -367,6 +473,7 @@ export function UploadView({
           confidences:
             row.confidences ??
             row.scores.map((s) => (s == null ? null : "low")),
+          pattern_warned: patternResult.rows_to_quarantine.has(idx),
           suggested_rp_id: best?.round_player_id ?? null,
           suggested_score: best?.score ?? 0,
           filename
@@ -434,6 +541,7 @@ export function UploadView({
     setUnmatched((prev) =>
       prev.filter((u) => !u.id.startsWith(`${cardId}-`))
     );
+    setSuggestions((prev) => prev.filter((s) => s.card_id !== cardId));
   }
 
   /**
@@ -809,6 +917,29 @@ export function UploadView({
                             </ul>
                           </div>
                         )}
+                        {c.pattern_warnings && c.pattern_warnings.length > 0 && (
+                          <div className="rounded-md border border-red-400/30 bg-red-500/10 p-2 space-y-1">
+                            <p className="font-medium text-red-200 text-[11px]">
+                              Pattern warnings ({c.pattern_warnings.length})
+                            </p>
+                            <p className="text-[10px] text-red-100/80 leading-snug">
+                              The OCR output tripped these heuristics. Rows
+                              flagged here had ALL their cells funneled to
+                              the Suggestions panel — none of them
+                              auto-filled the grid.
+                            </p>
+                            <ul className="space-y-0.5">
+                              {c.pattern_warnings.map((w, i) => (
+                                <li
+                                  key={i}
+                                  className="text-[11px] text-red-100"
+                                >
+                                  · {w.detail}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                         {c.debug?.raw_text && (
                           <details className="text-[10px] font-mono">
                             <summary className="cursor-pointer hover:text-cream-100/85">
@@ -848,13 +979,12 @@ export function UploadView({
         </p>
       </div>
 
-      {/* OCR review summary + bulk actions. Counts the three OCR
-          source states and surfaces bulk-clear / accept-high-only /
-          review-suspicious controls. Patrick's principle: "I would
-          rather see fewer cells filled, highlighted uncertain cells,
-          and confidence warnings than a full grid of wrong scores."
-          The bulk actions make it cheap to walk the grid back to a
-          safer state without losing already-validated cells. */}
+      {/* OCR auto-fill summary + Clear-OCR escape hatch. With the
+          strict auto-fill rule (high confidence + par-plausible +
+          pattern-clean), the grid only contains trustworthy OCR
+          cells. The suggestions panel (above) handles the rest.
+          The single "Clear OCR values" action is the safety net
+          for "wipe everything OCR touched, start over". */}
       {(() => {
         let nHigh = 0;
         let nLow = 0;
@@ -985,6 +1115,143 @@ export function UploadView({
         );
       })()}
 
+      {/* OCR suggestions panel — every cell the OCR proposed that
+          did NOT meet the strict auto-fill bar (high confidence AND
+          par-plausible AND pattern-clean). User reviews each and
+          accepts or skips. Patrick's principle: "I would rather have
+          12 high-confidence scores extracted, please fill the rest,
+          than 72 wrong scores filled." */}
+      {suggestions.length > 0 && (
+        <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="h-eyebrow text-amber-300">
+                Review {suggestions.length} OCR suggestion
+                {suggestions.length === 1 ? "" : "s"}
+              </p>
+              <p className="text-xs text-cream-100/75 mt-1 leading-snug">
+                These cells were read from the photo but didn&apos;t
+                clear the auto-fill bar. Tap{" "}
+                <span className="font-medium">Use</span> to accept the
+                value or <span className="font-medium">Skip</span> to
+                leave the cell blank. You can also just type a value in
+                the grid directly.
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                className="btn-ghost text-xs text-cream-100/85"
+                onClick={() => setSuggestions([])}
+                title="Drop every suggestion without applying"
+              >
+                Skip all
+              </button>
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => {
+                  // Apply every suggestion at once. Each suggestion
+                  // becomes a manual cell edit (source = "manual").
+                  const sugByCell = new Map<string, Suggestion>();
+                  for (const s of suggestions) {
+                    sugByCell.set(`${s.round_player_id}:${s.hole_index}`, s);
+                  }
+                  setGrid((prev) =>
+                    prev.map((row) => ({
+                      ...row,
+                      scores: row.scores.map((v, i) => {
+                        const s = sugByCell.get(
+                          `${row.round_player_id}:${i}`
+                        );
+                        return s ? s.value : v;
+                      }),
+                      sources: row.sources.map((src, i) => {
+                        const s = sugByCell.get(
+                          `${row.round_player_id}:${i}`
+                        );
+                        return s ? ("manual" as CellSource) : src;
+                      })
+                    }))
+                  );
+                  setSuggestions([]);
+                }}
+                title="Apply every suggestion at once"
+              >
+                Use all
+              </button>
+            </div>
+          </div>
+          <ul className="space-y-1.5 text-xs">
+            {suggestions.map((s) => (
+              <li
+                key={s.id}
+                className="rounded-md bg-brand-900/30 px-3 py-2 flex items-center gap-2 flex-wrap"
+              >
+                <span className="font-medium text-cream-50 min-w-[5rem]">
+                  {s.player_name}
+                </span>
+                <span className="text-cream-100/65 tabular-nums">
+                  hole {s.hole_index + 1}
+                </span>
+                <span className="font-serif text-base text-cream-50 tabular-nums ml-1">
+                  {s.value}
+                </span>
+                {s.reasons.map((r) => (
+                  <span
+                    key={r}
+                    className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-200"
+                  >
+                    {r}
+                  </span>
+                ))}
+                <div className="flex gap-1.5 ml-auto shrink-0">
+                  <button
+                    type="button"
+                    className="btn-primary text-[11px] px-2.5 py-1"
+                    onClick={() => {
+                      setGrid((prev) =>
+                        prev.map((row) =>
+                          row.round_player_id === s.round_player_id
+                            ? {
+                                ...row,
+                                scores: row.scores.map((v, i) =>
+                                  i === s.hole_index ? s.value : v
+                                ),
+                                sources: row.sources.map((src, i) =>
+                                  i === s.hole_index
+                                    ? ("manual" as CellSource)
+                                    : src
+                                )
+                              }
+                            : row
+                        )
+                      );
+                      setSuggestions((prev) =>
+                        prev.filter((x) => x.id !== s.id)
+                      );
+                    }}
+                  >
+                    Use
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost text-[11px] text-cream-100/65 px-2.5 py-1"
+                    onClick={() =>
+                      setSuggestions((prev) =>
+                        prev.filter((x) => x.id !== s.id)
+                      )
+                    }
+                  >
+                    Skip
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {unmatched.length > 0 && (
         <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1011,6 +1278,11 @@ export function UploadView({
                     (u) => u.suggested_rp_id
                   );
                   if (toMerge.length === 0) return;
+                  // Mirror the strict per-cell rule used in the main
+                  // matched-row merge: only high-confidence + par-
+                  // plausible + non-pattern-warned cells auto-fill.
+                  // The rest become suggestions.
+                  const newSugs: Suggestion[] = [];
                   setGrid((prev) =>
                     prev.map((row) => {
                       const match = toMerge.find(
@@ -1019,20 +1291,43 @@ export function UploadView({
                       if (!match) return row;
                       const nextScores = row.scores.map((existing, idx) => {
                         const ocrVal = match.scores[idx] ?? null;
-                        return ocrVal != null ? ocrVal : existing;
+                        if (ocrVal == null) return existing;
+                        const par = holePars[idx] ?? 4;
+                        const suspicious = isSuspiciousVsPar(ocrVal, par);
+                        const c = match.confidences[idx];
+                        const autoFill =
+                          c === "high" && !suspicious && !match.pattern_warned;
+                        if (!autoFill) {
+                          const reasons: string[] = [];
+                          if (c !== "high") reasons.push("model is uncertain");
+                          if (suspicious) reasons.push(`way off par (${par})`);
+                          if (match.pattern_warned)
+                            reasons.push("row matches a suspicious pattern");
+                          newSugs.push({
+                            id: `${match.id}-cell-${idx}`,
+                            card_id: match.id.split("-")[0],
+                            round_player_id: row.round_player_id,
+                            player_name: row.name,
+                            hole_index: idx,
+                            value: ocrVal,
+                            confidence: c ?? null,
+                            reasons
+                          });
+                        }
+                        return autoFill ? ocrVal : existing;
                       });
                       const nextSources = row.sources.map(
                         (existingSrc, idx) => {
                           const ocrVal = match.scores[idx] ?? null;
                           if (ocrVal == null) return existingSrc;
                           const par = holePars[idx] ?? 4;
-                          if (isSuspiciousVsPar(ocrVal, par)) {
-                            return "ocr_suspicious" as CellSource;
-                          }
+                          const suspicious = isSuspiciousVsPar(ocrVal, par);
                           const c = match.confidences[idx];
-                          return c === "high"
+                          const autoFill =
+                            c === "high" && !suspicious && !match.pattern_warned;
+                          return autoFill
                             ? ("ocr_high" as CellSource)
-                            : ("ocr_low" as CellSource);
+                            : existingSrc;
                         }
                       );
                       const sources = row.source_filenames.includes(match.filename)
@@ -1046,6 +1341,9 @@ export function UploadView({
                       };
                     })
                   );
+                  if (newSugs.length > 0) {
+                    setSuggestions((prev) => [...prev, ...newSugs]);
+                  }
                   setUnmatched((prev) =>
                     prev.filter((u) => !u.suggested_rp_id)
                   );
@@ -1116,26 +1414,58 @@ export function UploadView({
                         disabled={!u.suggested_rp_id}
                         onClick={() => {
                           if (!u.suggested_rp_id) return;
+                          // Same strict per-cell rule as the matched-
+                          // row merge path. Only high+plausible+clean
+                          // auto-fills; the rest go to suggestions.
+                          const newSugsHere: Suggestion[] = [];
+                          const targetRpId = u.suggested_rp_id;
                           setGrid((prev) =>
                             prev.map((row) => {
-                              if (row.round_player_id !== u.suggested_rp_id)
+                              if (row.round_player_id !== targetRpId)
                                 return row;
                               const nextScores = row.scores.map((existing, idx) => {
                                 const ocrVal = u.scores[idx] ?? null;
-                                return ocrVal != null ? ocrVal : existing;
+                                if (ocrVal == null) return existing;
+                                const par = holePars[idx] ?? 4;
+                                const suspicious = isSuspiciousVsPar(ocrVal, par);
+                                const c = u.confidences[idx];
+                                const autoFill =
+                                  c === "high" && !suspicious && !u.pattern_warned;
+                                if (!autoFill) {
+                                  const reasons: string[] = [];
+                                  if (c !== "high")
+                                    reasons.push("model is uncertain");
+                                  if (suspicious)
+                                    reasons.push(`way off par (${par})`);
+                                  if (u.pattern_warned)
+                                    reasons.push(
+                                      "row matches a suspicious pattern"
+                                    );
+                                  newSugsHere.push({
+                                    id: `${u.id}-cell-${idx}`,
+                                    card_id: u.id.split("-")[0],
+                                    round_player_id: targetRpId,
+                                    player_name: row.name,
+                                    hole_index: idx,
+                                    value: ocrVal,
+                                    confidence: c ?? null,
+                                    reasons
+                                  });
+                                }
+                                return autoFill ? ocrVal : existing;
                               });
                               const nextSources = row.sources.map(
                                 (existingSrc, idx) => {
                                   const ocrVal = u.scores[idx] ?? null;
                                   if (ocrVal == null) return existingSrc;
                                   const par = holePars[idx] ?? 4;
-                                  if (isSuspiciousVsPar(ocrVal, par)) {
-                                    return "ocr_suspicious" as CellSource;
-                                  }
+                                  const suspicious = isSuspiciousVsPar(ocrVal, par);
                                   const c = u.confidences[idx];
-                                  return c === "high"
+                                  const autoFill =
+                                    c === "high" && !suspicious && !u.pattern_warned;
+                                  return autoFill
                                     ? ("ocr_high" as CellSource)
-                                    : ("ocr_low" as CellSource);
+                                    : existingSrc;
                                 }
                               );
                               const sources = row.source_filenames.includes(u.filename)
@@ -1149,6 +1479,9 @@ export function UploadView({
                               };
                             })
                           );
+                          if (newSugsHere.length > 0) {
+                            setSuggestions((prev) => [...prev, ...newSugsHere]);
+                          }
                           setUnmatched((prev) =>
                             prev.filter((row) => row.id !== u.id)
                           );
