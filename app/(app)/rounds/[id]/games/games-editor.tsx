@@ -233,7 +233,14 @@ function JunkConfigBlock({
     "net_birdie"
   ];
 
-  async function save(next: JunkConfig) {
+  /**
+   * Persist a config change. Returns true on success, false on
+   * failure. Callers MUST await + revert local state if false, or
+   * the UI lies (says "saved" while the DB still has the old config).
+   * The prior fire-and-forget pattern silently dropped errors and
+   * was caught in the 2026-05-12 code review.
+   */
+  async function save(next: JunkConfig): Promise<boolean> {
     setBusy(true);
     setErr(null);
     const { error } = await sb.rpc("fn_set_junk_config", {
@@ -249,15 +256,22 @@ function JunkConfigBlock({
     setBusy(false);
     if (error) {
       setErr(error.message);
-      return;
+      return false;
     }
     setSavedAt(Date.now());
     router.refresh();
+    return true;
   }
 
   async function enable() {
+    const prev = { enabled, config };
     setEnabled(true);
-    await save(DEFAULT_JUNK_CONFIG);
+    setConfig(DEFAULT_JUNK_CONFIG);
+    const ok = await save(DEFAULT_JUNK_CONFIG);
+    if (!ok) {
+      setEnabled(prev.enabled);
+      setConfig(prev.config);
+    }
   }
 
   async function disable() {
@@ -268,13 +282,19 @@ function JunkConfigBlock({
     ) {
       return;
     }
+    const prev = { enabled, config };
     const next: JunkConfig = { ...config, active_categories: [] };
     setConfig(next);
     setEnabled(false);
-    await save(next);
+    const ok = await save(next);
+    if (!ok) {
+      setEnabled(prev.enabled);
+      setConfig(prev.config);
+    }
   }
 
-  function toggleCategory(cat: JunkCategory) {
+  async function toggleCategory(cat: JunkCategory) {
+    const prevConfig = config;
     const next: JunkConfig = {
       ...config,
       active_categories: config.active_categories.includes(cat)
@@ -282,7 +302,12 @@ function JunkConfigBlock({
         : [...config.active_categories, cat]
     };
     setConfig(next);
-    save(next);
+    const ok = await save(next);
+    if (!ok) {
+      // Revert the optimistic chip toggle so what the user sees
+      // matches what the DB knows.
+      setConfig(prevConfig);
+    }
   }
 
   if (!enabled) {
@@ -362,13 +387,25 @@ function JunkConfigBlock({
               defaultValue={(config.flat_amount_cents ?? 200) / 100}
               key={`flat-${config.flat_amount_cents}`}
               onBlur={(e) => {
+                // Blank input or non-numeric was silently saving $0
+                // — a $0 flat means every junk pays nothing, which
+                // no one wants. Revert to the previous value if the
+                // user cleared the field.
                 const dollars = parseFloat(e.currentTarget.value);
-                const cents = Number.isFinite(dollars)
-                  ? Math.round(dollars * 100)
-                  : 0;
+                if (!Number.isFinite(dollars) || dollars <= 0) {
+                  e.currentTarget.value = String(
+                    (config.flat_amount_cents ?? 200) / 100
+                  );
+                  return;
+                }
+                const cents = Math.round(dollars * 100);
+                if (cents === (config.flat_amount_cents ?? 200)) return;
+                const prevConfig = config;
                 const next = { ...config, flat_amount_cents: cents };
                 setConfig(next);
-                save(next);
+                save(next).then((ok) => {
+                  if (!ok) setConfig(prevConfig);
+                });
               }}
               disabled={disabled || busy}
             />
@@ -385,13 +422,23 @@ function JunkConfigBlock({
                 defaultValue={(config.base_amount_cents ?? 200) / 100}
                 key={`base-${config.base_amount_cents}`}
                 onBlur={(e) => {
+                  // Revert blank / non-numeric / ≤0 — base $0 makes
+                  // the first item free, which isn't a real rule.
                   const dollars = parseFloat(e.currentTarget.value);
-                  const cents = Number.isFinite(dollars)
-                    ? Math.round(dollars * 100)
-                    : 0;
+                  if (!Number.isFinite(dollars) || dollars <= 0) {
+                    e.currentTarget.value = String(
+                      (config.base_amount_cents ?? 200) / 100
+                    );
+                    return;
+                  }
+                  const cents = Math.round(dollars * 100);
+                  if (cents === (config.base_amount_cents ?? 200)) return;
+                  const prevConfig = config;
                   const next = { ...config, base_amount_cents: cents };
                   setConfig(next);
-                  save(next);
+                  save(next).then((ok) => {
+                    if (!ok) setConfig(prevConfig);
+                  });
                 }}
                 disabled={disabled || busy}
               />
@@ -406,13 +453,32 @@ function JunkConfigBlock({
                 defaultValue={(config.escalation_step_cents ?? 200) / 100}
                 key={`step-${config.escalation_step_cents}`}
                 onBlur={(e) => {
-                  const dollars = parseFloat(e.currentTarget.value);
-                  const cents = Number.isFinite(dollars)
-                    ? Math.round(dollars * 100)
-                    : 0;
+                  // Step = 0 is a legitimate "escalating but flat-
+                  // ish" config (everyone pays base, never climbs)
+                  // but blank input shouldn't write it. Revert on
+                  // blank / non-numeric, allow explicit 0.
+                  const raw = e.currentTarget.value;
+                  if (raw.trim() === "") {
+                    e.currentTarget.value = String(
+                      (config.escalation_step_cents ?? 200) / 100
+                    );
+                    return;
+                  }
+                  const dollars = parseFloat(raw);
+                  if (!Number.isFinite(dollars) || dollars < 0) {
+                    e.currentTarget.value = String(
+                      (config.escalation_step_cents ?? 200) / 100
+                    );
+                    return;
+                  }
+                  const cents = Math.round(dollars * 100);
+                  if (cents === (config.escalation_step_cents ?? 200)) return;
+                  const prevConfig = config;
                   const next = { ...config, escalation_step_cents: cents };
                   setConfig(next);
-                  save(next);
+                  save(next).then((ok) => {
+                    if (!ok) setConfig(prevConfig);
+                  });
                 }}
                 disabled={disabled || busy}
               />

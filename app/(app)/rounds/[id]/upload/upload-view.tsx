@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { PhotoPicker } from "@/components/PhotoPicker";
@@ -251,12 +251,23 @@ export function UploadView({
    * re-run it for a Retry from the diagnostics panel without making
    * the user re-pick the file. Idempotent on the grid: per-cell merge
    * with "OCR value wins if non-null".
+   *
+   * Concurrency guard: a ref-based in-flight set. Two rapid taps on
+   * Retry / Rotate / Crop on mobile can fire two near-simultaneous
+   * calls before React's state update changes the button visibility
+   * (the buttons are gated on `card.status === "parsed"`, which
+   * doesn't flip until setCards lands). The ref short-circuits the
+   * second call so prior + new state writes don't interleave.
    */
+  const inFlightCardsRef = useRef<Set<string>>(new Set());
+
   async function runOcrOnCard(
     cardId: string,
     filename: string,
     dataUrl: string
   ) {
+    if (inFlightCardsRef.current.has(cardId)) return;
+    inFlightCardsRef.current.add(cardId);
     setCards((prev) =>
       prev.map((c) =>
         c.id === cardId
@@ -503,6 +514,8 @@ export function UploadView({
             : c
         )
       );
+    } finally {
+      inFlightCardsRef.current.delete(cardId);
     }
   }
 

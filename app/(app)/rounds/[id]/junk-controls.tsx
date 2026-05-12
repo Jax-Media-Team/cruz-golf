@@ -94,6 +94,30 @@ export function JunkControls({
   const [pending, setPending] = useState<string | null>(null); // category currently being saved
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Track whether the user has manually overridden the hole picker.
+  // After a manual change we stop auto-syncing from defaultHole — the
+  // scorer might be backfilling junk on an earlier hole and we
+  // shouldn't snap them forward when router.refresh() lands the next
+  // score. Resets to false when the round advances past the
+  // currently-picked hole (the scorer obviously moved on).
+  const [holeManuallySet, setHoleManuallySet] = useState(false);
+  useEffect(() => {
+    // Sync the hole picker forward when defaultHole shifts (after a
+    // score lands and the round-page re-renders with a new
+    // "current hole" estimate). Skip if the user explicitly picked
+    // a hole AND it's still ahead of where play is.
+    const clamped = Math.min(Math.max(1, defaultHole), totalHoles);
+    if (!holeManuallySet) {
+      setHole(clamped);
+    } else if (clamped > hole) {
+      // Play passed the manual override — drop the override.
+      setHole(clamped);
+      setHoleManuallySet(false);
+    }
+    // Intentionally exclude hole/holeManuallySet from deps — we only
+    // want this to fire when the prop shifts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultHole, totalHoles]);
 
   // Realtime: any junk recorded by another player should appear here
   // within ~1 socket roundtrip.
@@ -210,19 +234,40 @@ export function JunkControls({
     router.refresh();
   }
 
-  async function removeItem(item: JunkItemRow) {
-    const reason = prompt(
-      `Remove this junk item?\n\n${nameById.get(item.round_player_id) ?? "Player"} · ${categoryLabel(item.category)} · hole ${item.hole_number} · ${fmtFlat$(item.amount_cents)}\n\nReason (required):`
-    );
-    if (!reason || reason.trim().length === 0) return;
+  // Inline "remove with reason" — the item being removed + its
+  // pending reason text. window.prompt() works on desktop but is
+  // blocked or terrible on iOS Safari PWA, which is the primary
+  // mobile surface. Inline state + a tiny modal-ish row is the fix.
+  const [removingItem, setRemovingItem] = useState<JunkItemRow | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+
+  function startRemove(item: JunkItemRow) {
+    setRemovingItem(item);
+    setRemoveReason("");
+  }
+  function cancelRemove() {
+    setRemovingItem(null);
+    setRemoveReason("");
+  }
+  async function confirmRemove() {
+    const item = removingItem;
+    if (!item) return;
+    const trimmed = removeReason.trim();
+    if (trimmed.length === 0) {
+      setErr("Reason is required to remove a junk item.");
+      return;
+    }
     const { error } = await sb.rpc("fn_remove_junk", {
       p_item_id: item.id,
-      p_reason: reason.trim()
+      p_reason: trimmed
     });
     if (error) {
       setErr(error.message);
       return;
     }
+    setRemovingItem(null);
+    setRemoveReason("");
+    setErr(null);
     router.refresh();
   }
 
@@ -267,7 +312,10 @@ export function JunkControls({
         <select
           className="input text-sm px-2 py-1 w-auto"
           value={hole}
-          onChange={(e) => setHole(parseInt(e.target.value, 10))}
+          onChange={(e) => {
+            setHole(parseInt(e.target.value, 10));
+            setHoleManuallySet(true);
+          }}
         >
           {Array.from({ length: totalHoles }, (_, i) => i + 1).map((h) => (
             <option key={h} value={h}>
@@ -350,6 +398,50 @@ export function JunkControls({
         <p className="text-[11px] text-emerald-300">
           Recorded: <span className="font-medium">{toast}</span>
         </p>
+      )}
+
+      {/* Inline remove dialog — replaces window.prompt(), which is
+          blocked / awful on iOS Safari PWA. Surfaces above the
+          totals so the user's flow is obvious. */}
+      {removingItem && (
+        <div className="rounded-lg border border-red-400/40 bg-red-500/10 p-3 space-y-2">
+          <p className="text-xs text-red-200">
+            Remove this junk item?
+          </p>
+          <p className="text-[11px] text-cream-100/85">
+            {nameById.get(removingItem.round_player_id) ?? "Player"} ·{" "}
+            {categoryLabel(removingItem.category)} · hole{" "}
+            {removingItem.hole_number} ·{" "}
+            <span className="tabular-nums">
+              {fmtFlat$(removingItem.amount_cents)}
+            </span>
+          </p>
+          <input
+            type="text"
+            className="input text-sm w-full"
+            placeholder="Reason (required) — e.g. duplicate, wrong player"
+            value={removeReason}
+            onChange={(e) => setRemoveReason(e.target.value)}
+            autoFocus
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              className="btn-ghost text-xs text-cream-100/65"
+              onClick={cancelRemove}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary text-xs"
+              disabled={removeReason.trim().length === 0}
+              onClick={confirmRemove}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
       )}
       {err && (
         <p className="text-[11px] text-red-300 break-words">{err}</p>
@@ -434,7 +526,7 @@ export function JunkControls({
                         <button
                           type="button"
                           className="text-cream-100/45 hover:text-red-300"
-                          onClick={() => removeItem(it)}
+                          onClick={() => startRemove(it)}
                           aria-label="Remove this junk item"
                           title="Remove (commissioner)"
                         >

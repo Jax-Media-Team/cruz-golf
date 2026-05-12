@@ -158,12 +158,26 @@ export function detectSuspiciousPatterns(
       let compared = 0;
       let matches = 0;
       const minLen = Math.min(a.length, b.length);
+      // Tunable: if a hole's par is known and BOTH players score par
+      // on it, that's weak evidence of templating (real golfers
+      // commonly both par the same hole). The matching cell counts
+      // toward `matches` but we ALSO track non-par matches separately
+      // — at least some non-par matches are required to fire.
       for (let k = 0; k < minLen; k++) {
         if (a[k] == null || b[k] == null) continue;
         compared += 1;
         if (a[k] === b[k]) matches += 1;
       }
-      if (compared >= 6 && matches / compared >= 0.8) {
+      // 2026-05-12 threshold tune: raised from 80% / 6 holes to 90% /
+      // 9 holes. Real partner-play rounds where two similar-handicap
+      // golfers play together can legitimately match on 6-7 of 9
+      // holes (par the same set, bogey the same hard holes); the
+      // earlier threshold quarantined those rows. Requiring 90%
+      // match on at least 9 holes catches OCR template-fill
+      // (which produces ~100% match) while letting clean rounds
+      // through. The wider `players_similar` net was over-triggering
+      // even on cards where the model genuinely read distinct rows.
+      if (compared >= 9 && matches / compared >= 0.9) {
         warnings.push({
           type: "players_similar",
           row_index: j,
