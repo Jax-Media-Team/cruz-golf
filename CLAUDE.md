@@ -15,11 +15,59 @@
 - **Typecheck:** clean (`npx tsc --noEmit`)
 - **Migrations applied through:** `0045` (fn_archive_round idempotency). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
 
+### Product framing (the why behind everything below)
+
+**Patrick's friend, on the biggest challenge in this category:**
+> "The big problem with all these apps is making setup welcoming and
+> easy enough that people actually want to use it and figure it out."
+
+That's the single most important product insight. The app is already
+powerful; the danger now is too many options, too many concepts, too
+much setup, too much "software."
+
+**The 5-step user mental model — everything maps to this:**
+
+1. **Start a round.** One tap from /dashboard. Defaults that work.
+2. **Pick the game.** Suggested packages first, configurability behind.
+3. **Track who owes who.** Visible during play, not just at finalize.
+4. **Settle up.** Math the group trusts without spreadsheets. Venmo
+   handoff. Permanent record.
+5. **Look back later.** Records, rivalries, lifetime totals — the moat.
+
+If a flow doesn't sit cleanly inside one of those five steps, it's
+probably accidental complexity. Ask whether it can go behind a
+disclosure, off a power-user surface, or out entirely.
+
+**The trust layer is the long-term moat:**
+
+People constantly distrust gambling math in golf groups. "Who owes
+who?" "Did that press count?" "Are the junk totals right?" "Why do I
+owe $18?" That awkward post-round moment is real. Cruz Golf's biggest
+long-term value isn't OCR or social or stats — it's being the app
+the group trusts to settle the game correctly, every time. That
+means:
+
+- Settlement math is auditable, not magical.
+- Transparent calculations — every transfer shows where it came from.
+- Visible during play, not just at finalize.
+- Permanent records — the same numbers next week, next month, next
+  year, regardless of who's looking at them or from which device.
+- Both sides of every transfer can verify their own number.
+
+When making any UX call, the tiebreakers are:
+
+- Does it make setup more welcoming, or strengthen the trust math?
+- Does it remove "software" and leave just "Saturday game"?
+
+The ideal feeling is: *"Our group just uses this every Saturday
+without thinking about it."*
+
 ### Operating model (locked in 2026-05-12)
 
-Patrick's directive: stop treating mobile/PWA testing as secondary,
-stop using passive backlog language, act like a product owner + QA
-lead. Specifics that govern every future stretch in this repo:
+The principles below are how the product framing above gets enforced
+in code. Patrick's earlier directive: stop treating mobile/PWA
+testing as secondary, stop using passive backlog language, act like a
+product owner + QA lead.
 
 1. **Real-device-mindset always.** When walking a flow, the lens is
    "4 guys standing on the first tee after a couple drinks." Not
@@ -51,6 +99,15 @@ lead. Specifics that govern every future stretch in this repo:
 7. **Tone discipline holds.** Statements not exclamations. No
    cartoon emoji on records / streaks / milestones. The data is
    the interest.
+8. **Setup welcome > configurability.** Every option added to a setup
+   surface needs to justify its cost in mental load. Default to
+   smart presets; tuck the configurable bits behind disclosures.
+   Power users can always reach them; first-timers don't have to.
+9. **Trust math is the moat — protect it like one.** Settlement
+   numbers must be transparent (every cent has a why), persistent
+   (visible on the round page after finalize, not just in the editor),
+   and two-way (the payer AND the recipient can each verify their
+   own number without taking it on faith).
 
 When in doubt, optimize for "less tooling, more Saturday game."
 

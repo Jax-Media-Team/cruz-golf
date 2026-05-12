@@ -8,6 +8,7 @@ import { UnfinalizeButton } from "./unfinalize-button";
 import { MarkPendingButton, ResumeRoundButton } from "./pending-controls";
 import { PressControls } from "./press-controls";
 import { JunkControls } from "./junk-controls";
+import { SettlementSummary } from "@/components/SettlementSummary";
 import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,7 +63,7 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
 
   const { data: rps } = await sb
     .from("round_players")
-    .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(id, display_name, profile_id), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
+    .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(id, display_name, profile_id, venmo_handle), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
     .eq("round_id", id)
     .order("display_order");
 
@@ -151,6 +152,27 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
   const myRpId =
     (rps ?? []).find((r: any) => r.players?.profile_id === user.id)?.id ??
     null;
+
+  // Settlement rows — only fetched for finalized rounds. Drives the
+  // "Settlement summary" card so a user looking back at a finalized
+  // round on /rounds/[id] doesn't have to navigate to /finalize to
+  // see who paid whom. Per Patrick's product framing (2026-05-12):
+  // the trust math layer is the moat — settlement must persist where
+  // the user actually looks.
+  let settlementRows: Array<{
+    from_round_player_id: string;
+    to_round_player_id: string;
+    amount_cents: number;
+    breakdown: any;
+  }> = [];
+  if (round.status === "finalized") {
+    const { data: setts } = await sb
+      .from("settlements")
+      .select("from_round_player_id, to_round_player_id, amount_cents, breakdown")
+      .eq("round_id", id)
+      .order("amount_cents", { ascending: false });
+    settlementRows = (setts as any) ?? [];
+  }
 
   // Stakes flag — used to decide whether to show the optional wagers tile.
   // The old handshake-required gate is gone; we no longer fetch ack rows.
@@ -398,19 +420,42 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           />
         )}
 
-      {round.status === "finalized" && isCommissioner && (
-        <div className="card p-4 flex items-center justify-between gap-3 border border-cream-100/15">
-          <div>
-            <p className="h-eyebrow text-gold-400">Locked</p>
-            <p className="text-sm text-cream-50 mt-1">
-              This round is finalized. Settlements are written.
-            </p>
-            <p className="text-[11px] text-cream-100/55 mt-0.5">
-              Need to fix a score? Unlock and re-finalize.
-            </p>
-          </div>
-          <UnfinalizeButton roundId={id} />
-        </div>
+      {/* Finalized rounds: the settlement card IS the primary surface.
+          Visible to every viewer (not commissioner-only — the trust
+          math is the moat, and both payer and recipient need to verify
+          their own number). The commissioner gets an Unlock button
+          inline below. Per Patrick 2026-05-12 product framing. */}
+      {round.status === "finalized" && (
+        <>
+          <SettlementSummary
+            roundId={id}
+            flows={settlementRows.map((s) => ({
+              from_round_player_id: s.from_round_player_id,
+              to_round_player_id: s.to_round_player_id,
+              amount_cents: s.amount_cents,
+              breakdown: s.breakdown
+            }))}
+            rps={(rps ?? []).map((r: any) => ({
+              id: r.id,
+              display_name: r.players?.display_name ?? "Player",
+              venmo_handle: r.players?.venmo_handle ?? null
+            }))}
+            finalizedAt={round.finalized_at ?? null}
+            viewerRpId={myRpId}
+            isCommissioner={isCommissioner}
+            courseName={(round as any).courses?.name ?? null}
+            roundDate={round.date ?? null}
+          />
+          {isCommissioner && (
+            <div className="card p-3 flex items-center justify-between gap-3 border border-cream-100/15">
+              <p className="text-[11px] text-cream-100/55">
+                Need to fix a score? Unlock the round, edit, and finalize
+                again — settlements re-compute from scratch each time.
+              </p>
+              <UnfinalizeButton roundId={id} />
+            </div>
+          )}
+        </>
       )}
 
       {round.status !== "finalized" && (
