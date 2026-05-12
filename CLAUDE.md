@@ -4,16 +4,83 @@
 
 ---
 
-## 🌅 NEXT SESSION START HERE (snapshot 2026-05-11)
+## 🌅 NEXT SESSION START HERE (snapshot 2026-05-12)
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** `9d13306` — *feat(junk,rounds): + Other custom category + restore success message*
+- **Latest commit on main:** `c586585` — *feat: ship 10 P1 items from first-time-golfer audit*
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
-- **Test suite:** **553/553 passing across 36 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **555/555 passing across 36 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0045` (fn_archive_round idempotency — Patrick applied 2026-05-12 alongside 0044). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
+- **Migrations applied through:** `0045` (fn_archive_round idempotency). Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
+
+### This stretch (2026-05-12)
+
+Patrick directive: "Stop using passive backlog language. Implement,
+reject with reasoning, or document. No more 'I have notes.'" Plus
+a full first-time-golfer experience audit covering JGCC-Saturday
+flow end-to-end.
+
+Shipped across three commits (`ab77e38`, `8914cf5`, `c586585`) —
+all 5 P0s and all 10 P1s from `docs/FIRST_TIME_GOLFER_AUDIT.md`:
+
+**P0s (real golfer quits):**
+1. "Email from Supabase" → "Email from Cruz Golf" on /login + /signup
+   (was reading as phishing to first-time users).
+2. Teams drag-and-drop → tap-to-assign chip list as the mobile-
+   first path (drag-and-drop broken on iPhone Safari). Desktop
+   keeps drag-and-drop as a hidden-on-mobile fallback.
+3. course-issues amber banner on /rounds/new now suppressed when
+   `course.status === "verified"` — JGCC + curated courses no
+   longer surface an admin diagnostic.
+4. Venmo deep-link wired into the finalize "Who pays whom" rows.
+   Each settle row renders "Pay [recipient] $X in Venmo →" with
+   a universal `venmo.com/{handle}?txn=pay&amount=…&note=…` URL
+   (iOS hands off to the Venmo app prefilled; desktop opens
+   venmo.com with same params). Closes the landing-page promise.
+5. Swipe-to-archive: dropped `confirm()` dialog, added Gmail-style
+   "Archived [course] · Undo · ✕" banner above the rounds list.
+   10s auto-clear; one-tap restore via UPDATE deleted_at = null.
+
+**P1s (real golfer grumbles) — all shipped:**
+
+6. /rounds/new section reorder: Basics → **Quick Start** →
+   Players → Games → **Teams** → Junk → Start round. Quick Start
+   (with Suggested packages) now greets first-timers.
+7. Game families collapsed: Skins / Nassau / Best Ball / Side
+   Bets default-visible; Individual / Aggregate / Scramble / 6-6-6
+   tucked behind "More games · 4 ▾".
+8. Nassau single-stake + total-at-risk. One "Stake $" mirrors to
+   F/B/Overall; "Advanced: split front/back/overall →" reveals
+   per-segment inputs; live "Total at risk per player: $X" line.
+9. Course Handicap inline in player picker. "CH: +X · PH: +Y"
+   live as user picks tee / changes HI.
+10. OAuth above email/password on /login + /signup. Divider reads
+    "or sign in with email". autoFocus removed from login email
+    (was pushing logo off iPhone PWA on first paint).
+11. Done CTA on a completed scorecard flips from "View leaderboard
+    →" to "Finalize round →" and routes to /finalize.
+12. Leaderboard tab labels: Match → "Game", Bets → "Money".
+13. Round page reorder: RoundView (the leaderboard) now renders
+    immediately after banners + junk hint, BEFORE press/junk
+    controls + secondary action grid.
+14. Returning-user hero card on /dashboard. When `hasRounds &&
+    !activeRound`, a gold "Start a new round" card surfaces with
+    the last-played course name.
+15. Password hint upgraded: 12px, color flips emerald with ✓ at
+    8 chars, "(N to go)" countdown.
+
+Also shipped in earlier commits this stretch:
+- **Facebook OAuth button** (`components/FacebookAuthButton.tsx`)
+  on /login + /signup. Inert until Patrick configures the
+  provider in Supabase dashboard per
+  `docs/FACEBOOK_AUTH_SETUP.md`.
+- **Junk side-bets** now toggleable during /rounds/new round
+  creation (was only on /rounds/[id]/games before).
+- `docs/FIRST_TIME_GOLFER_AUDIT.md` — full 30-finding audit.
+- `docs/RECURRING_FRICTION_AUDIT.md` — honest self-accounting of
+  10 patterns I've half-fixed across the session.
 
 ### Recent stretch (2026-05-11)
 
@@ -139,10 +206,17 @@ testing, OCR mobile UX, live match clarity. Shipped:
 
 ### Highest priorities for next session
 
-1. **Real-device iPhone PWA QA** — walk through `docs/IPHONE_PWA_QA.md` on an actual iPhone. The 9 scenarios in there can't be programmatically verified. Most likely places to find bugs: realtime over LTE with poor signal, service-worker activation timing on first install, home-indicator clearance on different iPhone models.
-2. **Course library expansion** — 6 NE FL placeholders still empty (Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Dye's Valley, San Jose, Pablo Creek). Waiting on official scorecards. **No fabrication.** When a card arrives, follow the 0034 / 0038 pattern: one tee per color, men's-only rating/slope/SI, idempotent migration, status=verified only if rating + slope are printed on the card.
-3. **Manual press dispute end-to-end with a real foursome** — the engine + UI + audit are tested but the dispute workflow (`docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`) hasn't been exercised with a real "Ben says he accepted" scenario. Watch for: does the audit log surface the right info? Is the round-detail page enough to resolve it without SQL?
-4. **(Lower priority) Push notifications for press requests** — not implemented. The active round pill alert (amber) + in-app banner are the only out-of-app signals. If players have the app backgrounded, they won't know about a press until they open it.
+1. **Real-device iPhone PWA QA** — walk through `docs/IPHONE_PWA_QA.md` on an actual iPhone, **PLUS** the first-time-golfer flow refresh now that 5 P0 + 10 P1 just shipped. Most critical re-test surfaces:
+   - `/login` + `/signup`: OAuth-above-email layout + password live-validation + Facebook button (renders but inert until Patrick configures the provider per `docs/FACEBOOK_AUTH_SETUP.md`).
+   - `/rounds/new`: new Quick-Start-first ordering, tap-to-assign team chips, course-handicap inline preview, single-stake Nassau + total-at-risk line, More-games disclosure.
+   - `/rounds/[id]`: leaderboard now above press/junk controls.
+   - `/rounds/[id]/score-group`: Done CTA flips to "Finalize round →" on complete scorecards.
+   - `/rounds/[id]/finalize`: Venmo deep-link button on each settle row — tap one on iPhone, confirm Venmo opens prefilled with recipient + amount + note.
+   - `/dashboard`: swipe-to-archive now shows a 10s Undo banner; new returning-user hero card when there's history but no active round.
+2. **Audit P2 polish (16 items)** — `docs/FIRST_TIME_GOLFER_AUDIT.md` lines 178-194. Smaller copy fixes ("wagers" → "groups" on landing, ISO date → "Saturday, May 12", "stale player" → "missing data", Poley/Pinny tooltips, etc.). Low-risk batch.
+3. **Course library expansion** — 6 NE FL placeholders still empty (Sawgrass CC, Atlantic Beach CC, Marsh Landing, TPC Dye's Valley, San Jose, Pablo Creek). Waiting on official scorecards. **No fabrication.** When a card arrives, follow the 0034 / 0038 pattern: one tee per color, men's-only rating/slope/SI, idempotent migration, status=verified only if rating + slope are printed on the card.
+4. **Manual press dispute end-to-end with a real foursome** — the engine + UI + audit are tested but the dispute workflow (`docs/ADMIN_PRESS_DISPUTE_WORKFLOW.md`) hasn't been exercised with a real "Ben says he accepted" scenario.
+5. **(Lower priority) Push notifications for press requests** — not implemented. The active round pill alert (amber) + in-app banner are the only out-of-app signals.
 
 ### Outstanding risks (things that could break in the field)
 
