@@ -8,6 +8,12 @@ import {
   getPreset,
   type GameFamily
 } from "@/lib/games/library";
+import {
+  categoryLabel,
+  DEFAULT_JUNK_CONFIG,
+  type JunkCategory,
+  type JunkConfig
+} from "@/lib/games/junk";
 import type { GameType } from "@/lib/types";
 
 type Game = {
@@ -29,12 +35,17 @@ export function GamesEditor({
   roundId,
   initialGames,
   players,
+  initialJunkConfig,
   hasScores
 }: {
   roundId: string;
   initialGames: Game[];
   /** Round players in seat order. Used by the 6-6-6 rotation editor. */
   players: RoundPlayerLite[];
+  /** Current junk config if enabled, null when junk is off for this
+   *  round. Surfaced through JunkConfigBlock at the bottom of the
+   *  editor. */
+  initialJunkConfig: JunkConfig | null;
   hasScores: boolean;
 }) {
   const sb = supabaseBrowser();
@@ -158,6 +169,315 @@ export function GamesEditor({
           busy={busy}
         />
       )}
+
+      <JunkConfigBlock
+        roundId={roundId}
+        initialConfig={initialJunkConfig}
+        disabled={busy}
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// JunkConfigBlock
+// ============================================================
+/**
+ * Commissioner-only block for enabling and configuring junk side-bets
+ * for a round. Calls SECURITY DEFINER fn_set_junk_config so the DB is
+ * authoritative on RBAC + finalize-gate.
+ *
+ * Defaults match `lib/games/junk.ts:DEFAULT_JUNK_CONFIG`: $2 base, $2
+ * escalating, per-round, 7 categories active.
+ *
+ * Removing junk is "set active_categories=[]" — we keep the row so
+ * historic items still settle, but no new items can be recorded.
+ */
+function JunkConfigBlock({
+  roundId,
+  initialConfig,
+  disabled
+}: {
+  roundId: string;
+  initialConfig: JunkConfig | null;
+  disabled: boolean;
+}) {
+  const sb = supabaseBrowser();
+  const router = useRouter();
+  const [enabled, setEnabled] = useState(initialConfig !== null);
+  const [config, setConfig] = useState<JunkConfig>(
+    initialConfig ?? DEFAULT_JUNK_CONFIG
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // All built-in categories (display order matches Patrick's list).
+  // "custom" is intentionally not in the toggle list — custom labels
+  // go through the entry UI's "+ Other" path.
+  const ALL_CATEGORIES: JunkCategory[] = [
+    "birdie",
+    "eagle",
+    "greenie",
+    "sandy",
+    "chip_in",
+    "poley",
+    "pinny",
+    "barkie",
+    "net_birdie"
+  ];
+
+  async function save(next: JunkConfig) {
+    setBusy(true);
+    setErr(null);
+    const { error } = await sb.rpc("fn_set_junk_config", {
+      p_round_id: roundId,
+      p_active_categories: next.active_categories,
+      p_mode: next.mode,
+      p_flat_amount_cents: next.flat_amount_cents ?? null,
+      p_base_amount_cents: next.base_amount_cents ?? null,
+      p_escalation_step_cents: next.escalation_step_cents ?? null,
+      p_escalation_scope: next.escalation_scope ?? null,
+      p_custom_categories: next.custom_categories ?? null
+    });
+    setBusy(false);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    setSavedAt(Date.now());
+    router.refresh();
+  }
+
+  async function enable() {
+    setEnabled(true);
+    await save(DEFAULT_JUNK_CONFIG);
+  }
+
+  async function disable() {
+    if (
+      !confirm(
+        "Turn junk off for this round? Items already recorded stay in the audit log but new ones can't be added. You can re-enable at any time before finalize."
+      )
+    ) {
+      return;
+    }
+    const next: JunkConfig = { ...config, active_categories: [] };
+    setConfig(next);
+    setEnabled(false);
+    await save(next);
+  }
+
+  function toggleCategory(cat: JunkCategory) {
+    const next: JunkConfig = {
+      ...config,
+      active_categories: config.active_categories.includes(cat)
+        ? config.active_categories.filter((c) => c !== cat)
+        : [...config.active_categories, cat]
+    };
+    setConfig(next);
+    save(next);
+  }
+
+  if (!enabled) {
+    return (
+      <div className="card p-4 border border-dashed border-cream-100/15 space-y-2">
+        <p className="h-eyebrow">Junk side-bets</p>
+        <p className="text-xs text-cream-100/65 leading-snug">
+          Side bets on birdies, greenies, sandies, chip-ins, poleys, pinnies
+          — tap-the-extras tracking that runs alongside the main game.
+          Default is <span className="font-medium">$2 escalating</span>{" "}
+          (each new junk costs $2 more than the previous one).
+        </p>
+        <button
+          type="button"
+          className="btn-secondary text-sm"
+          onClick={enable}
+          disabled={disabled || busy}
+        >
+          + Enable junk for this round
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-4 space-y-3 border border-gold-500/20">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <p className="h-eyebrow text-gold-400">Junk side-bets</p>
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            Server-side authoritative pricing. Recorded amounts freeze on entry.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {savedAt && Date.now() - savedAt < 4000 && (
+            <span className="text-[10px] text-emerald-300">Saved</span>
+          )}
+          <button
+            type="button"
+            className="btn-ghost text-xs text-red-300"
+            onClick={disable}
+            disabled={disabled || busy}
+          >
+            Disable
+          </button>
+        </div>
+      </div>
+
+      {/* Mode + amounts */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="label">Mode</label>
+          <select
+            className="input"
+            value={config.mode}
+            disabled={disabled || busy}
+            onChange={(e) => {
+              const mode = e.target.value as "flat" | "escalating";
+              const next = { ...config, mode };
+              setConfig(next);
+              save(next);
+            }}
+          >
+            <option value="escalating">Escalating</option>
+            <option value="flat">Flat</option>
+          </select>
+        </div>
+        {config.mode === "flat" ? (
+          <div className="sm:col-span-2">
+            <label className="label">Amount per item (USD)</label>
+            <input
+              className="input"
+              type="number"
+              step="0.50"
+              min={0}
+              defaultValue={(config.flat_amount_cents ?? 200) / 100}
+              key={`flat-${config.flat_amount_cents}`}
+              onBlur={(e) => {
+                const dollars = parseFloat(e.currentTarget.value);
+                const cents = Number.isFinite(dollars)
+                  ? Math.round(dollars * 100)
+                  : 0;
+                const next = { ...config, flat_amount_cents: cents };
+                setConfig(next);
+                save(next);
+              }}
+              disabled={disabled || busy}
+            />
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="label">Base (USD)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.50"
+                min={0}
+                defaultValue={(config.base_amount_cents ?? 200) / 100}
+                key={`base-${config.base_amount_cents}`}
+                onBlur={(e) => {
+                  const dollars = parseFloat(e.currentTarget.value);
+                  const cents = Number.isFinite(dollars)
+                    ? Math.round(dollars * 100)
+                    : 0;
+                  const next = { ...config, base_amount_cents: cents };
+                  setConfig(next);
+                  save(next);
+                }}
+                disabled={disabled || busy}
+              />
+            </div>
+            <div>
+              <label className="label">Step (USD)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.50"
+                min={0}
+                defaultValue={(config.escalation_step_cents ?? 200) / 100}
+                key={`step-${config.escalation_step_cents}`}
+                onBlur={(e) => {
+                  const dollars = parseFloat(e.currentTarget.value);
+                  const cents = Number.isFinite(dollars)
+                    ? Math.round(dollars * 100)
+                    : 0;
+                  const next = { ...config, escalation_step_cents: cents };
+                  setConfig(next);
+                  save(next);
+                }}
+                disabled={disabled || busy}
+              />
+              <p className="text-[10px] text-cream-100/45 mt-0.5">
+                Each new item adds this to the previous.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {config.mode === "escalating" && (
+        <div>
+          <label className="label">Escalation scope</label>
+          <select
+            className="input"
+            value={config.escalation_scope ?? "per_round"}
+            disabled={disabled || busy}
+            onChange={(e) => {
+              const next: JunkConfig = {
+                ...config,
+                escalation_scope: e.target.value as any
+              };
+              setConfig(next);
+              save(next);
+            }}
+          >
+            <option value="per_round">
+              Per round — the pot grows every junk
+            </option>
+            <option value="per_category">
+              Per category — birdies escalate independent of greenies
+            </option>
+            <option value="per_player_per_category">
+              Per player per category — each player&apos;s repeats only
+            </option>
+          </select>
+        </div>
+      )}
+
+      {/* Category toggles */}
+      <div>
+        <p className="label">Categories</p>
+        <p className="text-[11px] text-cream-100/55 mb-2 leading-snug">
+          Tap to toggle. Disabled categories don&apos;t show on the
+          entry chip strip — but historic items in those categories still
+          settle.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {ALL_CATEGORIES.map((cat) => {
+            const active = config.active_categories.includes(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                className={`pill text-xs px-3 py-1.5 transition-colors ${
+                  active
+                    ? "bg-gold-500 text-brand-900"
+                    : "bg-brand-900/60 border border-cream-100/15 text-cream-100/55"
+                }`}
+                onClick={() => toggleCategory(cat)}
+                disabled={disabled || busy}
+              >
+                {active ? "✓ " : ""}
+                {categoryLabel(cat)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {err && <p className="text-xs text-red-300">{err}</p>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # Junk side-bet system — design + rollout
 
-**Status:** engine shipped, schema + UI not yet applied.
+**Status:** Phases 0–4 shipped. Migration 0041 awaiting Patrick's apply.
 **Origin:** real-world tester feedback (2026-05-11) from a player who
 ran a 6-6-6 round and asked for "$2 escalating junk."
 **Owner:** product
@@ -303,43 +303,71 @@ written.
 
 No schema, no UI, no API. Just the pure-function math.
 
-### Phase 1 — Schema + write API
+### Phase 1 — Schema + write API ✓ shipped 2026-05-11
 
-- Migration `00XX_junk_side_bets.sql` (paste in chat for Patrick to apply)
-- RPCs: `fn_record_junk`, `fn_edit_junk`, `fn_remove_junk`,
-  `fn_set_junk_config` (all SECURITY DEFINER, all audit-logged)
-- A minimal `/api/junk/*` Next.js route surface (or invoke RPCs directly
-  from the round page — RPC pattern matches presses)
+- `supabase/migrations/0041_junk_side_bets.sql` (awaiting Patrick's apply)
+- Tables: `round_junk_config`, `round_junk_items` (soft-delete via
+  `deleted_at`)
+- RPCs (all SECURITY DEFINER, all audit-logged):
+  - `fn_set_junk_config` — commissioner-only, refuses on finalized
+    rounds.
+  - `fn_record_junk` — server-side authoritative pricing (calls
+    `fn_compute_junk_amount` under the hood). Any group member can
+    record, but the round must not be finalized and the category
+    must be active (custom requires a label).
+  - `fn_edit_junk` — commissioner OR original recorder. Amount cannot
+    be edited (frozen-pricing invariant). To re-price, remove + re-record.
+  - `fn_remove_junk` — commissioner-only soft-delete with required
+    reason.
+- RLS: read for group members; writes blocked except via RPCs.
 
-### Phase 2 — Setup UI
+### Phase 2 — Setup UI ✓ shipped 2026-05-11
 
-- Junk config block in `/rounds/[id]/games`
-- Default-on suggestion: when commissioner adds a Nassau / 6-6-6 /
-  Best Ball / Aggregate game, prompt "Want to add $2 escalating junk
-  too? Most groups do."
+- `JunkConfigBlock` in `app/(app)/rounds/[id]/games/games-editor.tsx`
+- Dashed empty-state card with "Enable junk for this round" when off
+- When on: mode picker, base/step/flat amount, scope picker, category
+  chip toggles. All edits auto-save via `fn_set_junk_config` (no
+  Save button — feels like the live config it is).
+- Disable button (with confirm) which sets `active_categories = []`
+  — historic items still settle, but no new entries can be recorded.
 
-### Phase 3 — Entry UI
+### Phase 3 — Entry UI ✓ shipped 2026-05-11
 
-- New "Junk" tab on the round-page leaderboard surface
-- Quick-tap entry: player chip → category chip → preview amount →
-  Record
-- Live totals strip on the round page (always visible when junk is
-  enabled)
-- Realtime subscription on `round_junk_items` so any player's
-  entries appear instantly for everyone watching
+- `JunkControls` component at `app/(app)/rounds/[id]/junk-controls.tsx`
+- Rendered above the leaderboard on `/rounds/[id]` when:
+  - junk config row exists for the round, AND
+  - round status ∈ {live, pending_finalization}
+- Two-tap entry: player chip → category chip → recorded. No "Confirm"
+  step (per Patrick's "tap the extras" UX).
+- Hole picker defaults to current hole (best-guess from scoring state).
+- Each category chip shows the LIVE preview amount alongside the
+  label — matches what the server will compute on tap.
+- Realtime subscription on `round_junk_items` filtered by round_id —
+  any player's entry appears for everyone within ~1 socket round-trip.
+- Live totals strip below the entry surface (sorted high-to-low,
+  emerald for positive net, red for negative).
+- Collapsible item log (newest first) with commissioner-only `✕`
+  remove buttons (prompts for required reason → `fn_remove_junk`).
 
-### Phase 4 — Finalize integration
+### Phase 4 — Finalize integration ✓ shipped 2026-05-11
 
-- Settlement composes junk into the final per-player money map
-- "Junk" line in the finalize "By game" breakdown
-- Junk movement counted in clubhouse signals (lifetime money, biggest
-  win, etc.) — derived data already rebuilds correctly
+- `app/(app)/rounds/[id]/finalize/page.tsx` pulls non-deleted junk
+  items.
+- `FinalizeView` composes them through `settleJunk()` and adds the
+  delta to the per-player totals.
+- Settlement breakdown line: `"Junk · N items (2 birdies, 1 chip-in)"`
+  — itemized so the commissioner sees WHICH junk moved the money,
+  not just the total.
+- Clubhouse signals (lifetime money, biggest win, etc.) rebuild
+  automatically from finalized settlements — no code change needed.
 
-### Phase 5 — Admin observability
+### Phase 5 — Admin observability (next, if needed)
 
-- `/admin/rounds/[id]` shows the junk log + lifecycle
-- `destructive_audit_log` admin filter for `kind=junk.*` already
-  works (the filter is open-ended)
+- `/admin/rounds/[id]` could show the junk log + lifecycle (the
+  destructive audit log already captures `junk.record`,
+  `junk.edit`, `junk.remove`, `junk.config_change` events and the
+  existing admin audit-filter is open-ended on `kind`).
+- Defer until real-world use surfaces a need.
 
 ---
 

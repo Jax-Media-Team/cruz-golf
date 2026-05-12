@@ -45,11 +45,11 @@ export type JunkCategory =
   | "birdie"
   | "eagle"
   | "greenie" // closest to pin on a par 3 in regulation
-  | "poley" // make a putt of a certain length / from off the green; rules vary
-  | "pinnie" // hit the flagstick on approach (some groups)
   | "sandy" // par or better from a greenside bunker
-  | "barkie" // par or better after hitting a tree
   | "chip_in" // hole out from off the green
+  | "poley" // make a putt of a certain length / from off the green; rules vary
+  | "pinny" // hit the flagstick on approach (some groups)
+  | "barkie" // par or better after hitting a tree
   | "net_birdie" // birdie counting handicap strokes
   | "custom";
 
@@ -105,12 +105,22 @@ export type JunkConfig = {
 
 /**
  * Default config used when a round opts into junk without picking
- * specifics. Matches the most-common casual-play recipe:
- *   $2 base, $2 escalation step, per-round scope, birdies + greenies
- *   + sandies + chip-ins active.
+ * specifics. Defaults confirmed by Patrick from real-world play:
+ *   $2 base, $2 escalation step, per-round scope. Active categories
+ *   in display order: birdie, eagle, greenie, sandy, chip-in, poley,
+ *   pinny. Barkie + net_birdie remain in the engine but ship disabled
+ *   so the default chip strip stays uncluttered.
  */
 export const DEFAULT_JUNK_CONFIG: JunkConfig = {
-  active_categories: ["birdie", "greenie", "sandy", "chip_in"],
+  active_categories: [
+    "birdie",
+    "eagle",
+    "greenie",
+    "sandy",
+    "chip_in",
+    "poley",
+    "pinny"
+  ],
   mode: "escalating",
   base_amount_cents: 200,
   escalation_step_cents: 200,
@@ -296,14 +306,36 @@ const CATEGORY_LABELS: Record<JunkCategory, string> = {
   birdie: "Birdie",
   eagle: "Eagle",
   greenie: "Greenie",
-  poley: "Poley",
-  pinnie: "Pinnie",
   sandy: "Sandy",
-  barkie: "Barkie",
   chip_in: "Chip-in",
+  poley: "Poley",
+  pinny: "Pinny",
+  barkie: "Barkie",
   net_birdie: "Net birdie",
   custom: "Other"
 };
+
+/**
+ * Human-readable description for the category — shown as a hint
+ * under the chip in the entry UI. Junk rules vary by group, so the
+ * descriptions hedge ("varies by group") where appropriate.
+ */
+const CATEGORY_DESCRIPTIONS: Record<JunkCategory, string> = {
+  birdie: "1 under par on the hole",
+  eagle: "2 under par",
+  greenie: "Closest to the pin on a par 3 — must be on the green in regulation",
+  sandy: "Par or better when one of your strokes was from a greenside bunker",
+  chip_in: "Hole out from off the green",
+  poley: "Make a putt from off the green (rules vary by group)",
+  pinny: "Approach shot hits the flagstick (some groups call this a pin-rattler)",
+  barkie: "Par or better after hitting a tree",
+  net_birdie: "Birdie counting handicap strokes received on the hole",
+  custom: "Group-defined side bet"
+};
+
+export function categoryDescription(c: JunkCategory): string {
+  return CATEGORY_DESCRIPTIONS[c] ?? "";
+}
 
 /**
  * Display label for a junk item. Uses the built-in category label

@@ -446,11 +446,25 @@ describe("display helpers", () => {
 // =============================================================
 
 describe("DEFAULT_JUNK_CONFIG", () => {
-  it("matches the casual '$2 escalating, per-round' default Patrick described", () => {
+  it("matches Patrick's '$2 escalating, per-round' default", () => {
     expect(DEFAULT_JUNK_CONFIG.mode).toBe("escalating");
     expect(DEFAULT_JUNK_CONFIG.base_amount_cents).toBe(200);
     expect(DEFAULT_JUNK_CONFIG.escalation_step_cents).toBe(200);
     expect(DEFAULT_JUNK_CONFIG.escalation_scope).toBe("per_round");
-    expect(DEFAULT_JUNK_CONFIG.active_categories).toContain("birdie");
+  });
+  it("ships with the 7 categories Patrick listed, in display order", () => {
+    expect(DEFAULT_JUNK_CONFIG.active_categories).toEqual([
+      "birdie",
+      "eagle",
+      "greenie",
+      "sandy",
+      "chip_in",
+      "poley",
+      "pinny"
+    ]);
+  });
+  it("barkie + net_birdie stay in the type but are not active by default", () => {
+    expect(DEFAULT_JUNK_CONFIG.active_categories).not.toContain("barkie");
+    expect(DEFAULT_JUNK_CONFIG.active_categories).not.toContain("net_birdie");
   });
 });

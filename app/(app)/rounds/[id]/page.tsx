@@ -7,6 +7,7 @@ import { ClaimBanner } from "./claim-banner";
 import { UnfinalizeButton } from "./unfinalize-button";
 import { MarkPendingButton, ResumeRoundButton } from "./pending-controls";
 import { PressControls } from "./press-controls";
+import { JunkControls } from "./junk-controls";
 import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
@@ -90,6 +91,34 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     .from("round_games")
     .select("id, game_type, name, stake_cents, allowance_pct, config")
     .eq("round_id", id);
+
+  // Junk side-bet config + items. Both queries are wrapped in try/catch
+  // so a pre-0041 environment doesn't crash the round page.
+  let junkConfig: any = null;
+  let junkItems: any[] = [];
+  try {
+    const { data: cfgRow } = await sb
+      .from("round_junk_config")
+      .select(
+        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope"
+      )
+      .eq("round_id", id)
+      .maybeSingle();
+    junkConfig = cfgRow;
+    if (cfgRow) {
+      const { data: jItems } = await sb
+        .from("round_junk_items")
+        .select(
+          "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note"
+        )
+        .eq("round_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true });
+      junkItems = jItems ?? [];
+    }
+  } catch {
+    /* tables missing — pre-0041 env */
+  }
 
   // Manual presses — pending + accepted, hide expired/declined/withdrawn
   // from the round-page (they're still in the audit log).
@@ -244,6 +273,39 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       {claimCandidates.length > 0 && (
         <ClaimBanner roundId={id} candidates={claimCandidates} />
       )}
+
+      {/* Junk side-bet panel — entry + live totals + commissioner edits.
+          Only renders when junk config exists for this round AND the
+          round is editable. Tap-the-extras UX per Patrick's principle. */}
+      {junkConfig &&
+        (round.status === "live" || round.status === "pending_finalization") &&
+        (rps?.length ?? 0) > 0 && (
+          <JunkControls
+            roundId={id}
+            totalHoles={round.holes ?? 18}
+            defaultHole={(() => {
+              // Best-guess current hole: max hole_number with any score + 1.
+              const maxScored = (scores ?? [])
+                .filter((s: any) => s.gross != null)
+                .reduce(
+                  (max: number, s: any) =>
+                    Math.max(max, Number(s.hole_number) || 0),
+                  0
+                );
+              return Math.min(
+                Math.max(1, maxScored + 1),
+                round.holes ?? 18
+              );
+            })()}
+            rps={(rps ?? []).map((r: any) => ({
+              id: r.id,
+              display_name: r.players?.display_name ?? "Player"
+            }))}
+            config={junkConfig as any}
+            initialItems={junkItems as any}
+            isCommissioner={isCommissioner}
+          />
+        )}
 
       {/* Manual press controls — open / accept / decline / withdraw +
           live display of accepted presses. Only renders for live or

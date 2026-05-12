@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { minimumFlow, settleGame } from "@/lib/games";
 import { settleManualPress, type ManualPress, type HoleResult } from "@/lib/games/press";
+import {
+  settleJunk,
+  categoryLabel,
+  type JunkCategory,
+  type JunkItem
+} from "@/lib/games/junk";
 import { buildPlayerSheet } from "@/lib/scoring";
 import { generateRecap } from "@/lib/recap";
 import { SmackTalk } from "@/components/SmackTalk";
@@ -16,6 +22,17 @@ type ManualPressRow = ManualPress & {
   game_id: string | null;
 };
 
+type JunkItemRow = {
+  id: string;
+  round_player_id: string;
+  hole_number: number;
+  category: JunkCategory;
+  custom_label: string | null;
+  amount_cents: number;
+  created_at: string;
+  note: string | null;
+};
+
 export function FinalizeView({
   roundId,
   rps,
@@ -23,6 +40,7 @@ export function FinalizeView({
   games,
   manualPresses = [],
   pendingPressCount = 0,
+  junkItems = [],
   totalHoles = 18,
   startingHole = 1
 }: {
@@ -34,6 +52,9 @@ export function FinalizeView({
   /** Pending presses still inside the 24h accept window. Surfaced as a
    *  warning banner — finalize would silently drop them. */
   pendingPressCount?: number;
+  /** Junk side-bet items, non-deleted only. Settled via the pure-
+   *  function engine and composed into the per-player totals. */
+  junkItems?: JunkItemRow[];
   totalHoles?: 9 | 18;
   startingHole?: number;
 }) {
@@ -164,6 +185,54 @@ export function FinalizeView({
       game: settled.label,
       perPlayer: m
     });
+  }
+
+  // Junk side-bet settlement — additive on top of game settlements.
+  // Pure-function engine in lib/games/junk.ts. The frozen amount on
+  // each item is what settles; this code never re-prices history.
+  if (junkItems.length > 0) {
+    const junkAsEngine: JunkItem[] = junkItems.map((i) => ({
+      id: i.id,
+      player_id: i.round_player_id,
+      hole_number: i.hole_number,
+      category: i.category,
+      custom_label: i.custom_label ?? undefined,
+      amount_cents: i.amount_cents,
+      created_at: i.created_at,
+      note: i.note ?? undefined
+    }));
+    const junkResult = settleJunk(
+      junkAsEngine,
+      players.map((p) => ({ id: p.id }))
+    );
+    const m = new Map<string, number>();
+    for (const [pid, v] of junkResult.deltaByPlayer) {
+      if (v === 0) continue;
+      totals.set(pid, (totals.get(pid) ?? 0) + v);
+      m.set(pid, v);
+    }
+    if (m.size > 0) {
+      // Compose a one-line summary of category counts so the
+      // settlement breakdown isn't just "Junk · $X" — it tells the
+      // commissioner WHICH junk items moved the money.
+      const counts = new Map<string, number>();
+      for (const it of junkAsEngine) {
+        const key =
+          it.category === "custom" && it.custom_label
+            ? it.custom_label
+            : categoryLabel(it.category);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const countSummary = [...counts.entries()]
+        .map(([k, v]) => `${v} ${k.toLowerCase()}${v === 1 ? "" : "s"}`)
+        .join(", ");
+      lines.push({
+        game: `Junk · ${junkItems.length} item${
+          junkItems.length === 1 ? "" : "s"
+        } (${countSummary})`,
+        perPlayer: m
+      });
+    }
   }
 
   const flows = minimumFlow(totals);

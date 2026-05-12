@@ -57,6 +57,23 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     /* table missing — pre-0035 env */
   }
 
+  // Junk side-bet items — settled alongside other games. Pre-0041
+  // environments don't have the tables; missing = no junk.
+  let junkItems: any[] = [];
+  try {
+    const { data } = await sb
+      .from("round_junk_items")
+      .select(
+        "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, note"
+      )
+      .eq("round_id", id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+    junkItems = data ?? [];
+  } catch {
+    /* table missing — pre-0041 env */
+  }
+
   return (
     <div className="space-y-3">
       <RoundBreadcrumb
@@ -73,6 +90,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
         games={games ?? []}
         manualPresses={manualPresses}
         pendingPressCount={pendingPressCount}
+        junkItems={junkItems}
         totalHoles={(round.holes as 9 | 18) ?? 18}
         startingHole={round.starting_hole ?? 1}
       />

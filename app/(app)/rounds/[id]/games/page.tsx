@@ -85,6 +85,22 @@ export default async function RoundGamesPage({
     .in("round_player_id", safeRpIds)
     .not("gross", "is", null);
 
+  // Junk config — surface "is this round opted in?" to the editor.
+  // Wrapped in try/catch so pre-0041 deployments still load the page.
+  let junkConfig: any = null;
+  try {
+    const { data } = await sb
+      .from("round_junk_config")
+      .select(
+        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope, custom_categories"
+      )
+      .eq("round_id", id)
+      .maybeSingle();
+    junkConfig = data ?? null;
+  } catch {
+    /* table missing — pre-0041 env */
+  }
+
   return (
     <div className="space-y-5 max-w-3xl">
       <RoundBreadcrumb
@@ -120,6 +136,7 @@ export default async function RoundGamesPage({
             id: r.id,
             display_name: r.players?.display_name ?? "Player"
           }))}
+          initialJunkConfig={junkConfig as any}
           hasScores={(scoreCount ?? 0) > 0}
         />
       )}
