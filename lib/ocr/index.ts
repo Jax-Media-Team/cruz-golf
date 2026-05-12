@@ -32,6 +32,21 @@
  */
 import { retry } from "../retry";
 
+/**
+ * Confidence level the model reports for a single transcribed cell.
+ *   - "high" — clearly legible digit, no plausible alternative
+ *   - "low"  — best guess, the digit could be something else
+ *   - null   — paired with `scores[i] === null` (empty / smudged
+ *              beyond recognition; not transcribed)
+ *
+ * The application uses this to:
+ *   - auto-fill HIGH cells into the editable grid
+ *   - mark LOW cells in the grid with a dashed amber border + funnel
+ *     them into a "Review uncertain cells" panel
+ *   - leave NULL cells blank
+ */
+export type CellConfidence = "high" | "low" | null;
+
 export interface ScorecardOCR {
   parse(input: {
     dataUrl: string;
@@ -50,7 +65,15 @@ export interface ScorecardOCR {
      */
     model?: string;
   }): Promise<{
-    players: Array<{ name: string; scores: Array<number | null> }>;
+    players: Array<{
+      name: string;
+      scores: Array<number | null>;
+      /** Parallel to `scores`. Length === scores.length. `null` for
+       *  any cell where the score is null. Older deployments may not
+       *  populate this — consumers should default to "low" when a
+       *  score is non-null but confidence is missing. */
+      confidences?: Array<CellConfidence>;
+    }>;
     /** Diagnostic payload returned to the client so the upload UI can
      *  surface "where did scores get lost?" when the parsed grid comes
      *  back empty. Not persisted server-side. */
@@ -79,98 +102,131 @@ export interface ScorecardOCR {
 }
 
 const SYSTEM_PROMPT = `You are reading a photograph of a HANDWRITTEN paper golf scorecard.
-Your ONLY job is to transcribe what you can see in the image. The
-application handles fuzzy name matching itself — you must NOT invent
-names from any external context. Read the card.
+Your ONLY job is to transcribe what is actually visible in the image,
+cell by cell, AND honestly report your confidence for each cell. The
+application uses your confidence to decide what to auto-fill vs. what
+to flag for review — overconfidence directly causes the user to ship
+wrong scores.
 
-Return ONLY JSON with this shape (no prose, no markdown fences):
-{ "players": [ { "name": "<exact literal text from the card>", "scores": [n1, n2, ..., n18] } ] }
+RESPONSE SHAPE (return ONLY JSON, no prose, no fences):
 
-CRITICAL — DO NOT HALLUCINATE:
-- If the card has pencil writing you cannot read for a row's leftmost
-  cell, use "Row 1", "Row 2", etc. NEVER invent a name.
-- Likewise, never invent scores. Use null only for cells that are
-  genuinely blank or smudged beyond legibility.
-- If the entire card is unreadable, return an empty players array.
+{
+  "players": [
+    {
+      "name": "<exact literal text from the card>",
+      "scores":            [4, 5, null, 4, ...],
+      "score_confidences": ["high","low",null,"high", ...]
+    }
+  ]
+}
+
+The "scores" and "score_confidences" arrays MUST be the same length
+(equal to the number of holes — 9 or 18). Element-wise pairing:
+  - scores[i] is a digit OR null
+  - score_confidences[i] is "high", "low", or null
+  - INVARIANT: scores[i] === null  ⇔  score_confidences[i] === null
+  - "high" means the digit is unambiguously legible (you can see it
+    crisply, no plausible alternative reading)
+  - "low" means you have a best guess but the cell is sloppy / partly
+    smudged / ambiguous between two digits
+
+THE FAILURE MODES — DO NOT do any of these:
+
+1. **Do not pattern-fill.** A row of [4,4,4,4,4,4,4,4,4,...] or
+   [5,5,5,5,5,5,...] is almost always you giving up and outputting
+   "what a golf score row probably looks like" instead of reading
+   pixels. Each cell is independent. Read each one.
+
+2. **Do not normalize.** Sloppy handwriting often looks like a 4 or
+   5 from a distance even when it's actually a 3 or 6. Look at each
+   digit individually. Do NOT default to par-like values.
+
+3. **Do not read non-score rows.** These printed rows are NEVER
+   hole scores:
+     - "Par"
+     - "Men's HCP", "Ladies' HCP", "HCP", "SI" (stroke index)
+     - "Yardage"
+     - Tee-color rows printed at the top of the card: "Black",
+       "Gold", "Blue", "White", "Green", "Silver", "Jade",
+       "Cranberry", "Red", and any combo tees like
+       "Black/Gold", "Silver/Jade" — these contain printed YARDAGES
+       (e.g. "519, 383, 164, 413..."), NOT scores.
+     - If you see numbers like 200-600 lined up across a row,
+       that's a YARDAGE row. Skip it. Hole scores are almost always
+       single digits (2-9).
+     - "+/−" or "+/-" — this is a running net-of-par counter, not
+       hole scores.
+
+4. **Do not read totals/subtotals as hole scores.**
+   - "OUT", "IN", "TOT", "Total", "Front", "Back" — summary columns,
+     NOT per-hole. Their values are typically 30-50 (front/back) or
+     60-100 (total). Skip them.
+   - A handwritten "39" / "40" / "76" / "80" / etc. in those columns
+     IS a total. Skip.
+   - Any two-digit number (10+) in what looks like a per-hole cell
+     is almost always a misread — either a total bleeding into the
+     cell visually, or the model misreading two adjacent digits as
+     one number. Return null + confidence:null, NOT the two-digit
+     value.
+
+5. **Do not confuse handicap markers with scores.**
+   - "(5)", "(4)", "(2)", "(1)" next to a player's name is their
+     handicap. Include the parens in the "name" field.
+   - A standalone decimal like "12.3" is a handicap index. Skip.
+
+6. **Do not over-claim confidence.** Most handwritten scorecards
+   have AT LEAST a few cells where the pencil mark is genuinely
+   ambiguous. If every cell in a row is "high", you're probably
+   wrong. Be honest. The application can salvage low-confidence
+   correctly; it CANNOT recover from a confident wrong answer.
+
+7. **Do not overfill blanks.** If a cell is genuinely empty (no
+   pencil mark at all), return null + null. Do not "fill it in"
+   with a likely value just because the rest of the row has
+   numbers.
 
 ROW IDENTIFICATION:
-- Return one entry per HANDWRITTEN SCORE ROW. If you see 4 rows of
-  pencil scores, return 4 entries — even if some are partial.
-- For "name", return the literal handwritten text in that row's
-  leftmost cell. Examples of what real cards have written:
-  "Cruz", "Mitch", "Clint", "Wilson", "P. Cruz", "Cruz, P",
-  "Patrick", "PC", "Cruz (5)" (the (5) is the player's handicap,
-  include it verbatim). Do NOT reformat or normalize.
+- Return one entry per HANDWRITTEN SCORE ROW.
+- For "name", return the literal handwritten text in the row's
+  leftmost cell. Examples from real cards: "Cruz", "Mitch", "Clint",
+  "Wilson", "P. Cruz", "Cruz, P", "PC", "Cruz (5)". Do NOT
+  reformat. If unreadable, use "Row 1", "Row 2", ...
+- Do NOT invent names. Names like "Patrick Cruz" / "Jonathan Wilson"
+  (full first + last) are almost never what's written — golfers
+  usually scribble a first name or last name only.
 
-WHAT IS A SCORE ROW vs WHAT TO IGNORE:
-- Score rows are HANDWRITTEN in pencil/pen, in the area below the
-  printed hole-number column headers (1, 2, ..., 18).
-- IGNORE these printed rows: "Par", "Men's HCP", "HCP", "SI",
-  "Yardage", any tee row labeled "Black"/"Gold"/"Silver"/"Jade"/
-  "Cranberry"/"Blue"/"White" (these contain printed yardages, not
-  scores), "Ladies' HCP".
-- IGNORE the "OUT", "IN", "TOT", "Total", "Front", "Back" columns —
-  those are summary cells, not per-hole scores. Some cards have
-  handwritten totals there (e.g. "39", "41", "80") — skip them.
-- IGNORE a column labeled "+/−" — that's a running par-relative
-  count, not a hole score.
-
-NUMBERS NEAR NAMES — these are NOT hole scores:
-- A "(5)", "(4)", "(2)", "(1)" immediately to the right of the name is
-  the player's HANDICAP. Include it in the "name" text but DO NOT
-  treat the digit as the hole-1 score.
-- A standalone "12.3" near the name is a handicap index. Skip it.
-- Hole scores live UNDER the hole-number column headers (1..18). Use
-  those column headers to align cells. If a number is in a column
-  WITHOUT a hole-number header above it, it's not a score.
-
-GROSS-vs-NET NOTATIONS — always return the GROSS:
+GROSS-vs-NET NOTATIONS — always return the GROSS (left number):
 - "5/4" or "5 / 4" — gross 5, net 4. Return 5.
-- "5\\4" — gross 5. Return 5.
-- "4/3", "5/3", "6/4" — return the LEFT number.
+- "4/3", "5/3", "6/4" — return the LEFT number with HIGH confidence
+  (the slash is unambiguous).
 - "5(4)" or "5 (4)" — gross 5, net in parens. Return 5.
-- "G 5 / N 4" — return 5.
-- "5 net 4" — return 5.
-- A bare number with no annotation IS the gross. Return as-is.
+- A bare number with no annotation IS the gross.
 
 SHAPE ANNOTATIONS — ignore the shape, read the digit:
-- Circle around a number (birdie marker) → return the number inside.
-- Two concentric circles (eagle) → return the number, not "2".
-- Square / rectangle around a number (bogey or worse) → return the
-  number inside.
+- Circle around a number (birdie marker) → return the number, "high"
+  confidence (the circle isolates the digit visually).
+- Two concentric circles (eagle) → return the number inside.
+- Square / rectangle around a number → return the number inside.
 - Slash through a number → read the digit, ignore the slash.
-- "X" through a number → likely a "scratched-out correction"; read
-  the FINAL legible number that replaced it. If a number has an "X"
-  next to it like "5X", treat the "X" as a separator/annotation and
-  return 5.
 
-LAYOUT — handle both halves of an 18-hole card:
-- Holes 1-9 usually appear in one half; 10-18 in the other half. If
-  the photo shows both halves, return scores in order 1, 2, ..., 18.
-- Par row, HCP/SI row, Yardage rows are printed (not handwritten) —
-  IGNORE them entirely.
+LAYOUT:
+- 18-hole cards usually split holes 1-9 (front) and 10-18 (back)
+  across the card. Return scores in order 1, 2, ..., 18 even if
+  visually they're in two halves.
+- Use the printed hole-number column headers (1, 2, ..., 9 / 10,
+  11, ..., 18) to anchor your column alignment. If a digit isn't
+  clearly UNDER a hole-number header, it's probably not a hole
+  score — return null + null.
 
-CONFIDENCE & UNCERTAINTY — this is the most-broken part of past runs:
-- The "scores" array length MUST equal the number of holes.
-- Common golf scores are 2-9. If your best read is "11" or "0", it's
-  almost certainly wrong — return null for that cell.
-- If a digit is hand-written but legible (even sloppily), READ IT.
-  Returning your best-effort number is much more useful than null —
-  the user fixes typos themselves in the review screen below.
-- Returning [null, null, ...] for an entire row because you're
-  "unsure" is the WRONG behavior. Do the visual work. If the
-  handwriting is at all readable, transcribe.
-- It is far better to return a row with 12 correct numbers and 6
-  wrong ones than 0 numbers because of uncertainty. The user reviews.
-
-FINAL CHECKS BEFORE RETURNING:
-- Did you actually look at the pixels, or did you fall back to a
-  template? If you returned generic English names for the rows,
-  STOP — the card had handwriting. Re-read the leftmost cell of
-  each row.
-- Did every row return all-null scores? If so, you didn't read the
-  card. Try again. Real golf scorecards have numbers visible to a
-  human; you can see them too.
+FINAL SELF-CHECK BEFORE RETURNING:
+- Look at your scores arrays. Did you return a flat row of 4s or
+  5s? If yes, you pattern-filled. Re-read each cell.
+- Are there any cells where you guessed but said "high"? Downgrade
+  those to "low".
+- Did you accidentally read a yardage row (numbers > 9 lined up)
+  as scores? Drop those.
+- Are your invariants right: scores[i]===null iff
+  score_confidences[i]===null, both arrays same length?
 
 Return ONLY the JSON object. No code fences, no prose.`;
 
@@ -237,22 +293,61 @@ async function callOpenAI(
   );
 }
 
-function parseModelResponse(raw: any, holes: 9 | 18) {
+/**
+ * Exported for unit tests in `tests/ocr-confidence.test.ts`. Not part
+ * of the public API surface — consumers should call `ocr.parse()`.
+ */
+export function parseModelResponse(raw: any, holes: 9 | 18) {
   let parsed: any = null;
   try {
     parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   } catch {
-    return { parsed: null, rows: [] as Array<{ name: string; scores: Array<number | null> }> };
+    return {
+      parsed: null,
+      rows: [] as Array<{
+        name: string;
+        scores: Array<number | null>;
+        confidences: Array<CellConfidence>;
+      }>
+    };
   }
-  const rows = (parsed?.players ?? []).map((p: any) => ({
-    name: String(p?.name ?? ""),
-    scores: Array.from({ length: holes }, (_, i) => {
-      const v = p?.scores?.[i];
-      return typeof v === "number" && Number.isFinite(v)
-        ? Math.round(v)
-        : null;
-    })
-  }));
+  const rows = (parsed?.players ?? []).map((p: any) => {
+    const rawScores: any[] = Array.isArray(p?.scores) ? p.scores : [];
+    const rawConfidences: any[] = Array.isArray(p?.score_confidences)
+      ? p.score_confidences
+      : [];
+    const scores: Array<number | null> = Array.from(
+      { length: holes },
+      (_, i) => {
+        const v = rawScores[i];
+        if (typeof v !== "number" || !Number.isFinite(v)) return null;
+        // Sanity: clamp obvious junk. A handwritten score of 11+ is
+        // almost certainly a misread of a two-digit total bleeding
+        // in, or two adjacent digits glommed together. Drop them as
+        // a defense-in-depth on top of the prompt-side guidance.
+        const rounded = Math.round(v);
+        if (rounded < 1 || rounded > 12) return null;
+        return rounded;
+      }
+    );
+    const confidences: Array<CellConfidence> = Array.from(
+      { length: holes },
+      (_, i) => {
+        if (scores[i] === null) return null;
+        const c = rawConfidences[i];
+        // Default to "low" when the model returned a score but
+        // omitted confidence. Conservative — UI surfaces these for
+        // review rather than auto-filling.
+        if (c === "high") return "high";
+        return "low";
+      }
+    );
+    return {
+      name: String(p?.name ?? ""),
+      scores,
+      confidences
+    };
+  });
   return { parsed, rows };
 }
 

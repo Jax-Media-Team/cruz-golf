@@ -58,7 +58,36 @@ type Card = {
   preprocess?: PrepareImageResult;
 };
 
-type CellSource = "db" | "ocr" | "manual" | null;
+/**
+ * Per-cell provenance + confidence + suspicious-vs-par status.
+ *
+ *   - "db"             — already in the DB before upload (blue tint)
+ *   - "ocr_high"       — OCR-filled, model reported high confidence
+ *                        (full-opacity amber border)
+ *   - "ocr_low"        — OCR-filled, model reported low confidence
+ *                        (dashed amber border, surfaced in "Review
+ *                        uncertain" bulk action)
+ *   - "ocr_suspicious" — OCR-filled with a value wildly outside the
+ *                        plausible range for the hole (par ± window).
+ *                        Red ring; "Review suspicious" bulk action
+ *                        funnels these too.
+ *   - "manual"         — user typed (no marker)
+ *   - null             — empty cell
+ *
+ * Order of operations on a per-cell OCR merge:
+ *   1. Cell-level confidence comes from the model (high/low/null).
+ *   2. The merge step applies par-based validation. If the score is
+ *      wildly off par (> par + 5 or < 1), the cell is upgraded to
+ *      "ocr_suspicious" regardless of model confidence.
+ *   3. The grid renders per the final source label.
+ */
+type CellSource =
+  | "db"
+  | "ocr_high"
+  | "ocr_low"
+  | "ocr_suspicious"
+  | "manual"
+  | null;
 
 type GridRow = {
   round_player_id: string;
@@ -70,6 +99,15 @@ type GridRow = {
   /** Where this row's scores came from (filenames). Empty = manual. */
   source_filenames: string[];
 };
+
+/**
+ * Decide whether an OCR value is "suspicious" given the hole's par.
+ * A score outside [1, par + 5] is almost certainly a misread or a
+ * disaster the user will want to verify. Returns true when suspicious.
+ */
+function isSuspiciousVsPar(score: number, par: number): boolean {
+  return score < 1 || score > par + 5;
+}
 
 /**
  * Multi-scorecard upload + review.
@@ -86,11 +124,16 @@ type GridRow = {
 export function UploadView({
   roundId,
   holes,
-  players
+  players,
+  holePars
 }: {
   roundId: string;
   holes: 9 | 18;
   players: Array<{ round_player_id: string; name: string }>;
+  /** Par per hole, length === holes. Used for par-suspicious cell
+   *  validation. Falls back to par 4 for missing entries (handled
+   *  in the parent route). */
+  holePars: number[];
 }) {
   const router = useRouter();
   const sb = supabaseBrowser();
@@ -116,6 +159,9 @@ export function UploadView({
     id: string;
     ocr_name: string;
     scores: Array<number | null>;
+    /** Parallel to scores. "high" / "low" / null. Carried so when the
+     *  user maps the row, the merge writes the right CellSource. */
+    confidences: Array<"high" | "low" | null>;
     /** Suggested round_player_id from bestMatch (may be null). */
     suggested_rp_id: string | null;
     suggested_score: number; // bestMatch score, 0-100
@@ -188,6 +234,7 @@ export function UploadView({
       const rows = (j.players ?? []) as Array<{
         name: string;
         scores: Array<number | null>;
+        confidences?: Array<"high" | "low" | null>;
       }>;
       const score_count = rows.reduce(
         (sum, p) => sum + p.scores.filter((s) => s != null).length,
@@ -231,14 +278,27 @@ export function UploadView({
           const matchedIdx = matchAssignments.get(row.round_player_id);
           if (matchedIdx == null) return row;
           const match = rows[matchedIdx];
+          const matchConfidences = match.confidences ?? [];
           const nextScores = row.scores.map((existing, idx) => {
             const ocrVal = match.scores[idx] ?? null;
             return ocrVal != null ? ocrVal : existing;
           });
           const nextSources = row.sources.map((existingSrc, idx) => {
             const ocrVal = match.scores[idx] ?? null;
-            if (ocrVal != null) return "ocr" as CellSource;
-            return existingSrc;
+            if (ocrVal == null) return existingSrc;
+            // Classify the new OCR cell using BOTH the model's
+            // self-reported confidence AND the par-suspicion check.
+            // Par-suspicion overrides confidence — a "high"-confidence
+            // 11 on a par 3 should still be funneled into the Review
+            // bucket so the user verifies it.
+            const par = holePars[idx] ?? 4;
+            if (isSuspiciousVsPar(ocrVal, par)) {
+              return "ocr_suspicious" as CellSource;
+            }
+            const c = matchConfidences[idx];
+            return c === "high"
+              ? ("ocr_high" as CellSource)
+              : ("ocr_low" as CellSource);
           });
           const sources = row.source_filenames.includes(filename)
             ? row.source_filenames
@@ -304,6 +364,9 @@ export function UploadView({
           id: `${cardId}-${idx}`,
           ocr_name: row.name || `Row ${idx + 1}`,
           scores: row.scores,
+          confidences:
+            row.confidences ??
+            row.scores.map((s) => (s == null ? null : "low")),
           suggested_rp_id: best?.round_player_id ?? null,
           suggested_score: best?.score ?? 0,
           filename
@@ -785,15 +848,142 @@ export function UploadView({
         </p>
       </div>
 
-      {grid.some((r) => r.sources.some((s) => s === "ocr")) && (
-        <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85 flex items-center gap-3 flex-wrap">
-          <span className="inline-block w-3 h-3 rounded-sm ring-1 ring-amber-400/60 bg-amber-500/10 shrink-0" />
-          <span>
-            Amber cells came from the scorecard photo. Tap any to review or
-            fix. Cells with a dashed outline are still blank.
-          </span>
-        </div>
-      )}
+      {/* OCR review summary + bulk actions. Counts the three OCR
+          source states and surfaces bulk-clear / accept-high-only /
+          review-suspicious controls. Patrick's principle: "I would
+          rather see fewer cells filled, highlighted uncertain cells,
+          and confidence warnings than a full grid of wrong scores."
+          The bulk actions make it cheap to walk the grid back to a
+          safer state without losing already-validated cells. */}
+      {(() => {
+        let nHigh = 0;
+        let nLow = 0;
+        let nSuspicious = 0;
+        for (const r of grid) {
+          for (const src of r.sources) {
+            if (src === "ocr_high") nHigh += 1;
+            else if (src === "ocr_low") nLow += 1;
+            else if (src === "ocr_suspicious") nSuspicious += 1;
+          }
+        }
+        const anyOcr = nHigh + nLow + nSuspicious > 0;
+        if (!anyOcr) return null;
+        return (
+          <div className="card p-3 border border-amber-400/30 bg-amber-500/5 text-xs text-cream-100/85 space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-3 h-3 rounded-sm ring-1 ring-amber-400/60 bg-amber-500/15 shrink-0" />
+                <span className="tabular-nums">{nHigh} high-confidence</span>
+              </span>
+              {nLow > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm border border-dashed border-amber-400/70 bg-amber-500/5 shrink-0" />
+                  <span className="tabular-nums">{nLow} uncertain</span>
+                </span>
+              )}
+              {nSuspicious > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm ring-2 ring-red-400/70 bg-red-500/10 shrink-0" />
+                  <span className="tabular-nums text-red-200">
+                    {nSuspicious} suspicious vs par
+                  </span>
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-ghost text-[11px] text-cream-100/85"
+                disabled={busy}
+                onClick={() => {
+                  // Clear every OCR-sourced cell. Existing DB +
+                  // manual edits stay put.
+                  setGrid((prev) =>
+                    prev.map((row) => ({
+                      ...row,
+                      scores: row.scores.map((s, i) => {
+                        const src = row.sources[i];
+                        return src === "ocr_high" ||
+                          src === "ocr_low" ||
+                          src === "ocr_suspicious"
+                          ? null
+                          : s;
+                      }),
+                      sources: row.sources.map((src) =>
+                        src === "ocr_high" ||
+                        src === "ocr_low" ||
+                        src === "ocr_suspicious"
+                          ? null
+                          : src
+                      )
+                    }))
+                  );
+                }}
+                title="Wipe every cell the OCR filled in. Manual edits + existing scores stay."
+              >
+                Clear OCR values
+              </button>
+              {(nLow > 0 || nSuspicious > 0) && (
+                <button
+                  type="button"
+                  className="btn-ghost text-[11px] text-cream-100/85"
+                  disabled={busy}
+                  onClick={() => {
+                    // Keep only the high-confidence cells. The
+                    // low + suspicious ones get wiped — the user
+                    // can re-enter them by hand or retry the OCR.
+                    setGrid((prev) =>
+                      prev.map((row) => ({
+                        ...row,
+                        scores: row.scores.map((s, i) => {
+                          const src = row.sources[i];
+                          return src === "ocr_low" || src === "ocr_suspicious"
+                            ? null
+                            : s;
+                        }),
+                        sources: row.sources.map((src) =>
+                          src === "ocr_low" || src === "ocr_suspicious"
+                            ? null
+                            : src
+                        )
+                      }))
+                    );
+                  }}
+                  title="Drop the uncertain + suspicious cells, keep the high-confidence reads."
+                >
+                  Accept high-confidence only
+                </button>
+              )}
+              {nSuspicious > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost text-[11px] text-red-200"
+                  disabled={busy}
+                  onClick={() => {
+                    // Scroll the first suspicious cell into view to
+                    // start the review. Cells are tagged with
+                    // data-suspicious for this.
+                    const first = document.querySelector(
+                      "[data-suspicious=\"true\"]"
+                    );
+                    first?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    (first as HTMLElement | null)?.focus?.();
+                  }}
+                  title="Jump to the first cell flagged as way off par."
+                >
+                  Review suspicious cells →
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-cream-100/55 leading-snug">
+              Solid amber = OCR read clearly. Dashed amber = uncertain
+              guess — verify. Red ring = score is way off par for the
+              hole — almost certainly wrong. Cells with a dashed
+              outline are still blank.
+            </p>
+          </div>
+        );
+      })()}
 
       {unmatched.length > 0 && (
         <div className="card p-4 border border-amber-400/40 bg-amber-500/5 space-y-3">
@@ -834,8 +1024,15 @@ export function UploadView({
                       const nextSources = row.sources.map(
                         (existingSrc, idx) => {
                           const ocrVal = match.scores[idx] ?? null;
-                          if (ocrVal != null) return "ocr" as CellSource;
-                          return existingSrc;
+                          if (ocrVal == null) return existingSrc;
+                          const par = holePars[idx] ?? 4;
+                          if (isSuspiciousVsPar(ocrVal, par)) {
+                            return "ocr_suspicious" as CellSource;
+                          }
+                          const c = match.confidences[idx];
+                          return c === "high"
+                            ? ("ocr_high" as CellSource)
+                            : ("ocr_low" as CellSource);
                         }
                       );
                       const sources = row.source_filenames.includes(match.filename)
@@ -930,8 +1127,15 @@ export function UploadView({
                               const nextSources = row.sources.map(
                                 (existingSrc, idx) => {
                                   const ocrVal = u.scores[idx] ?? null;
-                                  if (ocrVal != null) return "ocr" as CellSource;
-                                  return existingSrc;
+                                  if (ocrVal == null) return existingSrc;
+                                  const par = holePars[idx] ?? 4;
+                                  if (isSuspiciousVsPar(ocrVal, par)) {
+                                    return "ocr_suspicious" as CellSource;
+                                  }
+                                  const c = u.confidences[idx];
+                                  return c === "high"
+                                    ? ("ocr_high" as CellSource)
+                                    : ("ocr_low" as CellSource);
                                 }
                               );
                               const sources = row.source_filenames.includes(u.filename)
@@ -1043,18 +1247,39 @@ export function UploadView({
                     )}
                   </td>
                   {row.scores.map((v, i) => {
-                    // Visual provenance: amber outline on OCR-extracted
-                    // cells so the user knows what to review. db cells
-                    // (loaded from server) are default. manual cells
-                    // (user typed) are default. Empty cells get a faint
-                    // dashed border so missing cells are scannable.
+                    // Visual provenance — three OCR confidence tiers:
+                    //   high       → solid amber (trust + verify)
+                    //   low        → dashed amber (uncertain, review)
+                    //   suspicious → red ring (way off par; almost
+                    //                certainly wrong, fix this)
+                    // db = blue tint (server-side saved). manual = no
+                    // marker. Empty = dashed gray outline.
                     const src = row.sources[i];
+                    const par = holePars[i] ?? 4;
                     const tone =
-                      src === "ocr"
+                      src === "ocr_suspicious"
+                        ? "ring-2 ring-red-400/70 bg-red-500/10"
+                        : src === "ocr_high"
                         ? "ring-1 ring-amber-400/60 bg-amber-500/10"
+                        : src === "ocr_low"
+                        ? "border border-dashed border-amber-400/70 bg-amber-500/5"
+                        : src === "db"
+                        ? "ring-1 ring-sky-400/40 bg-sky-500/5"
                         : v == null
                         ? "border border-dashed border-cream-100/15"
                         : "";
+                    const titleText =
+                      src === "ocr_suspicious"
+                        ? `OCR read ${v} — that's way off par ${par}. Likely wrong; verify.`
+                        : src === "ocr_high"
+                        ? "Read from scorecard photo (high confidence). Verify before saving."
+                        : src === "ocr_low"
+                        ? "Read from scorecard photo (uncertain). Verify before saving."
+                        : src === "db"
+                        ? "Saved on the server"
+                        : src === "manual"
+                        ? "Hand-entered"
+                        : "Blank — tap to fill";
                     return (
                       <td key={i} className="p-1">
                         <input
@@ -1062,15 +1287,8 @@ export function UploadView({
                           type="number"
                           inputMode="numeric"
                           value={v ?? ""}
-                          title={
-                            src === "ocr"
-                              ? "Read from scorecard photo — review before saving"
-                              : src === "db"
-                              ? "Saved on the server"
-                              : src === "manual"
-                              ? "Hand-entered"
-                              : "Blank — tap to fill"
-                          }
+                          title={titleText}
+                          data-suspicious={src === "ocr_suspicious" ? "true" : undefined}
                           onChange={(e) =>
                             setCell(
                               idx,
