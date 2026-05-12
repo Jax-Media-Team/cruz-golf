@@ -13,6 +13,11 @@ import {
 } from "@/lib/games/junk";
 import { buildPlayerSheet } from "@/lib/scoring";
 import { generateRecap } from "@/lib/recap";
+import {
+  cleanHandle,
+  venmoNoteForRound,
+  venmoPayUrl
+} from "@/lib/profile-format";
 import { SmackTalk } from "@/components/SmackTalk";
 import { ShareSheet } from "@/components/ShareSheet";
 import type { CourseHole, RoundGame, RoundPlayer, Score } from "@/lib/types";
@@ -312,50 +317,16 @@ export function FinalizeView({
   const flows = minimumFlow(totals);
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
   // Venmo handle per round_player_id — used to build the "Pay in
-  // Venmo" deep-link on each flow row. Cleaned at read time so an
-  // @-prefixed handle in the DB still produces a valid URL.
+  // Venmo helpers are imported from @/lib/profile-format so this
+  // editor surface and the persistent SettlementSummary card share
+  // the exact same regression-tested behavior.
   const venmoByPlayer = new Map<string, string>();
   for (const r of rps) {
-    const raw: string | null | undefined = r.players?.venmo_handle;
-    if (!raw) continue;
-    const cleaned = raw.replace(/^@/, "").trim();
+    const cleaned = cleanHandle(r.players?.venmo_handle);
     if (cleaned) venmoByPlayer.set(r.id, cleaned);
   }
   const fmt = (c: number) => "$" + (Math.abs(c) / 100).toFixed(2);
-
-  // Compose a short, human-readable note: "Cruz Golf · JGCC · May 12".
-  // Falls back to "Cruz Golf settlement" if course or date is missing.
-  const noteForVenmo = (() => {
-    const parts: string[] = ["Cruz Golf"];
-    if (courseName) parts.push(courseName);
-    if (roundDate) {
-      // roundDate is an ISO date string ("2026-05-12"). Render as
-      // "May 12" — locale-fixed so the note text is stable across
-      // device locales.
-      const d = new Date(roundDate + "T00:00:00");
-      if (!isNaN(d.getTime())) {
-        parts.push(
-          d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        );
-      }
-    }
-    return parts.join(" · ");
-  })();
-
-  /**
-   * Build a Venmo universal-link URL that pre-fills the pay sheet.
-   * On iOS Safari this hands off to the Venmo app via Universal Links;
-   * on desktop it opens venmo.com/{handle} in the browser. The browser
-   * URL still respects amount + note params for one-tap pay.
-   */
-  function venmoPayUrl(handle: string, dollars: number, note: string) {
-    const params = new URLSearchParams({
-      txn: "pay",
-      amount: dollars.toFixed(2),
-      note
-    });
-    return `https://venmo.com/${encodeURIComponent(handle)}?${params.toString()}`;
-  }
+  const noteForVenmo = venmoNoteForRound(courseName, roundDate);
 
   async function finalize() {
     setBusy(true);

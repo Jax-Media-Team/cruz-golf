@@ -127,6 +127,11 @@ export default async function RoundGamesPage({
             ? `${scoreCount} score${scoreCount === 1 ? "" : "s"} entered`
             : "no scores yet"}
         </h1>
+        <p className="text-xs text-cream-100/55 mt-1 leading-snug">
+          These are the games + stakes for this round — set up at
+          round creation and editable here while play is live. Same
+          shape as the picker on the New round form.
+        </p>
       </header>
 
       {isFinalized ? (

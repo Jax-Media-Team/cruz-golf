@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
  * Archive / restore button for an event. Commissioner-only.
@@ -42,7 +43,7 @@ export function EventArchiveButton({
     const { error } = await sb.rpc(rpc, { p_event_id: eventId });
     setBusy(false);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     router.refresh();

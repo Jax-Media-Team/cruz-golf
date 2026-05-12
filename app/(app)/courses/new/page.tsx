@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 const DEFAULT_PARS = [4, 4, 5, 3, 4, 4, 3, 4, 5, 4, 4, 5, 4, 3, 4, 4, 3, 5];
 const DEFAULT_SI = [7, 11, 3, 13, 5, 15, 9, 17, 1, 8, 12, 4, 14, 6, 16, 10, 18, 2];
@@ -31,7 +32,7 @@ export default function NewCoursePage() {
     const { data: course, error } = await sb.from("courses").insert({ group_id: groupId, name, city, state: stateName }).select("id").single();
     if (error || !course) {
       setBusy(false);
-      setErr(error?.message ?? "Could not save");
+      setErr(error ? friendlyAuthError(error) : "Could not save");
       return;
     }
     const { data: t, error: te } = await sb
@@ -41,7 +42,7 @@ export default function NewCoursePage() {
       .single();
     if (te || !t) {
       setBusy(false);
-      setErr(te?.message ?? "Could not save tee");
+      setErr(te ? friendlyAuthError(te) : "Could not save tee");
       return;
     }
     const holesInsert = pars.map((p, i) => ({ tee_id: t.id, hole_number: i + 1, par: p, stroke_index: sis[i] }));

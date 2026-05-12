@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
  * Facebook OAuth sign-in via Supabase. Mirrors GoogleAuthButton.
@@ -40,7 +41,10 @@ export function FacebookAuthButton({ next = "/dashboard" }: { next?: string }) {
     });
     if (error) {
       setBusy(false);
-      setErr(error.message);
+      // "Unsupported provider" surfaces when the Facebook provider
+      // isn't configured in the Supabase dashboard. friendlyAuthError
+      // surfaces that as-is; the message itself is plain English.
+      setErr(friendlyAuthError(error));
     }
   }
 

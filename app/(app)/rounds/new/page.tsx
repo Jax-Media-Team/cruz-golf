@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 import { courseHandicap, playingHandicap } from "@/lib/handicap";
 import { formatHi, hiInputValue, parseHi } from "@/lib/handicap-format";
 import { GAME_PACKAGES } from "@/lib/presets/game-packages";
@@ -112,6 +113,12 @@ export default function NewRoundPage() {
     }>;
   } | null>(null);
   const [autoAppliedFromLast, setAutoAppliedFromLast] = useState(false);
+  // True once the initial data load completes. Lets the auto-apply
+  // effect distinguish "still loading, keep waiting" from "load
+  // finished but there's nothing to re-use" (so the amber notice can
+  // render in the latter case instead of leaving the user with a
+  // silent blank form).
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [pickedPlayers, setPickedPlayers] = useState<{ id: string; tee_id: string; team_id: string | null }[]>([]);
   const [teamCount, setTeamCount] = useState(0);
   const [games, setGames] = useState<Record<GameType, { enabled: boolean; stake_cents: number; allowance_pct: number; config: any }>>(
@@ -355,6 +362,10 @@ export default function NewRoundPage() {
           });
         }
       }
+      // Signal "load done" even when there's no history, so the
+      // auto-apply effect can stop waiting and show its empty-state
+      // notice instead of leaving the user on a silent blank form.
+      setInitialLoadDone(true);
     })();
   }, []);
 
@@ -465,6 +476,15 @@ export default function NewRoundPage() {
   // normal form).
   useEffect(() => {
     if (!wantFromLast || autoAppliedFromLast) return;
+    // If the initial load finished and there's NOTHING to re-use,
+    // flip the flag so the amber "couldn't auto-fill" notice shows
+    // instead of waiting forever on a silent blank form. The user
+    // tapped "Start today's round" expecting some pre-fill, and we
+    // owe them a signal that we tried.
+    if (initialLoadDone && (!lastSnapshot || !lastLineup)) {
+      setAutoAppliedFromLast(true);
+      return;
+    }
     if (!lastSnapshot || !lastLineup) return;
     if (allPlayers.length === 0) return;
     // Stage 1: set course if not yet set. Bail if the last round's
@@ -503,6 +523,7 @@ export default function NewRoundPage() {
   }, [
     wantFromLast,
     autoAppliedFromLast,
+    initialLoadDone,
     lastSnapshot,
     lastLineup,
     allPlayers,
@@ -542,7 +563,7 @@ export default function NewRoundPage() {
       .single();
     setGuestBusy(false);
     if (error || !data) {
-      setErr(error?.message ?? "Could not add guest");
+      setErr(error ? friendlyAuthError(error) : "Could not add guest");
       return;
     }
     setAllPlayers((prev) =>
@@ -609,7 +630,7 @@ export default function NewRoundPage() {
       .single();
     if (error || !round) {
       setBusy(false);
-      setErr(error?.message ?? "Could not create round");
+      setErr(error ? friendlyAuthError(error) : "Could not create round");
       return;
     }
 
@@ -1162,7 +1183,11 @@ export default function NewRoundPage() {
         <h2 className="font-serif text-xl text-cream-50">Games</h2>
         <p className="text-xs text-cream-100/55">
           Pick a family, then choose Gross / Net inside. Add as many as you
-          like — they all run together on the round.
+          like — they all run together on the round.{" "}
+          <span className="text-cream-100/45">
+            You can adjust games + stakes from the round&apos;s &ldquo;Games
+            &amp; bets&rdquo; page after it starts, too.
+          </span>
         </p>
         {/* Audit P1 #7: collapse the long tail. Show Skins / Nassau /
             Best Ball / Side Bets by default; tuck individual / aggregate

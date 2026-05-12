@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type Course = { id: string; name: string };
 
@@ -64,7 +65,7 @@ export function AddFoursomeButton({
       .single();
     setBusy(false);
     if (error || !data) {
-      setErr(error?.message ?? "Could not add foursome.");
+      setErr(error ? friendlyAuthError(error) : "Could not add foursome.");
       return;
     }
     // Land on the round page so the commissioner can add players +

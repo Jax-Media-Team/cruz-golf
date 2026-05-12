@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 export function GoogleAuthButton({ next = "/dashboard" }: { next?: string }) {
   const sb = supabaseBrowser();
@@ -20,7 +21,7 @@ export function GoogleAuthButton({ next = "/dashboard" }: { next?: string }) {
     });
     if (error) {
       setBusy(false);
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
     }
   }
 

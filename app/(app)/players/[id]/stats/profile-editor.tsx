@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { friendlyAuthError } from "@/lib/auth-errors";
+import { cleanHandle, cleanUrl } from "@/lib/profile-format";
 
 type Initial = {
   display_name: string;
@@ -33,25 +34,9 @@ export function PlayerProfileEditor({ playerId, initial }: { playerId: string; i
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Normalize a social handle: strip leading "@" and surrounding
-  // whitespace, return null when empty. The DB trigger in migration
-  // 0046 mirrors this so direct SQL inserts behave the same way.
-  function cleanHandle(raw: string | null | undefined): string | null {
-    if (raw == null) return null;
-    const t = raw.replace(/^@/, "").trim();
-    return t.length === 0 ? null : t;
-  }
-
-  // Coerce a website URL to a usable form: if the user typed
-  // "example.com" we prepend "https://"; if they typed
-  // "https://example.com" we leave it alone. Empty → null.
-  function cleanUrl(raw: string | null | undefined): string | null {
-    if (raw == null) return null;
-    const t = raw.trim();
-    if (t.length === 0) return null;
-    if (/^https?:\/\//i.test(t)) return t;
-    return `https://${t}`;
-  }
+  // cleanHandle / cleanUrl are now imported from @/lib/profile-format
+  // — see that file for the regression-tested btrim-style normalization
+  // (matches migration 0046's DB trigger exactly).
 
   async function save() {
     setBusy(true);

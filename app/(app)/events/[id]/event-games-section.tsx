@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 
 type EventGameRow = {
   id: string;
@@ -82,7 +83,7 @@ export function EventGamesSection({
       .single();
     setBusy(false);
     if (error || !data) {
-      setErr(error?.message ?? "Couldn't add field game.");
+      setErr(error ? friendlyAuthError(error) : "Couldn't add field game.");
       return;
     }
     setGames((prev) => [...prev, data as EventGameRow]);
@@ -102,7 +103,7 @@ export function EventGamesSection({
       .delete()
       .eq("id", id);
     if (error) {
-      setErr(error.message);
+      setErr(friendlyAuthError(error));
       return;
     }
     setGames((prev) => prev.filter((g) => g.id !== id));

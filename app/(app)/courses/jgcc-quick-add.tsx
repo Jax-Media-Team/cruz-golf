@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { friendlyAuthError } from "@/lib/auth-errors";
 import {
   JGCC_NAME, JGCC_CITY, JGCC_STATE, JGCC_PARS, JGCC_MENS_SI, JGCC_LADIES_SI,
   JGCC_TEES, JGCC_YARDAGE
@@ -24,7 +25,7 @@ export function JgccQuickAdd({ groupId }: { groupId: string }) {
       .single();
     if (error || !course) {
       setBusy(false);
-      setErr(error?.message ?? "Could not create course");
+      setErr(error ? friendlyAuthError(error) : "Could not create course");
       return;
     }
 

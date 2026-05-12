@@ -15,6 +15,11 @@
  */
 import Link from "next/link";
 import { ShareSheet } from "./ShareSheet";
+import {
+  cleanHandle,
+  venmoNoteForRound,
+  venmoPayUrl
+} from "@/lib/profile-format";
 
 export type SettlementFlow = {
   from_round_player_id: string;
@@ -65,8 +70,7 @@ export function SettlementSummary({
   const playerIdByRp = new Map(rps.map((p) => [p.id, p.player_id]));
   const venmoByPlayer = new Map<string, string>();
   for (const r of rps) {
-    if (!r.venmo_handle) continue;
-    const cleaned = r.venmo_handle.replace(/^@/, "").trim();
+    const cleaned = cleanHandle(r.venmo_handle);
     if (cleaned) venmoByPlayer.set(r.id, cleaned);
   }
 
@@ -86,30 +90,9 @@ export function SettlementSummary({
 
   const fmt = (c: number) => "$" + (Math.abs(c) / 100).toFixed(2);
 
-  // Compose Venmo note: "Cruz Golf · JGCC · May 12". Locale-fixed so the
-  // text is stable across device locales.
-  const noteForVenmo = (() => {
-    const parts: string[] = ["Cruz Golf"];
-    if (courseName) parts.push(courseName);
-    if (roundDate) {
-      const d = new Date(roundDate + "T00:00:00");
-      if (!isNaN(d.getTime())) {
-        parts.push(
-          d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        );
-      }
-    }
-    return parts.join(" · ");
-  })();
-
-  function venmoPayUrl(handle: string, dollars: number, note: string) {
-    const params = new URLSearchParams({
-      txn: "pay",
-      amount: dollars.toFixed(2),
-      note
-    });
-    return `https://venmo.com/${encodeURIComponent(handle)}?${params.toString()}`;
-  }
+  // Venmo note + URL helpers are imported from @/lib/profile-format
+  // so this surface matches the finalize-view editor exactly.
+  const noteForVenmo = venmoNoteForRound(courseName, roundDate);
 
   const niceFinalizedAt = (() => {
     if (!finalizedAt) return null;
