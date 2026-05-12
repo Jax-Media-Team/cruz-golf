@@ -9,10 +9,10 @@
 | **Working tree** | clean, in sync with origin |
 | **Production URL** | https://cruz-golf.vercel.app |
 | **Vercel deployment** | success (id 4642248168, sha a9a2723, picked up 2026-05-11 01:36 UTC) |
-| **Tests** | 312/312 passing across 22 files |
+| **Tests** | 508/508 passing across 33 files |
 | **Typecheck** | clean |
-| **Migrations applied through** | `0038` (The Plantation at Ponte Vedra Beach) |
-| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033` (see migration table) |
+| **Migrations applied through** | `0041` (junk side-bet schema + RPCs — Patrick applied 2026-05-11) |
+| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033`, `0040`, `0042` (see migration table) |
 | **Open issues blocking ship** | none |
 | **Safe to reboot machine** | ✅ yes |
 
@@ -412,6 +412,8 @@ including the override-always-wins safety property.
 | 0038 | applied | The Plantation at Ponte Vedra Beach populated. 6 men's tees (Black 74.3/146, Blue 71.9/132, Green 70.0/126, Gold 67.7/119, Silver 63.9/113, Red 62.1/108), all yardage/par/SI verified from official scorecard (Arnold Palmer 1986, Letsche redesign 2016). Status=verified. Idempotent. |
 | 0039 | applied | Multi-group events Phase 1 schema. New `events` table (group_id, name, kind, dates, spectator_token, commissioner_profile_id, soft-delete via deleted_at). New `event_games` table (field-wide games). New `rounds.event_id` nullable FK. RLS in place + spectator-token read policy. Trigger for events.updated_at. No RPCs, no UI yet — Phase 2 builds those. Idempotent. See `docs/MULTI_GROUP_DESIGN.md` for full plan. |
 | 0040 | **awaiting your apply** | Event lifecycle RPCs with audit hooks. `fn_create_event(group_id, name, kind, starts_on, ends_on)` enforces commissioner role at DB layer + writes `event.create` audit row. `fn_archive_event(event_id)` soft-deletes + writes `event.archive`. `fn_restore_event(event_id)` reverses + writes `event.restore`. All SECURITY DEFINER, idempotent. The /events/new + /events/[id] UI is updated to call these RPCs (with fallback to direct insert for pre-0040 envs). |
+| 0041 | applied 2026-05-11 | Junk side-bet schema + RPCs. Two new tables (`round_junk_config`, `round_junk_items` with soft-delete). Four SECURITY DEFINER RPCs: `fn_set_junk_config` (commissioner-only), `fn_record_junk` (server-side authoritative pricing — client cannot supply amount_cents), `fn_edit_junk` (commissioner or original recorder), `fn_remove_junk` (commissioner-only soft-delete with required reason). Helper `fn_compute_junk_amount` mirrors the engine's pricing math. All audit-logged with `junk.*` kinds. Finalize round refuses junk edits. Idempotent. |
+| 0042 | **awaiting your apply** | Adds `round_junk_items` + `round_junk_config` to the `supabase_realtime` publication so the JunkControls realtime subscription delivers INSERT events to other players' clients. Idempotent (guards against already-published state). One-statement-per-table file — paste and run. Without this, junk works but other players won't see your entries live; they'd need to refresh. |
 
 ---
 

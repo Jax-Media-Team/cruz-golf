@@ -13,7 +13,7 @@
 - **Production URL:** https://cruz-golf.vercel.app
 - **Test suite:** **506/506 passing across 33 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0038` (The Plantation at Ponte Vedra Beach). Migration 0040 (event lifecycle RPCs) drafted and awaiting Patrick's "applied" confirmation. Junk schema designed in `docs/JUNK_DESIGN.md` but NOT yet applied — awaiting go-ahead.
+- **Migrations applied through:** `0041` (junk side-bet schema + RPCs — Patrick applied 2026-05-11). Migration 0040 (event lifecycle RPCs) drafted and awaiting apply. Migration 0042 (realtime publication for junk tables) drafted — small one-statement-per-table file, paste-and-run.
 
 ### Recent stretch (2026-05-11)
 
