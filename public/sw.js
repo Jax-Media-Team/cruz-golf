@@ -13,14 +13,25 @@
 // The 'offline' fallback is the dashboard shell — they at least see the
 // app frame instead of a Chrome dinosaur.
 
-const CACHE_VERSION = "cruz-golf-v1";
+// Bumped to v2 on 2026-05-12 to flush every Cruz Golf user's old static
+// cache. Reason: the v1 PRECACHE_URLS included `/cruz-logo.png` (the
+// 1536×1024 brand lockup) which iOS PWA was rendering as the home-
+// screen icon, stretched into a square. The new square icons
+// (cruz-icon-180/192/512) need to evict the old cached lockup, which
+// only happens when the SW cache version bumps. Patrick: "Both Chrome
+// and Safari show squished logo, even after delete + reinstall."
+const CACHE_VERSION = "cruz-golf-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
 // Files to pre-cache on install. Keep this list small — most assets
-// will get cached on first fetch.
+// will get cached on first fetch. Cruz-logo dropped from this list
+// 2026-05-12 — the square cruz-icon-*.png files replace it on the
+// home screen.
 const PRECACHE_URLS = [
-  "/cruz-logo.png",
+  "/cruz-icon-180.png",
+  "/cruz-icon-192.png",
+  "/cruz-icon-512.png",
   "/manifest.webmanifest"
 ];
 

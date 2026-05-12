@@ -13,6 +13,7 @@ export function SpectatorView({
   rps,
   scores: initialScores,
   adminMode = false,
+  isAuthenticatedViewer = false,
   groupName = null
 }: {
   round: any;
@@ -21,6 +22,12 @@ export function SpectatorView({
   /** True only when the signed-in viewer is a verified Platform Admin and
    *  the URL had `?adminMode=1`. Pure UI signal — no permission change. */
   adminMode?: boolean;
+  /** True when the viewer is signed in. Surfaces an extra "Open in app"
+   *  link in the header so they can bounce to /rounds/[id] (the
+   *  authenticated round page with the SettlementSummary + full
+   *  controls) instead of being stuck on the spectator surface with
+   *  only a brand link. */
+  isAuthenticatedViewer?: boolean;
   /** Group name used in the admin banner subject ("Sunday Crew round"). */
   groupName?: string | null;
 }) {
@@ -105,21 +112,32 @@ export function SpectatorView({
         />
       )}
       <div className="max-w-3xl mx-auto space-y-4 px-4 py-6 sm:py-10">
-        {/* Anonymous spectators have no app nav. Tapping the brand
-            lockup takes them to the marketing site, the "Share link"
-            button is the only outbound action on this page. Without
-            this header the only exit was closing the tab. */}
-        <div className="flex items-center justify-between gap-3">
+        {/* Header. Anonymous spectators see brand → marketing home.
+            Signed-in viewers get an explicit "Open in app →" link
+            that drops them on the authenticated /rounds/[id] page
+            with SettlementSummary + full controls. Either way nobody
+            ends up stuck. */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <Link
-            href="/"
+            href={isAuthenticatedViewer ? "/dashboard" : "/"}
             className="inline-flex items-center hover:opacity-90 transition-opacity"
-            aria-label="Cruz Golf home"
+            aria-label={isAuthenticatedViewer ? "Back to dashboard" : "Cruz Golf home"}
           >
             <BrandLockup iconHeight={28} />
           </Link>
-          <button className="btn-secondary text-xs" onClick={copyLink}>
-            {shareNote ?? "Share link"}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {isAuthenticatedViewer && (
+              <Link
+                href={`/rounds/${round.id}`}
+                className="btn-secondary text-xs"
+              >
+                Open in app →
+              </Link>
+            )}
+            <button className="btn-secondary text-xs" onClick={copyLink}>
+              {shareNote ?? "Share link"}
+            </button>
+          </div>
         </div>
         <Leaderboard
           courseName={round.courses?.name ?? "Round"}

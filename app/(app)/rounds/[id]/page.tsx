@@ -12,17 +12,38 @@ import { SettlementSummary } from "@/components/SettlementSummary";
 import { statusPillFor, type RoundStatus } from "@/components/RoundBreadcrumb";
 import { formatLongRoundDate } from "@/lib/format-date";
 
+// CRITICAL: force dynamic rendering. Without this directive Next.js 15
+// can statically prerender this server component at build time, which
+// runs with no auth cookie + no user — every fetch returns empty under
+// RLS, the page renders an empty leaderboard + empty settlement, and
+// the user sees "no players, no game, no settlements, nothing." This
+// was the actual cause of Patrick's "All my past rounds are empty"
+// report on 2026-05-12. Every other authenticated page in /app/(app)
+// already has this directive — this page was the gap.
+export const dynamic = "force-dynamic";
+
 export default async function RoundPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) redirect(`/login?next=/rounds/${id}`);
 
-  const { data: round } = await sb
+  const roundResult = await sb
     .from("rounds")
     .select("id, group_id, course_id, date, holes, starting_hole, status, spectator_token, pin, access_mode, finalized_at, deleted_at, settings, event_id, courses(name, city, state)")
     .eq("id", id)
     .single();
+  const round = roundResult.data;
+  if (roundResult.error) {
+    // eslint-disable-next-line no-console
+    console.error("[rounds/[id]] round query failed", {
+      id,
+      code: roundResult.error.code,
+      message: roundResult.error.message,
+      details: roundResult.error.details,
+      hint: roundResult.error.hint
+    });
+  }
   if (!round) redirect("/dashboard");
 
   // If the round belongs to an event, fetch the event name + id so the
@@ -62,11 +83,35 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     if (!invite) redirect(`/rounds/${id}/join`);
   }
 
-  const { data: rps } = await sb
+  const rpsResult = await sb
     .from("round_players")
     .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(id, display_name, profile_id, venmo_handle), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
     .eq("round_id", id)
     .order("display_order");
+  const rps = rpsResult.data;
+  if (rpsResult.error) {
+    // eslint-disable-next-line no-console
+    console.error("[rounds/[id]] round_players query failed", {
+      round_id: id,
+      code: rpsResult.error.code,
+      message: rpsResult.error.message,
+      details: rpsResult.error.details,
+      hint: rpsResult.error.hint
+    });
+  }
+  // Patrick 2026-05-12: "All my past rounds are empty. I open them
+  // and there is no players, no game, no settlements, nothing."
+  // The rps fetch silently returning empty (or null) is the most
+  // likely cause; this log surfaces the actual reason next time it
+  // happens.
+  if (!rpsResult.error && (rps?.length ?? 0) === 0) {
+    // eslint-disable-next-line no-console
+    console.warn("[rounds/[id]] round_players returned zero rows", {
+      round_id: id,
+      status: round.status,
+      group_id: round.group_id
+    });
+  }
 
   // "Claim your spot" — show banner to invitees who don't yet have a linked player.
   let claimCandidates: Array<{ player_id: string; display_name: string; round_player_id: string; is_unclaimed: boolean }> = [];

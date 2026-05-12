@@ -15,6 +15,13 @@ import {
   type ClubhouseSettlement
 } from "@/lib/clubhouse";
 
+// Force dynamic rendering. Without this, Next.js 15 can statically
+// prerender this server component at build time with no auth cookie
+// — every Supabase fetch returns empty under RLS, the page renders
+// empty, and the user sees a stale or blank surface. Critical fix
+// (Patrick 2026-05-12: 'All my past rounds are empty').
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
@@ -156,14 +163,23 @@ export default async function DashboardPage() {
       //     clubhouse history because it really happened.
       //   - Delete (via fn_delete_round) = row gone forever; for bad
       //     starts, test rounds, accidental creation.
-      // So we deliberately do NOT filter by `deleted_at IS NULL` here.
-      // The engine only counts finalized rounds (status filter is
-      // applied inside lib/clubhouse.ts), so archived non-finalized
-      // rounds (e.g. abandoned test drafts that got archived) still
-      // don't pollute the signals.
+      // So we deliberately do NOT filter by `deleted_at IS NULL` here
+      // for finalized rounds — they need to feed records / rivalries /
+      // lifetime totals.
+      //
+      // BUT — `fn_archive_round` (migration 0021) only stamps
+      // `deleted_at`, it does NOT change `status`. So an archived live
+      // round still has `status="live"`, and the
+      // buildLiveRoundSignals builder happily renders it as a "Just
+      // teed off" card on the dashboard. Patrick: "It still shows two
+      // 'Just teed off' rounds that were archived earlier. Very
+      // annoying they are not going away." Fix: still keep archived
+      // FINALIZED rounds in the bundle (they're history), but
+      // EXCLUDE archived LIVE rounds — they're never actually active.
+      // We pull deleted_at so we can filter post-fetch.
       sb
         .from("rounds")
-        .select("id, date, status, holes, spectator_token, course_id, courses(name)")
+        .select("id, date, status, holes, deleted_at, spectator_token, course_id, courses(name)")
         .eq("group_id", groupId)
         .order("date", { ascending: false })
         .limit(500),
@@ -176,15 +192,23 @@ export default async function DashboardPage() {
         .select("round_id, from_round_player_id, to_round_player_id, amount_cents")
     ]);
 
-    const roundsForBundle: ClubhouseRound[] = ((chRounds as any[]) ?? []).map((r) => ({
-      id: r.id,
-      date: r.date,
-      status: r.status,
-      course_name: r.courses?.name ?? null,
-      course_id: r.course_id ?? null,
-      spectator_token: r.spectator_token ?? null,
-      holes: r.holes ?? 18
-    }));
+    const roundsForBundle: ClubhouseRound[] = ((chRounds as any[]) ?? [])
+      // Drop archived non-finalized rounds — they're ghosts. An
+      // archived FINALIZED round stays in the bundle so records /
+      // rivalries / lifetime keep counting it. The status filter
+      // catches archived live / draft / pending rounds.
+      .filter(
+        (r) => !(r.deleted_at != null && r.status !== "finalized")
+      )
+      .map((r) => ({
+        id: r.id,
+        date: r.date,
+        status: r.status,
+        course_name: r.courses?.name ?? null,
+        course_id: r.course_id ?? null,
+        spectator_token: r.spectator_token ?? null,
+        holes: r.holes ?? 18
+      }));
     const roundIds = new Set(roundsForBundle.map((r) => r.id));
 
     const rpsForBundle: ClubhouseRoundPlayer[] = ((chRps as any[]) ?? [])

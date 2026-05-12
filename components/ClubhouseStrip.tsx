@@ -46,13 +46,16 @@ export function ClubhouseStrip({ bundle }: { bundle: ClubhouseBundle }) {
       <p className="h-eyebrow text-gold-400">In your clubhouse</p>
 
       {/* Live rounds — quiet "live" dot, no fire emoji. The data is the
-          interest, not the chrome. */}
+          interest, not the chrome.
+          Always route to /rounds/[id] (the authenticated round page).
+          The signed-in viewer is by definition a group member, so the
+          public spectator URL was wrong — it dropped them on a page
+          with no back-nav. Patrick: "opens a leaderboard that cannot
+          be exited. No back, no other buttons." */}
       {hasLive && (
         <ul className="space-y-2">
           {bundle.live_rounds.map((lr) => {
-            const url = lr.spectator_token
-              ? `/rounds/${lr.round_id}/leaderboard?token=${lr.spectator_token}`
-              : `/rounds/${lr.round_id}`;
+            const url = `/rounds/${lr.round_id}`;
             const leaderText = lr.leader
               ? `${lr.leader.display_name} ${fmtRelativeToPar(
                   lr.leader.relative_to_par
@@ -81,7 +84,7 @@ export function ClubhouseStrip({ bundle }: { bundle: ClubhouseBundle }) {
                   </div>
                 </div>
                 <span className="text-xs text-cream-100/55 shrink-0 hidden sm:inline">
-                  Watch →
+                  Open →
                 </span>
               </Link>
             );

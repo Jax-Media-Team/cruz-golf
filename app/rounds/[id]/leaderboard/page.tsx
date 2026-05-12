@@ -98,17 +98,20 @@ export default async function PublicLeaderboard({
   // query param. If the check fails, we silently fall back to the normal
   // public spectator surface.
   let adminMode = false;
-  if (sp.adminMode === "1") {
-    try {
-      const userSb = await supabaseServer();
-      const { data: { user } } = await userSb.auth.getUser();
-      if (user) {
+  let isAuthenticatedViewer = false;
+  try {
+    const userSb = await supabaseServer();
+    const { data: { user } } = await userSb.auth.getUser();
+    if (user) {
+      isAuthenticatedViewer = true;
+      if (sp.adminMode === "1") {
         const { data: isAdmin } = await userSb.rpc("fn_is_platform_admin");
         adminMode = !!isAdmin;
       }
-    } catch {
-      adminMode = false;
     }
+  } catch {
+    adminMode = false;
+    isAuthenticatedViewer = false;
   }
 
   return (
@@ -117,6 +120,11 @@ export default async function PublicLeaderboard({
       rps={rps ?? []}
       scores={scores ?? []}
       adminMode={adminMode}
+      // When the viewer is signed in, the spectator URL is essentially
+      // an extra hop — they should be able to bounce back to /dashboard
+      // (or /rounds/[id]) without closing the tab. Patrick: "opens a
+      // leaderboard that cannot be exited. No back, no other buttons."
+      isAuthenticatedViewer={isAuthenticatedViewer}
       groupName={(round as any).groups?.name ?? null}
     />
   );

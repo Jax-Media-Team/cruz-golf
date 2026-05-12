@@ -2,6 +2,12 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ScoreEntry } from "./score-entry";
 import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
+// Force dynamic rendering. Without this, Next.js 15 can statically
+// prerender this server component at build time with no auth cookie
+// — every Supabase fetch returns empty under RLS, the page renders
+// empty, and the user sees a stale or blank surface. Critical fix
+// (Patrick 2026-05-12: 'All my past rounds are empty').
+export const dynamic = "force-dynamic";
 
 export default async function ScoreEntryPage({
   params,
