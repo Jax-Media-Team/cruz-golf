@@ -15,7 +15,7 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
 
   const { data: rps } = await sb
     .from("round_players")
-    .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(display_name), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
+    .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(display_name, venmo_handle), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
     .eq("round_id", id)
     .order("display_order");
 
@@ -93,6 +93,8 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
         junkItems={junkItems}
         totalHoles={(round.holes as 9 | 18) ?? 18}
         startingHole={round.starting_hole ?? 1}
+        courseName={(round as any).courses?.name ?? null}
+        roundDate={round.date ?? null}
       />
     </div>
   );

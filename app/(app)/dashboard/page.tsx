@@ -522,7 +522,9 @@ export default async function DashboardPage() {
       {hasRounds && (
         <>
           <p className="text-[11px] text-cream-100/45">
-            Tip: swipe a round left, or tap the &ldquo;⋯&rdquo;, to delete.
+            Tip: swipe a round left, or tap the &ldquo;⋯&rdquo;, to archive.
+            Archived rounds drop off the dashboard but stay in records — see
+            the &ldquo;Archived rounds&rdquo; section below.
           </p>
           <RoundsList initialRounds={(rounds as any) ?? []} />
         </>

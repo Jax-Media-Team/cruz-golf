@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { friendlyAuthError } from "@/lib/auth-errors";
@@ -14,10 +14,15 @@ type Round = {
 };
 
 /**
- * Swipe-left or tap-⋯ to open the row's actions: Archive (always works,
- * soft-delete) or Delete (hard delete via fn_delete_round RPC). If hard
- * delete fails, we offer "Archive instead" without making the user re-enter
- * the swipe.
+ * Swipe-left or tap-⋯ exposes a single Archive action (soft-delete via
+ * fn_archive_round; falls back to direct UPDATE on deleted_at if the RPC
+ * is missing).
+ *
+ * After archive a top-of-list "Undo" banner appears for 10 seconds —
+ * one-tap restore via UPDATE deleted_at = null. Replaces the prior
+ * confirm() dialog so the 50-year-old golfer in sunlight isn't punished
+ * for a reflexive "OK" tap. Per CLAUDE.md principle #4 — data integrity
+ * over velocity, every destructive op needs a recovery path.
  */
 export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   const sb = supabaseBrowser();
@@ -26,6 +31,21 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   const [openSwipe, setOpenSwipe] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errFor, setErrFor] = useState<{ id: string; msg: string } | null>(null);
+  const [undoStack, setUndoStack] = useState<{
+    round: Round;
+    archivedAt: number;
+  } | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+
+  // Auto-clear the undo banner after 10 seconds so it doesn't linger
+  // across navigation. The user can also dismiss explicitly.
+  useEffect(() => {
+    if (!undoStack) return;
+    const elapsed = Date.now() - undoStack.archivedAt;
+    const remaining = Math.max(0, 10_000 - elapsed);
+    const t = setTimeout(() => setUndoStack(null), remaining);
+    return () => clearTimeout(t);
+  }, [undoStack]);
 
   const startX = useRef<number | null>(null);
   function onTouchStart(e: React.TouchEvent) {
@@ -44,12 +64,6 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
   // drawer now only offers Archive (soft, reversible).
 
   async function archiveRound(r: Round) {
-    if (
-      !confirm(
-        `Archive this round? It'll disappear from your dashboard but stay in records and stats. You can restore it from Admin if needed.`
-      )
-    )
-      return;
     setBusyId(r.id);
     setErrFor(null);
     const { error } = await sb.rpc("fn_archive_round", { p_round_id: r.id });
@@ -67,6 +81,32 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
     }
     setRounds((arr) => arr.filter((x) => x.id !== r.id));
     setOpenSwipe(null);
+    // Stash the archived round so the user can one-tap undo. We don't
+    // call router.refresh() here — that would re-render the server
+    // component with the round already filtered out, killing our undo
+    // affordance. Refresh on undo OR on auto-clear instead.
+    setUndoStack({ round: r, archivedAt: Date.now() });
+  }
+
+  async function undoArchive() {
+    if (!undoStack || undoBusy) return;
+    const r = undoStack.round;
+    setUndoBusy(true);
+    setErrFor(null);
+    // Direct UPDATE — no RPC for un-archive yet. fn_archive_round 0045
+    // is idempotent on archive (only stamps deleted_at when null), so
+    // re-archive after undo is safe.
+    const { error } = await sb
+      .from("rounds")
+      .update({ deleted_at: null })
+      .eq("id", r.id);
+    setUndoBusy(false);
+    if (error) {
+      setErrFor({ id: r.id, msg: friendlyAuthError(error) });
+      return;
+    }
+    setRounds((arr) => [r, ...arr.filter((x) => x.id !== r.id)]);
+    setUndoStack(null);
     router.refresh();
   }
 
@@ -144,6 +184,33 @@ export function RoundsList({ initialRounds }: { initialRounds: Round[] }) {
 
   return (
     <div className="space-y-5">
+      {undoStack && (
+        <div className="card p-3 border border-cream-100/15 bg-brand-900/60 flex items-center justify-between gap-3">
+          <div className="text-xs text-cream-100/85">
+            Archived{" "}
+            <span className="text-cream-50 font-medium">
+              {undoStack.round.courses?.name ?? "round"}
+            </span>{" "}
+            · {undoStack.round.date}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={undoArchive}
+              disabled={undoBusy}
+              className="pill bg-cream-50 text-brand-900 text-xs font-medium px-3 py-1 disabled:opacity-50"
+            >
+              {undoBusy ? "Restoring…" : "Undo"}
+            </button>
+            <button
+              onClick={() => setUndoStack(null)}
+              className="text-cream-100/45 hover:text-cream-100 text-xs"
+              aria-label="Dismiss undo banner"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       {buckets.live.length > 0 && (
         <Bucket label="Live now" tone="emerald">
           {buckets.live.map(renderRow)}

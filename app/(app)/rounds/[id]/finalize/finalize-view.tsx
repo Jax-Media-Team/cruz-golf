@@ -42,7 +42,9 @@ export function FinalizeView({
   pendingPressCount = 0,
   junkItems = [],
   totalHoles = 18,
-  startingHole = 1
+  startingHole = 1,
+  courseName = null,
+  roundDate = null
 }: {
   roundId: string;
   rps: any[];
@@ -57,6 +59,10 @@ export function FinalizeView({
   junkItems?: JunkItemRow[];
   totalHoles?: 9 | 18;
   startingHole?: number;
+  /** Course + date are used to compose the Venmo note ("Cruz Golf ·
+   *  JGCC · May 12"). Null = falls back to "Cruz Golf settlement". */
+  courseName?: string | null;
+  roundDate?: string | null;
 }) {
   const router = useRouter();
   const sb = supabaseBrowser();
@@ -300,7 +306,51 @@ export function FinalizeView({
 
   const flows = minimumFlow(totals);
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
+  // Venmo handle per round_player_id — used to build the "Pay in
+  // Venmo" deep-link on each flow row. Cleaned at read time so an
+  // @-prefixed handle in the DB still produces a valid URL.
+  const venmoByPlayer = new Map<string, string>();
+  for (const r of rps) {
+    const raw: string | null | undefined = r.players?.venmo_handle;
+    if (!raw) continue;
+    const cleaned = raw.replace(/^@/, "").trim();
+    if (cleaned) venmoByPlayer.set(r.id, cleaned);
+  }
   const fmt = (c: number) => "$" + (Math.abs(c) / 100).toFixed(2);
+
+  // Compose a short, human-readable note: "Cruz Golf · JGCC · May 12".
+  // Falls back to "Cruz Golf settlement" if course or date is missing.
+  const noteForVenmo = (() => {
+    const parts: string[] = ["Cruz Golf"];
+    if (courseName) parts.push(courseName);
+    if (roundDate) {
+      // roundDate is an ISO date string ("2026-05-12"). Render as
+      // "May 12" — locale-fixed so the note text is stable across
+      // device locales.
+      const d = new Date(roundDate + "T00:00:00");
+      if (!isNaN(d.getTime())) {
+        parts.push(
+          d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        );
+      }
+    }
+    return parts.join(" · ");
+  })();
+
+  /**
+   * Build a Venmo universal-link URL that pre-fills the pay sheet.
+   * On iOS Safari this hands off to the Venmo app via Universal Links;
+   * on desktop it opens venmo.com/{handle} in the browser. The browser
+   * URL still respects amount + note params for one-tap pay.
+   */
+  function venmoPayUrl(handle: string, dollars: number, note: string) {
+    const params = new URLSearchParams({
+      txn: "pay",
+      amount: dollars.toFixed(2),
+      note
+    });
+    return `https://venmo.com/${encodeURIComponent(handle)}?${params.toString()}`;
+  }
 
   async function finalize() {
     setBusy(true);
@@ -436,16 +486,47 @@ export function FinalizeView({
                 .map((l) => ({ game: l.game, cents: l.perPlayer.get(f.from) ?? 0 }))
                 .filter((x) => x.cents !== 0);
               const fromTotal = fromDeltas.reduce((s, x) => s + x.cents, 0);
+              const toHandle = venmoByPlayer.get(f.to);
+              const toName = labelByPlayer.get(f.to);
               return (
                 <li key={i} className="border-t border-cream-100/8 first:border-t-0 first:pt-0 pt-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <span className="font-medium text-cream-50">{labelByPlayer.get(f.from)}</span>
                       <span className="text-cream-100/40 mx-2">→</span>
-                      <span className="font-medium text-cream-50">{labelByPlayer.get(f.to)}</span>
+                      <span className="font-medium text-cream-50">{toName}</span>
                     </div>
                     <span className="tabular-nums font-serif text-lg text-cream-50">{fmt(f.amount_cents)}</span>
                   </div>
+                  {toHandle ? (
+                    <div className="mt-1.5">
+                      <a
+                        // Universal Venmo link — iOS hands off to the
+                        // app via Universal Links (prefills recipient,
+                        // amount, note); desktop opens venmo.com/{handle}
+                        // with the same params. Either way, the payer
+                        // taps once.
+                        href={venmoPayUrl(
+                          toHandle,
+                          f.amount_cents / 100,
+                          noteForVenmo
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#3D95CE] hover:text-[#2D7AB0] underline underline-offset-2"
+                      >
+                        Pay {toName} {fmt(f.amount_cents)} in Venmo →
+                      </a>
+                      <span className="ml-2 text-[10px] text-cream-100/45">
+                        @{toHandle}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-cream-100/45">
+                      No Venmo on file for {toName} — settle in person, or add
+                      a handle on their profile.
+                    </p>
+                  )}
                   {/* Where this came from for the payer */}
                   {fromDeltas.length > 0 && (
                     <details className="mt-1.5 text-[11px] text-cream-100/65 leading-snug">
