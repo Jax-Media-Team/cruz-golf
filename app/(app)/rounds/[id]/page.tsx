@@ -244,8 +244,35 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     enteredScores >= expectedScores &&
     round.status === "live";
 
+  const isArchived = (round as any).deleted_at != null;
+
   return (
     <div className="space-y-5">
+      {/* Archived state banner — top-of-page so the user can't miss
+          that this round is hidden from active lists. The Restore +
+          Danger Zone affordances are still in the collapsed
+          "Round settings" details below; this just makes the state
+          unmistakable on first glance. */}
+      {isArchived && (
+        <div className="card p-3 border border-cream-100/15 bg-brand-900/40 text-sm flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="font-medium text-cream-50">
+              This round is archived
+            </p>
+            <p className="text-[11px] text-cream-100/55 mt-0.5 leading-snug">
+              Hidden from your active rounds list. Scores, settlements,
+              and history are preserved.
+            </p>
+          </div>
+          <Link
+            href="/dashboard"
+            className="btn-ghost text-xs shrink-0"
+          >
+            ← Back to dashboard
+          </Link>
+        </div>
+      )}
+
       <header className="space-y-3">
         {parentEvent && (
           <Link
@@ -263,8 +290,16 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
             <p className="h-eyebrow text-gold-400">
               {/* "Saturday, May 12" — formatted via the central
                   lib/format-date helper (noon-UTC parse, en-US
-                  locale, stable across device timezones). */}
-              Live leaderboard · {formatLongRoundDate(round.date) || round.date}
+                  locale, stable across device timezones). Eyebrow
+                  prefix matches round status: "Live leaderboard"
+                  for live/draft, "Settled" for finalized,
+                  "Awaiting finalization" for pending. */}
+              {round.status === "finalized"
+                ? "Settled"
+                : round.status === "pending_finalization"
+                ? "Awaiting finalization"
+                : "Live leaderboard"}
+              {" · "}{formatLongRoundDate(round.date) || round.date}
               {" · "}{round.holes} holes
             </p>
             <h1 className="h-display text-3xl text-cream-50 mt-1">{(round as any).courses?.name}</h1>

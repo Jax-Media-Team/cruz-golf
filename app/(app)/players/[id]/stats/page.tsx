@@ -554,6 +554,20 @@ export default async function PlayerStatsPage({ params }: { params: Promise<{ id
                 Open on Venmo →
               </a>
             </>
+          ) : isOwnProfile ? (
+            <div className="text-sm mt-1 space-y-1.5">
+              <p className="text-cream-100/65">
+                No Venmo handle on file.{" "}
+                <span className="text-cream-100/85">
+                  Add one so other players can pay you back in one tap
+                  from the settlement screen.
+                </span>
+              </p>
+              <p className="text-[11px] text-cream-100/55">
+                Tap <span className="text-cream-50">Edit profile</span>{" "}
+                below.
+              </p>
+            </div>
           ) : (
             <p className="text-sm text-cream-100/55 mt-1">No Venmo handle on file.</p>
           )}
