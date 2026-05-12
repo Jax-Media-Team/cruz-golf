@@ -9,6 +9,7 @@ import {
   detectSuspiciousPatterns,
   type PatternWarning
 } from "@/lib/ocr/pattern-checks";
+import { rotateImage90, cropImage } from "@/lib/ocr/transform";
 
 type Card = {
   id: string;
@@ -565,6 +566,86 @@ export function UploadView({
     await runOcrOnCard(cardId, card.filename, card.data_url);
   }
 
+  /**
+   * Rotate the card image by 90° clockwise + re-OCR. Patrick's
+   * real-world test had a sideways card (landscape photographed
+   * while phone was portrait). The model performs much worse when
+   * the card is oriented wrong — rotating fixes it. Repeated taps
+   * cycle 90 → 180 → 270 → 0.
+   *
+   * Also clears any pending suggestions for that card so the new
+   * OCR pass replaces them.
+   */
+  async function rotateCard(cardId: string) {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card?.data_url) return;
+    try {
+      const rotated = await rotateImage90(card.data_url, 1);
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? {
+                ...c,
+                data_url: rotated,
+                retry_count: (c.retry_count ?? 0) + 1
+              }
+            : c
+        )
+      );
+      setSuggestions((prev) => prev.filter((s) => s.card_id !== cardId));
+      await runOcrOnCard(cardId, card.filename, rotated);
+    } catch (e: any) {
+      setErr(`Couldn't rotate this card: ${e?.message ?? "unknown"}`);
+    }
+  }
+
+  /**
+   * Crop the card to one half (top / bottom / left / right) + re-OCR.
+   * Patrick asked for "consider front-nine/back-nine crop prompts" —
+   * this is the simplest version that ships today without a
+   * draggable-rectangle UI. Most scorecards have the front 9 on one
+   * half and back 9 on the other; cropping eliminates the cross-half
+   * templating risk for one half at a time.
+   *
+   * The user runs the OCR a second time on the OTHER half to get all
+   * 18 holes. Merging is the default behavior of runOcrOnCard
+   * (per-cell highs land in the grid; the rest become suggestions).
+   */
+  async function cropAndRetry(
+    cardId: string,
+    region: "top" | "bottom" | "left" | "right"
+  ) {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card?.data_url) return;
+    const rect =
+      region === "top"
+        ? { x: 0, y: 0, w: 1, h: 0.55 }
+        : region === "bottom"
+        ? { x: 0, y: 0.45, w: 1, h: 0.55 }
+        : region === "left"
+        ? { x: 0, y: 0, w: 0.55, h: 1 }
+        : { x: 0.45, y: 0, w: 0.55, h: 1 };
+    try {
+      const cropped = await cropImage(card.data_url, rect);
+      // Don't overwrite the source data_url — the user may want to
+      // try a different crop. Just re-OCR with the cropped image.
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? {
+                ...c,
+                retry_count: (c.retry_count ?? 0) + 1
+              }
+            : c
+        )
+      );
+      setSuggestions((prev) => prev.filter((s) => s.card_id !== cardId));
+      await runOcrOnCard(cardId, card.filename, cropped);
+    } catch (e: any) {
+      setErr(`Couldn't crop this card: ${e?.message ?? "unknown"}`);
+    }
+  }
+
   async function save() {
     setBusy(true);
     setErr(null);
@@ -867,14 +948,63 @@ export function UploadView({
                                 </p>
                               )}
                               {c.status === "parsed" && c.data_url && (
-                                <button
-                                  type="button"
-                                  className="btn-ghost text-[10px] mt-1"
-                                  onClick={() => retryCard(c.id)}
-                                  title="Re-run OCR on the same image. Useful when the first parse came back empty."
-                                >
-                                  ↻ Retry OCR
-                                </button>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  <button
+                                    type="button"
+                                    className="btn-ghost text-[10px]"
+                                    onClick={() => retryCard(c.id)}
+                                    title="Re-run OCR on the same image. Useful when the first parse came back empty or templated."
+                                  >
+                                    ↻ Retry
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-ghost text-[10px]"
+                                    onClick={() => rotateCard(c.id)}
+                                    title="Rotate the image 90° clockwise + re-OCR. Use when the card was photographed sideways."
+                                  >
+                                    ⟳ Rotate 90°
+                                  </button>
+                                  <details className="inline-block">
+                                    <summary className="btn-ghost text-[10px] cursor-pointer">
+                                      ✂ Crop & retry
+                                    </summary>
+                                    <div className="mt-1 ml-2 flex flex-wrap gap-1">
+                                      <button
+                                        type="button"
+                                        className="btn-ghost text-[10px] text-cream-100/75"
+                                        onClick={() => cropAndRetry(c.id, "top")}
+                                        title="OCR only the top half of the card (often front 9)."
+                                      >
+                                        Top half
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-ghost text-[10px] text-cream-100/75"
+                                        onClick={() => cropAndRetry(c.id, "bottom")}
+                                        title="OCR only the bottom half (often back 9)."
+                                      >
+                                        Bottom half
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-ghost text-[10px] text-cream-100/75"
+                                        onClick={() => cropAndRetry(c.id, "left")}
+                                        title="OCR only the left half of the card."
+                                      >
+                                        Left half
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-ghost text-[10px] text-cream-100/75"
+                                        onClick={() => cropAndRetry(c.id, "right")}
+                                        title="OCR only the right half of the card."
+                                      >
+                                        Right half
+                                      </button>
+                                    </div>
+                                  </details>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -1154,9 +1284,12 @@ export function UploadView({
                 to take that player&apos;s suggestions wholesale.
               </li>
               <li>
-                Tap <span className="font-medium">↻ Retry OCR</span> on
-                the card&apos;s diagnostics panel above — sometimes a
-                second pass reads better.
+                In the card&apos;s diagnostics panel above, try{" "}
+                <span className="font-medium">↻ Retry</span>,{" "}
+                <span className="font-medium">⟳ Rotate 90°</span>{" "}
+                (if the card looks sideways), or{" "}
+                <span className="font-medium">✂ Crop & retry</span> to
+                run OCR on just one half of the card.
               </li>
             </ul>
           </div>
