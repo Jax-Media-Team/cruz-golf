@@ -8,12 +8,12 @@
 
 **Current system status: ✅ healthy and deployed.**
 
-- **Latest commit on main:** *(pending push — junk RPC reapply + archive/delete UI + OCR trust pass)*
-- **Branch:** `main` (working tree dirty, multi-file commit incoming)
-- **Production URL:** https://cruz-golf.vercel.app
-- **Test suite:** **537/537 passing across 35 test files.** Run with `npm test -- --run` from project root.
+- **Latest commit on main:** `883a4d4` — *fix: 8 bugs caught by hostile code review*
+- **Branch:** `main` (working tree clean, in sync with origin)
+- **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
+- **Test suite:** **550/550 passing across 36 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0042` (junk realtime publication). Migration 0040 (event lifecycle RPCs) still awaiting apply. **0043 drafted — defensive re-apply of junk RPCs + flat default + schema-cache reload.** Patrick should apply 0043 because `fn_set_junk_config` is missing from PostgREST schema cache despite 0041 being reported as applied.
+- **Migrations applied through:** `0043` (junk RPC reapply — Patrick applied 2026-05-12). Migration 0040 (event lifecycle RPCs) still awaiting apply. **0044 drafted — updates `fn_delete_round` to handle the post-0029 child tables (junk + presses) explicitly. Single CREATE OR REPLACE FUNCTION + NOTIFY pgrst. Idempotent.**
 
 ### Recent stretch (2026-05-11)
 

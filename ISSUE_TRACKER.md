@@ -9,10 +9,10 @@
 | **Working tree** | clean, in sync with origin |
 | **Production URL** | https://cruz-golf.vercel.app |
 | **Vercel deployment** | success (id 4642248168, sha a9a2723, picked up 2026-05-11 01:36 UTC) |
-| **Tests** | 508/508 passing across 33 files |
+| **Tests** | 550/550 passing across 36 files |
 | **Typecheck** | clean |
-| **Migrations applied through** | `0041` (junk side-bet schema + RPCs — Patrick applied 2026-05-11) |
-| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033`, `0040`, `0042` (see migration table) |
+| **Migrations applied through** | `0043` (junk RPC reapply — Patrick applied 2026-05-12) |
+| **Migrations awaiting** | `0025`, `0026`, `0029`, `0033`, `0040`, `0044` (see migration table) |
 | **Open issues blocking ship** | none |
 | **Safe to reboot machine** | ✅ yes |
 
@@ -414,7 +414,8 @@ including the override-always-wins safety property.
 | 0040 | **awaiting your apply** | Event lifecycle RPCs with audit hooks. `fn_create_event(group_id, name, kind, starts_on, ends_on)` enforces commissioner role at DB layer + writes `event.create` audit row. `fn_archive_event(event_id)` soft-deletes + writes `event.archive`. `fn_restore_event(event_id)` reverses + writes `event.restore`. All SECURITY DEFINER, idempotent. The /events/new + /events/[id] UI is updated to call these RPCs (with fallback to direct insert for pre-0040 envs). |
 | 0041 | applied 2026-05-11 | Junk side-bet schema + RPCs. Two new tables (`round_junk_config`, `round_junk_items` with soft-delete). Four SECURITY DEFINER RPCs: `fn_set_junk_config` (commissioner-only), `fn_record_junk` (server-side authoritative pricing — client cannot supply amount_cents), `fn_edit_junk` (commissioner or original recorder), `fn_remove_junk` (commissioner-only soft-delete with required reason). Helper `fn_compute_junk_amount` mirrors the engine's pricing math. All audit-logged with `junk.*` kinds. Finalize round refuses junk edits. Idempotent. |
 | 0042 | applied 2026-05-11 | Adds `round_junk_items` + `round_junk_config` to the `supabase_realtime` publication so the JunkControls realtime subscription delivers INSERT events to other players' clients. |
-| 0043 | **awaiting your apply** | Defensive re-apply of junk RPCs after Patrick hit "Could not find the function public.fn_set_junk_config(...) in the schema cache" despite 0041 being reported as applied. Drops + recreates all four junk RPCs, re-grants execute, and issues `NOTIFY pgrst, 'reload schema'` so PostgREST drops its cached function list. Also flips the table default `mode` to `'flat'` (Patrick: flat is more common than escalating). Idempotent. Safe to run alongside or instead of 0041. |
+| 0043 | applied 2026-05-12 | Defensive re-apply of junk RPCs after Patrick hit "Could not find the function public.fn_set_junk_config(...) in the schema cache". Drops + recreates all five junk RPCs, re-grants execute, NOTIFY pgrst 'reload schema'. Also flips the table default `mode` to `'flat'`. |
+| 0044 | **awaiting your apply** | Updates `fn_delete_round` to delete `round_junk_items`, `round_junk_config`, and `round_presses` explicitly (today they cascade via FK, but the function should be self-documenting and not silently depend on every future FK author remembering `ON DELETE CASCADE`). Each new delete is wrapped in `exception when undefined_table` so the function still works on pre-0035/pre-0041 schemas. Includes `NOTIFY pgrst, 'reload schema'`. Single `CREATE OR REPLACE FUNCTION`. Idempotent. |
 
 ---
 
