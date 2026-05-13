@@ -65,6 +65,49 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
     .select("round_player_id, hole_number, gross")
     .in("round_player_id", rpIds.length > 0 ? rpIds : ["00000000-0000-0000-0000-000000000000"]);
 
+  // Junk side-bet config + items — fetched here so the score-group
+  // page can render `<JunkControls>` inline. Patrick 2026-05-12:
+  // "How do I keep track of junk during the scorekeeping? I did not
+  // see any options to add junk. Should be simple."
+  // The round detail page used to be the only surface for junk entry,
+  // but that meant golfers had to leave the scoring screen and walk
+  // back. Now the entry UI sits right under the scorecard.
+  // Defensive against pre-0041 environments (junk tables don't exist).
+  let junkConfig: any = null;
+  let junkItems: any[] = [];
+  try {
+    const { data: cfgRow } = await sb
+      .from("round_junk_config")
+      .select(
+        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope, custom_categories"
+      )
+      .eq("round_id", id)
+      .maybeSingle();
+    const hasActiveCats =
+      (Array.isArray((cfgRow as any)?.active_categories) &&
+        ((cfgRow as any).active_categories as string[]).length > 0) ||
+      (Array.isArray((cfgRow as any)?.custom_categories) &&
+        ((cfgRow as any).custom_categories as any[]).length > 0);
+    junkConfig = hasActiveCats ? cfgRow : null;
+    if (cfgRow) {
+      const { data: jItems } = await sb
+        .from("round_junk_items")
+        .select(
+          "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note"
+        )
+        .eq("round_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true });
+      junkItems = jItems ?? [];
+    }
+  } catch {
+    /* tables missing — pre-0041 env, page renders without junk panel */
+  }
+
+  // Commissioner check — JunkControls surfaces edit/delete affordances
+  // only for the commissioner. Other players see a read-only chip list.
+  const isCommissioner = !!gm && gm.role === "commissioner";
+
   const courseName = (round as any).courses?.name ?? "Round";
 
   return (
@@ -82,6 +125,10 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
         rps={(rps as any) ?? []}
         existing={existing ?? []}
         roundStatus={round.status as any}
+        totalHoles={18}
+        junkConfig={junkConfig}
+        junkItems={junkItems}
+        isCommissioner={isCommissioner}
       />
     </div>
   );

@@ -489,15 +489,53 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           #leaderboard anchor still resolves because it lives right
           before the RoundView. */}
       <div id="leaderboard" />
-      <RoundView
-        roundId={id}
-        rps={rps ?? []}
-        initialScores={scores ?? []}
-        games={games ?? []}
-        manualPresses={presses ?? []}
-        totalHoles={(round.holes as 9 | 18) ?? 18}
-        startingHole={round.starting_hole ?? 1}
-      />
+      {(rps?.length ?? 0) === 0 ? (
+        // Explicit empty-state card. Pre-fix the leaderboard would
+        // render as a silent "no players" with no actionable next
+        // step — Patrick saw that 4× as "blank rounds." Now if the
+        // round legitimately has no players (orphan round, bad
+        // setup), the commissioner sees a clear card pointing to
+        // /invites instead of a confusing void. If the rps query is
+        // still failing for some other reason, this surfaces it
+        // explicitly instead of pretending everything's fine.
+        <section className="card p-5 border border-amber-400/30 bg-amber-500/5 space-y-2">
+          <p className="h-eyebrow text-amber-300">No players yet</p>
+          <h2 className="font-serif text-xl text-cream-50">
+            This round has no roster
+          </h2>
+          <p className="text-xs text-cream-100/65 leading-snug">
+            {isCommissioner
+              ? "Add the players who are walking with you — invite them by name or pick from your group roster."
+              : "The commissioner hasn't added players to this round yet. Check back once the roster is set."}
+          </p>
+          {isCommissioner && (
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Link
+                href={`/rounds/${id}/invites`}
+                className="btn-primary text-xs"
+              >
+                Add players →
+              </Link>
+              <Link
+                href={`/rounds/${id}/games`}
+                className="btn-ghost text-xs"
+              >
+                Edit games & bets
+              </Link>
+            </div>
+          )}
+        </section>
+      ) : (
+        <RoundView
+          roundId={id}
+          rps={rps ?? []}
+          initialScores={scores ?? []}
+          games={games ?? []}
+          manualPresses={presses ?? []}
+          totalHoles={(round.holes as 9 | 18) ?? 18}
+          startingHole={round.starting_hole ?? 1}
+        />
+      )}
 
       {/* Junk side-bet panel — entry + live totals + commissioner edits.
           Only renders when junk config exists for this round AND the

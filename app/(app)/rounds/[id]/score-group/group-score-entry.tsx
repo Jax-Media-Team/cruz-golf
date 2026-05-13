@@ -6,6 +6,7 @@ import { GroupScorePad, type GroupPlayer } from "@/components/GroupScorePad";
 import { ScoreGrid } from "@/components/ScoreGrid";
 import { useScoreSaver } from "@/lib/useScoreSaver";
 import { SaveStatusBanner } from "@/components/SaveStatusBanner";
+import { JunkControls } from "../junk-controls";
 
 type RP = {
   id: string;
@@ -23,7 +24,17 @@ export function GroupScoreEntry({
   courseName,
   rps,
   existing,
-  roundStatus = "live"
+  roundStatus = "live",
+  totalHoles = 18,
+  // Junk entry props — when junk is enabled on the round, render the
+  // JunkControls panel inline under the scorecard so the user records
+  // birdies/sandies/chip-ins without leaving the scoring screen.
+  // Patrick 2026-05-12: "easy to keep track of from within the game
+  // as I am entering scores." All three default to safe no-ops so
+  // pages that don't pass them (e.g. older callers) keep working.
+  junkConfig = null,
+  junkItems = [],
+  isCommissioner = false
 }: {
   roundId: string;
   courseName: string;
@@ -33,6 +44,10 @@ export function GroupScoreEntry({
    *  every status except `finalized` (blocked at the page level) is
    *  editable. Defaults to "live" for backward compat. */
   roundStatus?: "draft" | "live" | "pending_finalization" | "finalized";
+  totalHoles?: 9 | 18;
+  junkConfig?: any;
+  junkItems?: any[];
+  isCommissioner?: boolean;
 }) {
   const router = useRouter();
   const saver = useScoreSaver({ roundId });
@@ -206,6 +221,35 @@ export function GroupScoreEntry({
             />
           ) : (
             <ScoreGrid holes={holes} players={players} scores={scores} onSave={save} />
+          )}
+
+          {/* Inline junk entry — renders only when the round has junk
+              enabled. The same JunkControls component used on the round
+              detail page is mounted here so the scorer never has to
+              navigate away. defaultHole is the next-unscored hole
+              (or 1 if nothing scored yet) so the picker lands where
+              the user is currently entering. Patrick 2026-05-12:
+              "How do I keep track of junk during the scorekeeping?
+              Should be simple." */}
+          {junkConfig && rps.length > 0 && (
+            <JunkControls
+              roundId={roundId}
+              totalHoles={totalHoles}
+              defaultHole={(() => {
+                const maxScored = Object.entries(scores)
+                  .filter(([_, v]) => v != null)
+                  .map(([k]) => Number(k.split(":")[1]) || 0)
+                  .reduce((max, h) => Math.max(max, h), 0);
+                return Math.min(Math.max(1, maxScored + 1), totalHoles);
+              })()}
+              rps={rps.map((r) => ({
+                id: r.id,
+                display_name: r.players?.display_name ?? "Player"
+              }))}
+              config={junkConfig as any}
+              initialItems={junkItems as any}
+              isCommissioner={isCommissioner}
+            />
           )}
         </>
       )}

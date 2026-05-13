@@ -754,7 +754,7 @@ export default function NewRoundPage() {
     if (junkEnabled) {
       const cents = Math.max(0, Math.round(junkFlatDollars * 100));
       try {
-        await sb.rpc("fn_set_junk_config", {
+        const { error: junkErr } = await sb.rpc("fn_set_junk_config", {
           p_round_id: round.id,
           // Categories the user actually checked, plus any customs
           // they typed in. fn_set_junk_config accepts both lists
@@ -769,9 +769,27 @@ export default function NewRoundPage() {
           p_custom_categories:
             junkCustomCategories.length > 0 ? junkCustomCategories : null
         });
-      } catch {
-        /* round still proceeds; commissioner can enable junk from
-           /rounds/[id]/games */
+        if (junkErr) {
+          // Don't block the round creation, but DO log it so the failure
+          // is visible in Vercel logs the next time it happens. Silent
+          // catch was making this invisible — the agent QA sweep caught
+          // this gap. If junk is critical to the commissioner they can
+          // re-enable it from /rounds/[id]/games.
+          // eslint-disable-next-line no-console
+          console.error("[rounds/new] fn_set_junk_config returned error", {
+            round_id: round.id,
+            code: junkErr.code,
+            message: junkErr.message,
+            details: junkErr.details,
+            hint: junkErr.hint
+          });
+        }
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.error("[rounds/new] fn_set_junk_config threw", {
+          round_id: round.id,
+          error: e?.message ?? String(e)
+        });
       }
     }
 
