@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { buildPlayerSheet, leaderboard } from "@/lib/scoring";
 import { settleGame } from "@/lib/games";
+import { settleJunk } from "@/lib/games/junk";
 import {
   settleManualPress,
   type HoleResult,
@@ -30,6 +31,7 @@ export function RoundView({
   initialScores,
   games,
   manualPresses = [],
+  junkItems = [],
   totalHoles = 18,
   startingHole = 1
 }: {
@@ -40,6 +42,12 @@ export function RoundView({
   /** Accepted + pending presses. BetsPanel uses only `status === "accepted"`
    *  for the projected payout — pending presses don't move money yet. */
   manualPresses?: RoundManualPress[];
+  /** Live junk items (Patrick 2026-05-13: "I added it for hole 1...
+   *  it did not make it's way to the Money or Game section of the
+   *  leaderboard"). Passed to BetsPanel so the running $ flow on the
+   *  Money tab includes junk side-bets. Same shape JunkControls reads;
+   *  flat select with recipient_ids[] for team awards. */
+  junkItems?: any[];
   totalHoles?: 9 | 18;
   startingHole?: number;
 }) {
@@ -170,6 +178,7 @@ export function RoundView({
             totalHoles={totalHoles}
             startingHole={startingHole}
             manualPresses={manualPresses}
+            junkItems={junkItems}
           />
         ) : null
       }
@@ -475,7 +484,8 @@ function BetsPanel({
   holes,
   totalHoles,
   startingHole,
-  manualPresses = []
+  manualPresses = [],
+  junkItems = []
 }: {
   games: any[];
   players: RoundPlayer[];
@@ -484,9 +494,19 @@ function BetsPanel({
   totalHoles: 9 | 18;
   startingHole: number;
   manualPresses?: RoundManualPress[];
+  /** Live junk items. Settled via the same `settleJunk` the finalize
+   *  flow uses, so the Money tab's "running" deltas match the eventual
+   *  settlement. Patrick 2026-05-13: "I added it for hole 1 but it
+   *  did not make its way to the Money or Game section of the
+   *  leaderboard." */
+  junkItems?: any[];
 }) {
   const acceptedPresses = manualPresses.filter((p) => p.status === "accepted");
-  if (games.length === 0 && acceptedPresses.length === 0)
+  if (
+    games.length === 0 &&
+    acceptedPresses.length === 0 &&
+    junkItems.length === 0
+  )
     return <div className="text-slate-500 text-sm py-8 text-center">No games configured.</div>;
   const totals = new Map<string, number>();
   const labelByPlayer = new Map(players.map((p) => [p.id, p.display_name]));
@@ -578,6 +598,38 @@ function BetsPanel({
     });
   }
 
+  // 3. Junk side-bets contribute their dollar flow to the Money tab too.
+  //    Patrick 2026-05-13: "I added it for hole 1 but it did not make
+  //    its way to the Money section of the leaderboard." Settled via
+  //    the SAME `settleJunk` the finalize flow uses (lib/games/junk.ts),
+  //    so the running Money totals here match what the user will see
+  //    on the finalize Settlement Summary. recipient_ids[] is honored
+  //    for team junk awards. Total at the top of the panel includes
+  //    these dollars in the "$X moved so far" line below.
+  let junkPotCents = 0;
+  if (junkItems.length > 0) {
+    const engineItems = junkItems.map((i: any) => ({
+      id: i.id,
+      player_id: i.round_player_id,
+      hole_number: i.hole_number,
+      category: i.category,
+      custom_label: i.custom_label ?? undefined,
+      amount_cents: i.amount_cents,
+      created_at: i.created_at,
+      note: i.note ?? undefined,
+      recipient_ids: i.recipient_ids ?? undefined,
+      is_team_award: i.is_team_award ?? undefined
+    }));
+    const junkResult = settleJunk(
+      engineItems,
+      players.map((p) => ({ id: p.id }))
+    );
+    for (const [pid, v] of junkResult.deltaByPlayer) {
+      totals.set(pid, (totals.get(pid) ?? 0) + v);
+    }
+    junkPotCents = junkResult.total_moved_cents;
+  }
+
   // Pending-press hint count — surfaced in the header so the user knows
   // the projected payout doesn't include presses that haven't been
   // accepted yet. We don't include pending presses in the math because
@@ -610,6 +662,16 @@ function BetsPanel({
             <p className="text-[11px] text-slate-500 mt-0.5">
               {pendingCount} press{pendingCount === 1 ? "" : "es"} pending —
               not counted until accepted.
+            </p>
+          )}
+          {junkItems.length > 0 && (
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Includes {junkItems.length} junk item
+              {junkItems.length === 1 ? "" : "s"} (
+              <span className="tabular-nums">
+                ${(junkPotCents / 100).toFixed(2)}
+              </span>{" "}
+              moved).
             </p>
           )}
         </div>
