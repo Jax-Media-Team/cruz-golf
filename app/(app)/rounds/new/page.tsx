@@ -1284,6 +1284,19 @@ export default function NewRoundPage() {
                   setGames={setGames}
                 />
               ))}
+              {/* Junk side-bets — rendered INLINE in the games picker as
+                  a row alongside Skins / Nassau / etc. Patrick asked
+                  for this five times: junk should feel like another
+                  game you toggle here, not a separate section at the
+                  bottom of the form. Visual treatment mirrors
+                  FamilyGameRow exactly (checkbox + label + short
+                  description, expanded config on enable). */}
+              <JunkPickerRow
+                enabled={junkEnabled}
+                flatDollars={junkFlatDollars}
+                setEnabled={setJunkEnabled}
+                setFlatDollars={setJunkFlatDollars}
+              />
               {moreFamilies.length > 0 && (
                 <details className="pt-1">
                   <summary className="cursor-pointer text-xs uppercase tracking-[0.18em] text-cream-100/55 hover:text-cream-100 py-1.5 select-none">
@@ -1353,70 +1366,11 @@ export default function NewRoundPage() {
         />
       )}
 
-      {/* Junk side-bets — opt-in at round creation. Single toggle +
-          flat amount, defaults to off. Commissioner can configure
-          escalating mode + category toggles from
-          /rounds/[id]/games after the round is live. This block
-          exists so a commissioner setting up a round doesn't have
-          to come back to a separate page to enable junk. */}
-      <section className="card p-4 space-y-2">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="font-serif text-xl text-cream-50">
-              Junk side-bets
-            </h2>
-            <p className="text-xs text-cream-100/55 mt-0.5 leading-snug">
-              Birdies, greenies, sandies, chip-ins, poleys, pinnies —
-              tap-the-extras tracking that runs alongside the main
-              game.
-            </p>
-          </div>
-          <label className="inline-flex items-center gap-2 text-sm text-cream-50 select-none cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-gold-500"
-              checked={junkEnabled}
-              onChange={(e) => setJunkEnabled(e.target.checked)}
-            />
-            <span>{junkEnabled ? "On" : "Off"}</span>
-          </label>
-        </div>
-        {junkEnabled && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-cream-100/8">
-            <div>
-              <label className="label">Amount per item (USD)</label>
-              <input
-                className="input"
-                type="number"
-                step="0.50"
-                min={0.5}
-                value={junkFlatDollars}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  if (!Number.isFinite(v) || v <= 0) return;
-                  setJunkFlatDollars(v);
-                }}
-              />
-              <p className="text-[10px] text-cream-100/45 mt-0.5">
-                Flat $ per item by default. Switch to escalating from
-                the games editor after the round is live if you want
-                the pot to grow.
-              </p>
-            </div>
-            <div className="text-[11px] text-cream-100/55 leading-snug self-end">
-              <span className="text-cream-100/85">Default categories:</span>{" "}
-              Birdie, Eagle,{" "}
-              <span title="Greenie — closest to the pin on a par-3 (also called Pinny)">Greenie</span>,{" "}
-              <span title="Sandy — par or better after hitting a bunker">Sandy</span>,{" "}
-              Chip-in,{" "}
-              <span title="Poley — ball ends up touching the flagstick on the green">Poley</span>,{" "}
-              <span title="Pinny — closest-to-the-pin on a par-3 (variant of Greenie)">Pinny</span>.
-              {" "}Tap <span className="text-cream-100/85">+ Other</span> in
-              the live entry strip to record one-offs like &ldquo;Woodie&rdquo;.
-            </div>
-          </div>
-        )}
-      </section>
+      {/* Standalone Junk section removed 2026-05-12: junk is now an
+          inline row inside the Games picker above (alongside Skins /
+          Nassau / etc.), where Patrick asked for it. The startRound
+          flow still reads junkEnabled + junkFlatDollars state to write
+          fn_set_junk_config — only the UI moved. */}
 
       {err && <p className="text-red-300 text-sm">{err}</p>}
       <button className="btn-primary w-full sm:w-auto" disabled={busy} onClick={startRound}>
@@ -1639,6 +1593,78 @@ function FamilyGameRow({
               }
             />
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Junk side-bet row ----------
+// Sits inline in the Games picker alongside FamilyGameRow entries
+// (Skins, Nassau, Best Ball, Side Bets). Visual treatment mirrors
+// FamilyGameRow exactly: top-border-separated row, checkbox + label
+// + short description, indented config when enabled. Patrick asked
+// for this five times before it finally landed inside the picker.
+function JunkPickerRow({
+  enabled,
+  flatDollars,
+  setEnabled,
+  setFlatDollars
+}: {
+  enabled: boolean;
+  flatDollars: number;
+  setEnabled: (next: boolean) => void;
+  setFlatDollars: (next: number) => void;
+}) {
+  return (
+    <div className="border-t border-cream-100/8 first:border-t-0 py-2">
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span className="flex-1">
+          <span className="font-medium text-cream-50">Junk side-bets</span>
+          <span className="block text-[11px] text-cream-100/55 mt-0.5">
+            Birdies, greenies, sandies, chip-ins. Tap-the-extras tracking
+            that runs alongside the main game.
+          </span>
+        </span>
+      </label>
+
+      {enabled && (
+        <div className="mt-2 pl-6 space-y-2">
+          <div>
+            <label className="label text-xs">Amount per item ($)</label>
+            <input
+              className="input text-sm"
+              type="number"
+              step="0.50"
+              min={0.5}
+              value={flatDollars}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (!Number.isFinite(v) || v <= 0) return;
+                setFlatDollars(v);
+              }}
+            />
+            <p className="text-[10px] text-cream-100/45 mt-0.5">
+              Flat $ per item. Switch to escalating from the round&apos;s
+              Games &amp; bets page after start if you want a growing pot.
+            </p>
+          </div>
+          <p className="text-[11px] text-cream-100/55 leading-snug">
+            <span className="text-cream-100/85">Default categories:</span>{" "}
+            Birdie, Eagle,{" "}
+            <span title="Greenie — closest to the pin on a par-3 (also called Pinny)">Greenie</span>,{" "}
+            <span title="Sandy — par or better after hitting a bunker">Sandy</span>,{" "}
+            Chip-in,{" "}
+            <span title="Poley — ball ends up touching the flagstick on the green">Poley</span>,{" "}
+            <span title="Pinny — closest-to-the-pin on a par-3 (variant of Greenie)">Pinny</span>.
+            {" "}Tap <span className="text-cream-100/85">+ Other</span> during
+            live entry to record one-offs like &ldquo;Woodie&rdquo;.
+          </p>
         </div>
       )}
     </div>
