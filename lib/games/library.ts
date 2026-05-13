@@ -143,7 +143,11 @@ export const GAME_LIBRARY: GamePreset[] = [
         front_stake_cents: 1000,
         back_stake_cents: 1000,
         overall_stake_cents: 1000,
-        presses_enabled: true,
+        // Engine reads `cfg.presses` (string enum). Patrick 2026-05-13:
+        // auto-presses never opened because this default wrote the
+        // legacy `presses_enabled: true` boolean that the engine
+        // ignores. Fixed at the source.
+        presses: "auto_2_down",
         match_play: false
       }
     },

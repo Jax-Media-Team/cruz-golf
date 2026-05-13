@@ -23,6 +23,7 @@
 import { buildPlayerSheet } from "../scoring";
 import { applyAllowance, holesInPlay } from "./helpers";
 import { detectAutoPresses, type HoleResult } from "./press";
+import { isAutoPress2Down } from "./config-normalize";
 import type { GameInput, GameType, RoundPlayer, UUID } from "../types";
 
 /**
@@ -253,7 +254,7 @@ function buildNassauState(input: GameInput): LiveMatchState | null {
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
-  const autoPress = matchPlay && cfg.presses === "auto_2_down";
+  const autoPress = matchPlay && isAutoPress2Down(cfg);
 
   // Determine sides — same rule as settleNassau:
   // teams if present, else first-two players head-to-head.
@@ -399,7 +400,7 @@ function buildSixSixSixState(input: GameInput): LiveMatchState | null {
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
-  const autoPress = matchPlay && cfg.presses === "auto_2_down";
+  const autoPress = matchPlay && isAutoPress2Down(cfg);
 
   const ids = input.players.map((p) => p.id);
   const rotation =
@@ -514,7 +515,7 @@ function buildTeamGameState(input: GameInput): LiveMatchState | null {
     presses?: "none" | "manual" | "auto_2_down";
   };
   const matchPlay = cfg.match_play === true;
-  const autoPress = matchPlay && cfg.presses === "auto_2_down";
+  const autoPress = matchPlay && isAutoPress2Down(cfg);
   const t = input.game.game_type;
   const isAggregate = t === "aggregate_gross" || t === "aggregate_net";
   const isScramble = t === "scramble_gross" || t === "scramble_net";

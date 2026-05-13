@@ -151,20 +151,48 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       /* venmo column missing or RLS denied — leaderboard still renders */
     }
   }
-  // Mutate rps to add a `players.id` and `players.venmo_handle` field so
-  // downstream code that reads `r.players?.id` / `r.players?.venmo_handle`
-  // (SettlementSummary, etc.) continues to work unchanged.
+  // Mutate rps to add a `players.id` + `players.venmo_handle` field
+  // AND normalize `course_tees` shape.
+  //
+  // Patrick 2026-05-13: "Leaderboard gross/net not populating
+  // properly." Root cause (caught by a focused diagnostic agent):
+  // PostgREST sometimes returns the nested `course_tees` embed as an
+  // ARRAY instead of a single object, because the rps query selects
+  // `course_tees(id, ...)` and `round_players` has multiple possible
+  // join paths to `course_tees` (direct `tee_id` FK AND transitively
+  // through round → courses → course_tees). The relationship
+  // inference flips to "many" and the embed comes back as `[{...}]`
+  // instead of `{...}`.
+  //
+  // Downstream (round-view.tsx line 75) does `r.course_tees?.course_holes`
+  // which reads `undefined` on an array, so `holes = []`. The
+  // `buildPlayerSheet` engine iterates zero rows → totals all zero →
+  // the Leaderboard renders "—" everywhere because the `thru === 0`
+  // empty-state gate triggers. That's the "Gross/Net not populating"
+  // symptom.
+  //
+  // Fix: defensively unwrap arrays here. Prefer the tee whose
+  // `id === r.tee_id` (the round_player's specifically-assigned tee);
+  // fall back to the first element if id-match fails. Pure-object
+  // shape returns through unchanged.
   if (rps) {
-    rps = rps.map((r: any) => ({
-      ...r,
-      players: r.players
-        ? {
-            ...r.players,
-            id: r.player_id,
-            venmo_handle: venmoByPlayerId.get(r.player_id) ?? null
-          }
-        : null
-    })) as any;
+    rps = rps.map((r: any) => {
+      const tees = r.course_tees;
+      const normalizedTees = Array.isArray(tees)
+        ? tees.find((t: any) => t?.id === r.tee_id) ?? tees[0] ?? null
+        : tees;
+      return {
+        ...r,
+        course_tees: normalizedTees,
+        players: r.players
+          ? {
+              ...r.players,
+              id: r.player_id,
+              venmo_handle: venmoByPlayerId.get(r.player_id) ?? null
+            }
+          : null
+      };
+    }) as any;
   }
 
   // "Claim your spot" — show banner to invitees who don't yet have a linked player.

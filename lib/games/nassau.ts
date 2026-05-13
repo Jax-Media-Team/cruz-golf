@@ -2,6 +2,7 @@ import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
 import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
 import { detectAutoPresses, pressPotsBySide, type HoleResult } from "./press";
+import { isAutoPress2Down } from "./config-normalize";
 
 type NassauConfig = {
   net?: boolean;
@@ -155,7 +156,7 @@ export function settleNassau(input: GameInput): GameOutput {
   // Press settlement — only when matchPlay AND presses=auto_2_down.
   // Builds a HoleResult[] from the per-side scoring sheets, runs each
   // segment through detectAutoPresses, and applies the pots.
-  if (matchPlay && cfg.presses === "auto_2_down") {
+  if (matchPlay && isAutoPress2Down(cfg)) {
     const segmentHoleResults: HoleResult[] = holes.map((h) => {
       const a = sideHoleScore(sideA, h.hole_number);
       const b = sideHoleScore(sideB, h.hole_number);

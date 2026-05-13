@@ -17,6 +17,20 @@ html, body {
      behavior: none` keeps the bounce contained to the page itself
      (or disables it entirely on touch devices). */
   overscroll-behavior-y: none;
+  /* Defense-in-depth against horizontal scroll on mobile. Patrick
+     2026-05-13: "New Round and Leaderboard can move left/right.
+     The viewport is off." A wide child element (table, fixed-width
+     button row, long unbroken string) shouldn't be able to push the
+     body past the viewport.
+     - `overflow-x: hidden` is the universal fallback (works on iOS
+       Safari < 16 where `clip` is unsupported and silently ignored).
+     - `overflow-x: clip` overrides on supporting browsers — `clip`
+       prevents the scroll-anchor positioning quirks `hidden`
+       sometimes introduces with `position: sticky` descendants.
+     Vertical scroll is preserved (overflow-y default `visible`). */
+  overflow-x: hidden;
+  overflow-x: clip;
+  max-width: 100vw;
 }
 
 html, body {

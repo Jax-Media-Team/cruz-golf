@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { FinalizeView } from "./finalize-view";
 import { RoundBreadcrumb } from "@/components/RoundBreadcrumb";
+import { normalizeRps } from "@/lib/rps-normalize";
 // Force dynamic rendering. Without this, Next.js 15 can statically
 // prerender this server component at build time with no auth cookie
 // — every Supabase fetch returns empty under RLS, the page renders
@@ -19,11 +20,17 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     .single();
   if (!round) redirect("/dashboard");
 
-  const { data: rps } = await sb
+  const { data: rpsRaw } = await sb
     .from("round_players")
     .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(display_name, venmo_handle), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
     .eq("round_id", id)
     .order("display_order");
+
+  // Same shape normalization as /rounds/[id] — PostgREST sometimes
+  // returns `course_tees` as an array when the relationship is
+  // ambiguous, which breaks the leaderboard + settlement engines that
+  // expect a single object. Patrick 2026-05-13.
+  const rps = normalizeRps(rpsRaw as any);
 
   const { data: scores } = await sb
     .from("scores")

@@ -2,6 +2,7 @@ import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
 import { addDelta, emptyOutput, holesInPlay } from "./helpers";
 import { detectAutoPresses, pressPotsBySide, type HoleResult } from "./press";
+import { isAutoPress2Down } from "./config-normalize";
 
 /**
  * 6-6-6: a 4-player game played in three 6-hole segments. Partners rotate so
@@ -47,7 +48,7 @@ export function settleSixSixSix(input: GameInput): GameOutput {
   };
   const useNet = cfg.net ?? true;
   const matchPlay = cfg.match_play ?? true;
-  const autoPress = cfg.presses === "auto_2_down";
+  const autoPress = isAutoPress2Down(cfg);
 
   const playerIds = input.players.map((p) => p.id);
   for (const id of playerIds) addDelta(out.perPlayer, id, 0, "");

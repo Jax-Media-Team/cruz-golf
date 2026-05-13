@@ -64,7 +64,12 @@ export const GAME_PACKAGES: GamePackage[] = [
           front_stake_cents: 1000,
           back_stake_cents: 1000,
           overall_stake_cents: 1000,
-          presses_enabled: true
+          // The engine reads `cfg.presses` (string enum), NOT the
+          // legacy `presses_enabled` boolean. Patrick 2026-05-13:
+          // auto-presses were never opening because this package
+          // wrote `presses_enabled: true` while settlement read
+          // `cfg.presses === "auto_2_down"`. Fixed at the source.
+          presses: "auto_2_down"
         }
       }
     ]

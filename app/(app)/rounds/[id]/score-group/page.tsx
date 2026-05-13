@@ -55,7 +55,7 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
 
   const { data: rps } = await sb
     .from("round_players")
-    .select("id, playing_handicap, display_order, players(display_name), course_tees(par, course_holes(hole_number, par, stroke_index))")
+    .select("id, player_id, team_id, playing_handicap, display_order, players(display_name, profile_id), course_tees(par, course_holes(hole_number, par, stroke_index))")
     .eq("round_id", id)
     .order("display_order");
 
@@ -64,6 +64,33 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
     .from("scores")
     .select("round_player_id, hole_number, gross")
     .in("round_player_id", rpIds.length > 0 ? rpIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  // Round games + manual presses — needed for inline PressControls.
+  // Patrick 2026-05-13: "Junk and Open Press should be available
+  // directly from the Enter Scores screen."
+  const { data: games } = await sb
+    .from("round_games")
+    .select("id, game_type, name, stake_cents, allowance_pct, config")
+    .eq("round_id", id);
+
+  let presses: any[] = [];
+  try {
+    const { data: pressRows } = await sb
+      .from("round_presses")
+      .select(
+        "id, game_id, segment_label, start_hole, end_hole, stake_cents, side_a_rp_ids, side_b_rp_ids, opened_by_rp_id, opened_at, accepted_at, declined_at, withdrawn_at, status"
+      )
+      .eq("round_id", id)
+      .in("status", ["pending", "accepted"])
+      .order("opened_at", { ascending: false });
+    presses = pressRows ?? [];
+  } catch {
+    /* pre-0035 env — press table missing */
+  }
+
+  // "My rp" — needed for PressControls so it knows which side is "me".
+  const myRpId =
+    (rps ?? []).find((r: any) => r.players?.profile_id === user.id)?.id ?? null;
 
   // Junk side-bet config + items — fetched here so the score-group
   // page can render `<JunkControls>` inline. Patrick 2026-05-12:
@@ -129,6 +156,9 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
         junkConfig={junkConfig}
         junkItems={junkItems}
         isCommissioner={isCommissioner}
+        games={games ?? []}
+        presses={presses ?? []}
+        myRpId={myRpId}
       />
     </div>
   );

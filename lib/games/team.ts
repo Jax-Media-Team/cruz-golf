@@ -2,6 +2,7 @@ import type { GameInput, GameOutput, UUID } from "../types";
 import { buildPlayerSheet } from "../scoring";
 import { addDelta, applyAllowance, emptyOutput, holesInPlay } from "./helpers";
 import { detectAutoPresses, pressPotsBySide, type HoleResult } from "./press";
+import { isAutoPress2Down } from "./config-normalize";
 
 type TeamConfig = {
   /** When true, the game settles hole-by-hole match-play between the two
@@ -160,7 +161,7 @@ export function settleTeamGame(
     }
 
     // Press settlement — only fires when matchPlay && presses=auto_2_down.
-    if (cfg.presses === "auto_2_down") {
+    if (isAutoPress2Down(cfg)) {
       const holeResults: HoleResult[] = perHole.map((h) => {
         if (!h.complete) {
           return {

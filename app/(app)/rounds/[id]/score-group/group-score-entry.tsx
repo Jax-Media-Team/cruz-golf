@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { strokesPerHole } from "@/lib/handicap";
 import { GroupScorePad, type GroupPlayer } from "@/components/GroupScorePad";
@@ -7,6 +8,7 @@ import { ScoreGrid } from "@/components/ScoreGrid";
 import { useScoreSaver } from "@/lib/useScoreSaver";
 import { SaveStatusBanner } from "@/components/SaveStatusBanner";
 import { JunkControls } from "../junk-controls";
+import { PressControls } from "../press-controls";
 
 type RP = {
   id: string;
@@ -30,11 +32,17 @@ export function GroupScoreEntry({
   // JunkControls panel inline under the scorecard so the user records
   // birdies/sandies/chip-ins without leaving the scoring screen.
   // Patrick 2026-05-12: "easy to keep track of from within the game
-  // as I am entering scores." All three default to safe no-ops so
-  // pages that don't pass them (e.g. older callers) keep working.
+  // as I am entering scores."
   junkConfig = null,
   junkItems = [],
-  isCommissioner = false
+  isCommissioner = false,
+  // Press controls props — Patrick 2026-05-13: "Junk and Open Press
+  // should be available directly from the Enter Scores screen."
+  // Same PressControls used on the round detail page, mounted here
+  // so the scorer never has to leave score entry.
+  games = [],
+  presses = [],
+  myRpId = null
 }: {
   roundId: string;
   courseName: string;
@@ -48,6 +56,9 @@ export function GroupScoreEntry({
   junkConfig?: any;
   junkItems?: any[];
   isCommissioner?: boolean;
+  games?: any[];
+  presses?: any[];
+  myRpId?: string | null;
 }) {
   const router = useRouter();
   const saver = useScoreSaver({ roundId });
@@ -122,9 +133,26 @@ export function GroupScoreEntry({
 
   return (
     <div className="space-y-4">
-      {/* Back-nav lives in the parent page's <RoundBreadcrumb> — no
-          duplicate "← Leaderboard" here (2026-05-12 fix per Patrick:
-          "multiple back options are confusing"). */}
+      {/* Persistent leaderboard CTA. Patrick 2026-05-13: "Add clear
+          leaderboard button from score entry... I have to go back to
+          the round and then click leaderboard." Now one tap from the
+          scoring screen to live results. Routes to the round page
+          with #leaderboard anchor so the leaderboard scrolls into
+          view immediately. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Link
+          href={`/rounds/${roundId}#leaderboard`}
+          className="btn-secondary text-xs inline-flex items-center gap-1.5"
+        >
+          📊 Live leaderboard →
+        </Link>
+        <Link
+          href={`/rounds/${roundId}`}
+          className="text-xs text-cream-100/55 hover:text-cream-100"
+        >
+          ← Round overview
+        </Link>
+      </div>
       <SaveStatusBanner state={saver.state} onRetry={saver.retry} onDiscard={saver.discard} roundId={roundId} />
 
       <div>
@@ -248,6 +276,33 @@ export function GroupScoreEntry({
               }))}
               config={junkConfig as any}
               initialItems={junkItems as any}
+              isCommissioner={isCommissioner}
+            />
+          )}
+
+          {/* Inline press controls — Patrick 2026-05-13: "Junk and
+              Open Press should be available directly from the Enter
+              Scores screen." Same PressControls component the round
+              detail page renders, mounted under the scorecard. Only
+              shown when there's at least one game with stakes; the
+              round-status gate (live/pending only) lives inside
+              PressControls itself, so finalized rounds reaching this
+              page (rare — there's a redirect at page-load) just
+              render the controls in read-only mode. */}
+          {(games?.length ?? 0) > 0 && rps.length > 0 && roundStatus !== "finalized" && (
+            <PressControls
+              roundId={roundId}
+              totalHoles={totalHoles}
+              rps={rps.map((r: any) => ({
+                id: r.id,
+                player_id: r.player_id ?? r.id,
+                team_id: r.team_id ?? null,
+                display_name: r.players?.display_name ?? "Player",
+                is_me: r.id === myRpId
+              }))}
+              games={games as any}
+              presses={presses as any}
+              myRpId={myRpId}
               isCommissioner={isCommissioner}
             />
           )}

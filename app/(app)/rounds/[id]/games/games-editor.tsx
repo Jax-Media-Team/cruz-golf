@@ -1013,7 +1013,22 @@ function NassauConfig({
   const front = ((c as any).front_stake_cents ?? 0) as number;
   const back = ((c as any).back_stake_cents ?? 0) as number;
   const overall = ((c as any).overall_stake_cents ?? 0) as number;
-  const presses = !!(c as any).presses_enabled;
+  // CRITICAL: read `cfg.presses` (string enum) — same field the
+  // settlement engine reads. The legacy `presses_enabled` boolean
+  // here was a bug source: round_view.tsx + the Nassau settle path
+  // ONLY check `presses === "auto_2_down"`, so the old checkbox
+  // ticked silently without ever firing an auto-press. Patrick
+  // 2026-05-13: "2-down auto presses are not working properly."
+  // Coerce legacy rows: an in-flight round that was saved with the
+  // old boolean now reads as `presses_enabled: true` → treat that
+  // as auto_2_down so the chain immediately starts working without
+  // a re-save.
+  const pressesRaw = (c as any).presses;
+  const legacyOn = (c as any).presses_enabled === true;
+  const presses =
+    pressesRaw === "auto_2_down" ||
+    pressesRaw === "manual" ||
+    (pressesRaw == null && legacyOn);
 
   function setStake(key: "front_stake_cents" | "back_stake_cents" | "overall_stake_cents", dollars: number) {
     const cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
@@ -1051,12 +1066,17 @@ function NassauConfig({
         <input
           type="checkbox"
           checked={presses}
-          onChange={(e) =>
-            onPatch({ config: { ...(c as any), presses_enabled: e.target.checked } })
-          }
+          onChange={(e) => {
+            // Write the string the engine actually reads. Strip the
+            // legacy boolean so we don't leave dead state in the DB.
+            const next = { ...(c as any) };
+            delete next.presses_enabled;
+            next.presses = e.target.checked ? "auto_2_down" : "none";
+            onPatch({ config: next });
+          }}
           disabled={disabled}
         />
-        Allow presses
+        Allow auto-presses at 2-down
       </label>
     </div>
   );

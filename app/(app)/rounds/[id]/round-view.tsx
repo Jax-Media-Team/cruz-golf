@@ -204,8 +204,12 @@ function SkinsPanel({
         });
         return (
           <div key={g.id} className="rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
-              <span className="font-serif text-lg text-slate-900">{g.name}</span>
+            {/* min-w-0 + truncate on the title so a long game name
+                (e.g. "Best Ball Net + Aggregate Combined") doesn't push
+                the card past the viewport on a 375px phone. Patrick
+                2026-05-13 horizontal-scroll audit. */}
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3 min-w-0">
+              <span className="font-serif text-lg text-slate-900 truncate min-w-0">{g.name}</span>
               <StatusPill status={out.status} />
             </div>
             <ul className="divide-y divide-slate-100 text-sm">
@@ -316,9 +320,10 @@ function MatchPanel({
             key={g.id}
             className="rounded-xl border border-slate-200 bg-white overflow-hidden"
           >
-            {/* Game header */}
-            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
-              <span className="font-serif text-lg text-slate-900">
+            {/* Game header — min-w-0 + truncate guard same as the
+                Skins panel above. */}
+            <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3 min-w-0">
+              <span className="font-serif text-lg text-slate-900 truncate min-w-0">
                 {g.name}
               </span>
               <StatusPill status={out.status} />
