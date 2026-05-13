@@ -10,6 +10,24 @@ html, body {
   background: theme(colors.brand.950);
   color: theme(colors.cream.50);
   -webkit-tap-highlight-color: transparent;
+  /* Prevent the rubber-band / overscroll bounce on iOS Safari and
+     installed iPhone PWAs from revealing dark space below the bottom
+     nav. Patrick 2026-05-12: "MASSIVE amount of blank space below
+     the Clubhouse Players Courses Boards More tab." `overscroll-
+     behavior: none` keeps the bounce contained to the page itself
+     (or disables it entirely on touch devices). */
+  overscroll-behavior-y: none;
+}
+
+html, body {
+  /* Belt-and-suspenders: pin the document height to the dynamic
+     viewport on touch devices so the bottom-fixed nav never floats
+     above empty space when iOS Safari's URL bar collapses + the
+     `100vh` value mismatches the visible area. `dvh` is iOS 15.4+;
+     on older browsers the fallback `min-h-screen` (100vh) on the
+     inner container still applies. */
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 @layer base {

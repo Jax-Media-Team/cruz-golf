@@ -128,14 +128,20 @@ export default function SignupPage() {
           <p className="text-xs text-cream-100/55 mt-1">Takes 30 seconds. You can name your crew when you start your first round.</p>
         </div>
 
-        {/* OAuth above email/password — one tap for users who already
-            have Google or Facebook. Audit P1 #10. */}
+        {/* OAuth buttons + the "or sign up with email" divider are
+            all gated by the same env flags — when no OAuth provider
+            is enabled, none of this renders and the email form
+            stands alone (Patrick 2026-05-12: providers not yet
+            configured in Supabase). */}
         <GoogleAuthButton next="/dashboard" />
         <FacebookAuthButton next="/dashboard" />
-        <div className="relative my-1">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
-          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign up with email</span></div>
-        </div>
+        {(process.env.NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED === "true" ||
+          process.env.NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED === "true") && (
+          <div className="relative my-1">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
+            <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign up with email</span></div>
+          </div>
+        )}
 
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

@@ -110,14 +110,21 @@ function LoginInner() {
           <p className="h-eyebrow">Sign in</p>
           <h1 className="h-display text-3xl text-cream-50 mt-1">Welcome back.</h1>
         </div>
-        {/* OAuth above email/password — returning users who signed up
-            with Google or Facebook hit one tap. Audit P1 #10. */}
+        {/* OAuth buttons render only when the corresponding provider
+            env flag is set AND the provider is actually configured in
+            Supabase. When neither is enabled, the buttons + the
+            "or sign in with email" divider all hide and the email
+            form is the only option (which is the current state —
+            Patrick 2026-05-12 hadn't configured either provider). */}
         <GoogleAuthButton next="/dashboard" />
         <FacebookAuthButton next="/dashboard" />
-        <div className="relative my-1">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
-          <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign in with email</span></div>
-        </div>
+        {(process.env.NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED === "true" ||
+          process.env.NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED === "true") && (
+          <div className="relative my-1">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
+            <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign in with email</span></div>
+          </div>
+        )}
         <div>
           <label className="label">Email</label>
           <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />

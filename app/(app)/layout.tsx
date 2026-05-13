@@ -170,8 +170,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     // pb scales to clear the fixed bottom nav (5rem) + iOS home-indicator
     // safe area when the app is installed as a PWA. sm:pb-0 because the
-    // nav is mobile-only.
-    <div className="min-h-screen flex flex-col pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
+    // nav is mobile-only. min-h uses both 100vh + 100dvh so the
+    // container fills the viewport reliably across iOS Safari (where
+    // 100vh and the visible area can diverge during URL-bar transitions).
+    <div className="min-h-screen min-h-[100dvh] flex flex-col pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
       {/* Sticky header — pt accounts for iOS notched safe area when the
           app runs in installed-PWA mode (Safari status bar overlaps the
           chrome otherwise). */}

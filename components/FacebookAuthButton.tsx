@@ -6,23 +6,25 @@ import { friendlyAuthError } from "@/lib/auth-errors";
 /**
  * Facebook OAuth sign-in via Supabase. Mirrors GoogleAuthButton.
  *
- * Production gating: the button renders unconditionally, but the
- * OAuth call FAILS until Patrick configures the Facebook provider
- * in the Supabase dashboard. See `docs/FACEBOOK_AUTH_SETUP.md` for
- * the exact Meta-for-Developers + Supabase steps. Until those land,
- * tapping the button returns Supabase's "provider is not enabled"
- * error which surfaces below.
+ * GATED behind `NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED=true`. Clicking
+ * the button when the provider isn't configured in Supabase drops
+ * the user on a raw JSON error page at the Supabase auth URL —
+ * Patrick saw exactly this on 2026-05-12 ("the facebook and google
+ * login options both throw an error"). Hiding the button until the
+ * provider is wired up is the only honest UX.
  *
- * Why the button ships before the backend is configured: the code is
- * the part I can do without Patrick's intervention. Hiding the
- * button behind a feature flag delays the visible commitment to the
- * feature; surfacing the error explicitly is more honest about the
- * single remaining step.
+ * To enable: configure Facebook in Supabase Dashboard → Authentication
+ * → Providers (see docs/FACEBOOK_AUTH_SETUP.md for the Meta-side
+ * setup), then set NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED=true on Vercel.
  */
+const ENABLED = process.env.NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED === "true";
+
 export function FacebookAuthButton({ next = "/dashboard" }: { next?: string }) {
   const sb = supabaseBrowser();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  if (!ENABLED) return null;
 
   async function go() {
     setBusy(true);
