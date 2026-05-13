@@ -94,17 +94,16 @@ gtag('config', '${GA_ID}', { send_page_view: true });`}
           </>
         )}
       </head>
-      {/* min-h-[100dvh] paired with vh fallback. Without dvh the body
-          tracks 100vh (which on iOS Chrome includes the URL-bar
-          area), so on first paint the body is taller than the
-          visible viewport. When the URL bar collapses the content
-          shifts and the first tap lands on a moving target — the
-          exact "feels locked, have to click away first" symptom
-          Patrick reported twice on /login. globals.css ALSO sets
-          min-height: 100dvh on body, but Tailwind utilities take
-          precedence over component-layer CSS, so the utility had
-          to mention dvh too. */}
-      <body className="font-sans antialiased min-h-screen min-h-[100dvh]">{children}</body>
+      {/* REVERTED 2026-05-12: adding `min-h-[100dvh]` here broke
+          `position: fixed` on the mobile bottom nav — on iOS Chrome
+          when body min-height tracks the dynamic viewport, fixed-
+          positioned children inside the (app) layout were landing
+          inline mid-content instead of stuck to the visible bottom.
+          The login click-away fix relies on the form being rendered
+          outside Suspense + `touch-action: manipulation`, NOT on
+          body sizing. globals.css already pins `min-height: 100dvh`
+          on body for browsers that support it — leave it there. */}
+      <body className="font-sans antialiased min-h-screen">{children}</body>
     </html>
   );
 }
