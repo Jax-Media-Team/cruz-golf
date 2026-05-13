@@ -13,11 +13,17 @@ export default async function AdminRoundsPage({
   const status = sp.status;
   const sb = supabaseAdmin();
 
+  // `is("deleted_at", null)` excludes archived rounds. fn_archive_round
+  // stamps deleted_at but leaves status untouched, so without this
+  // filter an archived "live" round keeps showing up here forever.
+  // Patrick has reported this 3+ times — this is the last hold-out
+  // query that was missing the filter.
   let query = sb
     .from("rounds")
     .select(
       "id, date, status, holes, created_at, group_id, course_id, spectator_token, groups(name), courses(name)"
     )
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(200);
   if (

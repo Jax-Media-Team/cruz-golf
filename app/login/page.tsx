@@ -17,8 +17,15 @@ export default function LoginPage() {
 }
 
 function LoginShell() {
+  // min-h-[100dvh] (dynamic viewport units) tracks the visible viewport
+  // — vh on iOS Chrome includes the URL bar area so a vh-centered form
+  // sits below the visible center on first paint. Patrick 2026-05-12
+  // ("When I first land on login screen I have to click away before I
+  // click to enter my info as it seems locked") — root cause was the
+  // form being partially below the URL bar; the first tap was being
+  // consumed by the URL bar dismissal, not the input. dvh fixes that.
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6">
+    <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-8">
       <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
     </main>
   );
@@ -93,7 +100,14 @@ function LoginInner() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6">
+    // min-h-[100dvh] paired with vh fallback. Patrick reported the
+    // form "feels locked" until you click away — root cause was the
+    // form centered on a 100vh canvas that included the iOS Chrome
+    // URL-bar area, so the first tap was consumed by the URL bar
+    // dismissal instead of the input. py-8 also stops the form from
+    // sitting flush against the safe-area at the top of an installed
+    // iPhone PWA.
+    <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-8">
       <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
       {justSignedOut && (
         <div className="mb-4 w-full max-w-sm rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-200">

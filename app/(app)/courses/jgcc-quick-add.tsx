@@ -18,6 +18,28 @@ export function JgccQuickAdd({ groupId }: { groupId: string }) {
   async function add() {
     setBusy(true);
     setErr(null);
+    // Idempotency guard: there is no unique constraint on
+    // (group_id, name) so a second click here would happily create a
+    // second JGCC row, which is exactly what produced the admin
+    // course-list duplicates Patrick called out 2026-05-12 ("30
+    // courses in admin, almost all JGCC"). Check first — if any alive
+    // JGCC already exists for this group, no-op cleanly and just
+    // re-render the courses page so the user sees their existing
+    // course instead of a phantom new one.
+    const { data: existing } = await sb
+      .from("courses")
+      .select("id")
+      .eq("group_id", groupId)
+      .eq("name", JGCC_NAME)
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (existing?.id) {
+      setBusy(false);
+      setDone(true);
+      router.refresh();
+      return;
+    }
     const { data: course, error } = await sb
       .from("courses")
       .insert({ group_id: groupId, name: JGCC_NAME, city: JGCC_CITY, state: JGCC_STATE })

@@ -28,7 +28,14 @@ export default async function AdminOverview() {
   ] = await Promise.all([
     sb.from("profiles").select("*", { head: true, count: "exact" }),
     sb.from("groups").select("*", { head: true, count: "exact" }),
-    sb.from("rounds").select("*", { head: true, count: "exact" }),
+    // Every rounds query in this overview filters `.is("deleted_at", null)`.
+    // fn_archive_round stamps deleted_at but leaves status untouched —
+    // an archived "live" round will still match `.eq("status","live")`
+    // forever without the deleted_at filter. Patrick has flagged this
+    // bug 3 times now; closing it across EVERY count + list query so
+    // archived rounds disappear from the admin overview the same way
+    // they disappear from the user-facing dashboard.
+    sb.from("rounds").select("*", { head: true, count: "exact" }).is("deleted_at", null),
     sb.from("courses").select("*", { head: true, count: "exact" }).is("deleted_at", null),
     sb.from("players").select("*", { head: true, count: "exact" }).is("deleted_at", null),
     sb.from("scores").select("*", { head: true, count: "exact" }),
@@ -41,10 +48,11 @@ export default async function AdminOverview() {
     sb
       .from("rounds")
       .select("id, date, status, created_at, group_id, courses(name), groups(name)")
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(10),
     sb.from("feedback").select("*", { head: true, count: "exact" }).eq("status", "new"),
-    sb.from("rounds").select("id, date, status, course_id"),
+    sb.from("rounds").select("id, date, status, course_id").is("deleted_at", null),
     sb.from("round_players").select("round_id, player_id, players(display_name)"),
     sb.from("settlements").select("from_round_player_id, to_round_player_id, amount_cents"),
     sb.from("courses").select("id, name").is("deleted_at", null),
@@ -55,11 +63,13 @@ export default async function AdminOverview() {
   const liveRounds = await sb
     .from("rounds")
     .select("*", { head: true, count: "exact" })
-    .eq("status", "live");
+    .eq("status", "live")
+    .is("deleted_at", null);
   const finalizedRounds = await sb
     .from("rounds")
     .select("*", { head: true, count: "exact" })
-    .eq("status", "finalized");
+    .eq("status", "finalized")
+    .is("deleted_at", null);
 
   // Live rounds right now — the highest-leverage admin observability
   // surface. Includes spectator_token so we can deep-link straight to the
@@ -389,7 +399,11 @@ export default async function AdminOverview() {
                     {r.groups?.name ?? "Group"}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                {/* flex-wrap so on a 360–390px iPhone viewport the
+                    Inspect/Spectate buttons drop to a second line instead
+                    of pushing the right one off-screen.
+                    Patrick 2026-05-12: "buttons are unclickable out of frame". */}
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   {r.spectator_token && (
                     <Link
                       href={`/rounds/${r.id}/leaderboard?token=${r.spectator_token}&adminMode=1`}

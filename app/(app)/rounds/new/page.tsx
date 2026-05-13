@@ -134,8 +134,35 @@ export default function NewRoundPage() {
   // Junk side-bets — opt-in at round creation (so the commissioner
   // doesn't have to come back to /rounds/[id]/games to set it up).
   // Default $2 flat per item; mirror DEFAULT_JUNK_CONFIG categories.
+  //
+  // Patrick 2026-05-12 (asked 5 times!): the junk toggle now appears
+  // INSIDE every enabled game's expanded config — not as a separate
+  // row at the top of the picker. State is still round-level (one
+  // junk config per round), so toggling junk from any game's card
+  // toggles the same round-level state. The categories list +
+  // custom-add live alongside the toggle so the commissioner can
+  // pre-pick exactly what gets tracked during scoring.
   const [junkEnabled, setJunkEnabled] = useState(false);
   const [junkFlatDollars, setJunkFlatDollars] = useState<number>(2);
+  // 7 standard categories, all on by default. Patrick: "defaulted to
+  // common junk and I can add others, including a custom option."
+  const DEFAULT_JUNK_CATEGORIES = [
+    "birdie",
+    "eagle",
+    "greenie",
+    "sandy",
+    "chip_in",
+    "poley",
+    "pinny"
+  ];
+  const [junkCategories, setJunkCategories] = useState<string[]>(
+    DEFAULT_JUNK_CATEGORIES
+  );
+  // Custom categories the commissioner types into the picker — these
+  // ride through to fn_set_junk_config as p_custom_categories.
+  const [junkCustomCategories, setJunkCustomCategories] = useState<string[]>(
+    []
+  );
 
   // User-saved Quick Start presets.
   const [myPresets, setMyPresets] = useState<any[]>([]);
@@ -279,7 +306,17 @@ export default function NewRoundPage() {
       if (!gid) return;
 
       const [coursesRes, playersRes, recentRoundsRes, userRes, liveRoundsRes] = await Promise.all([
-        sb.from("courses").select("id, name, status").eq("group_id", gid).is("deleted_at", null),
+        // BLOCKER FIX (Patrick 2026-05-12: "no courses on file" + JGCC
+        // quick-add says "already there"): the courses table has NO
+        // `status` column — that was renamed to `verification_status`
+        // back in migration 0026. PostgREST rejected the SELECT,
+        // coursesRes.data fell through to null, the dropdown went
+        // empty, and the page rendered the "no courses on file"
+        // guidance even though /courses correctly showed JGCC sitting
+        // right there. Fix is the column rename here + at the
+        // usage site (~line 893). Don't add status checks back without
+        // verifying the column actually exists.
+        sb.from("courses").select("id, name, verification_status").eq("group_id", gid).is("deleted_at", null),
         sb.from("players").select("id, display_name, handicap_index, profile_id, default_tee_name").eq("group_id", gid).is("deleted_at", null),
         sb
           .from("rounds")
@@ -719,21 +756,18 @@ export default function NewRoundPage() {
       try {
         await sb.rpc("fn_set_junk_config", {
           p_round_id: round.id,
-          p_active_categories: [
-            "birdie",
-            "eagle",
-            "greenie",
-            "sandy",
-            "chip_in",
-            "poley",
-            "pinny"
-          ],
+          // Categories the user actually checked, plus any customs
+          // they typed in. fn_set_junk_config accepts both lists
+          // separately so the engine can distinguish standard vs.
+          // ad-hoc categories when computing per-item amounts.
+          p_active_categories: junkCategories,
           p_mode: "flat",
           p_flat_amount_cents: cents,
           p_base_amount_cents: 200,
           p_escalation_step_cents: 200,
           p_escalation_scope: "per_round",
-          p_custom_categories: null
+          p_custom_categories:
+            junkCustomCategories.length > 0 ? junkCustomCategories : null
         });
       } catch {
         /* round still proceeds; commissioner can enable junk from
@@ -890,7 +924,7 @@ export default function NewRoundPage() {
                 server-side, don't surface it to the round-creator. */}
             {courseId &&
               courseIssues.errors > 0 &&
-              (courses.find((c) => c.id === courseId)?.status !== "verified") && (
+              (courses.find((c) => c.id === courseId)?.verification_status !== "verified") && (
                 <div className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs">
                   <div className="font-medium text-amber-200">
                     ⚠ {courseIssues.errors} course data issue
@@ -1282,21 +1316,16 @@ export default function NewRoundPage() {
                   family={family}
                   games={games}
                   setGames={setGames}
+                  junkEnabled={junkEnabled}
+                  junkFlatDollars={junkFlatDollars}
+                  junkCategories={junkCategories}
+                  junkCustomCategories={junkCustomCategories}
+                  setJunkEnabled={setJunkEnabled}
+                  setJunkFlatDollars={setJunkFlatDollars}
+                  setJunkCategories={setJunkCategories}
+                  setJunkCustomCategories={setJunkCustomCategories}
                 />
               ))}
-              {/* Junk side-bets — rendered INLINE in the games picker as
-                  a row alongside Skins / Nassau / etc. Patrick asked
-                  for this five times: junk should feel like another
-                  game you toggle here, not a separate section at the
-                  bottom of the form. Visual treatment mirrors
-                  FamilyGameRow exactly (checkbox + label + short
-                  description, expanded config on enable). */}
-              <JunkPickerRow
-                enabled={junkEnabled}
-                flatDollars={junkFlatDollars}
-                setEnabled={setJunkEnabled}
-                setFlatDollars={setJunkFlatDollars}
-              />
               {moreFamilies.length > 0 && (
                 <details className="pt-1">
                   <summary className="cursor-pointer text-xs uppercase tracking-[0.18em] text-cream-100/55 hover:text-cream-100 py-1.5 select-none">
@@ -1311,9 +1340,36 @@ export default function NewRoundPage() {
                       family={family}
                       games={games}
                       setGames={setGames}
+                      junkEnabled={junkEnabled}
+                      junkFlatDollars={junkFlatDollars}
+                      junkCategories={junkCategories}
+                      junkCustomCategories={junkCustomCategories}
+                      setJunkEnabled={setJunkEnabled}
+                      setJunkFlatDollars={setJunkFlatDollars}
+                      setJunkCategories={setJunkCategories}
+                      setJunkCustomCategories={setJunkCustomCategories}
                     />
                   ))}
                 </details>
+              )}
+              {/* Standalone junk fallback — surfaces ONLY when no game
+                  is enabled yet, so a commissioner who wants junk-only
+                  rounds (rare but real) still has access. As soon as
+                  any game is toggled on, junk lives inside that game's
+                  config card. Patrick: "easy to keep track of from
+                  within the game as I am entering scores." */}
+              {!hasAnyGameEnabled && (
+                <JunkSubsection
+                  enabled={junkEnabled}
+                  flatDollars={junkFlatDollars}
+                  categories={junkCategories}
+                  customCategories={junkCustomCategories}
+                  setEnabled={setJunkEnabled}
+                  setFlatDollars={setJunkFlatDollars}
+                  setCategories={setJunkCategories}
+                  setCustomCategories={setJunkCustomCategories}
+                  rowMode={true}
+                />
               )}
             </>
           );
@@ -1400,11 +1456,27 @@ type GameState = Record<
 function FamilyGameRow({
   family,
   games,
-  setGames
+  setGames,
+  junkEnabled,
+  junkFlatDollars,
+  junkCategories,
+  junkCustomCategories,
+  setJunkEnabled,
+  setJunkFlatDollars,
+  setJunkCategories,
+  setJunkCustomCategories
 }: {
   family: GameFamily;
   games: GameState;
   setGames: React.Dispatch<React.SetStateAction<GameState>>;
+  junkEnabled: boolean;
+  junkFlatDollars: number;
+  junkCategories: string[];
+  junkCustomCategories: string[];
+  setJunkEnabled: (next: boolean) => void;
+  setJunkFlatDollars: (next: number) => void;
+  setJunkCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  setJunkCustomCategories: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
   // Pick the currently-enabled (variant, mode) for this family, if any.
   // We use that as the source of truth for "is this family on?" and for
@@ -1593,31 +1665,101 @@ function FamilyGameRow({
               }
             />
           )}
+
+          {/* Junk side-bets — nested inside every enabled game's config
+              block per Patrick's repeated ask. State is round-level
+              (one junk config per round, shared across all games), so
+              toggling junk inside Skins also toggles it for Nassau,
+              etc. Rendered here so the commissioner sees junk as a
+              first-class part of each game's setup, not as a separate
+              orphan section. */}
+          <JunkSubsection
+            enabled={junkEnabled}
+            flatDollars={junkFlatDollars}
+            categories={junkCategories}
+            customCategories={junkCustomCategories}
+            setEnabled={setJunkEnabled}
+            setFlatDollars={setJunkFlatDollars}
+            setCategories={setJunkCategories}
+            setCustomCategories={setJunkCustomCategories}
+            rowMode={false}
+          />
         </div>
       )}
     </div>
   );
 }
 
-// ---------- Junk side-bet row ----------
-// Sits inline in the Games picker alongside FamilyGameRow entries
-// (Skins, Nassau, Best Ball, Side Bets). Visual treatment mirrors
-// FamilyGameRow exactly: top-border-separated row, checkbox + label
-// + short description, indented config when enabled. Patrick asked
-// for this five times before it finally landed inside the picker.
-function JunkPickerRow({
+// ---------- Junk side-bets subsection ----------
+// Nests inside each enabled game's config block (Skins, Nassau,
+// 6-6-6, Best Ball, etc.) per Patrick's repeat ask. Same state is
+// shared across all games — the round has one junk config, just
+// surfaced wherever the commissioner is configuring a game so they
+// don't have to hunt for it.
+//
+// Two visual modes:
+//   - rowMode=false (default): nested INSIDE an already-open game
+//     config card. No top border, more compact.
+//   - rowMode=true: standalone picker row at the top of the games
+//     section, used only when no game is enabled yet so junk-only
+//     rounds remain reachable.
+const ALL_JUNK_CATEGORIES: { key: string; label: string; hint: string }[] = [
+  { key: "birdie", label: "Birdie", hint: "1 under par" },
+  { key: "eagle", label: "Eagle", hint: "2 under par" },
+  { key: "greenie", label: "Greenie", hint: "Closest to the pin on a par-3" },
+  { key: "sandy", label: "Sandy", hint: "Par or better after hitting a bunker" },
+  { key: "chip_in", label: "Chip-in", hint: "Holed from off the green" },
+  { key: "poley", label: "Poley", hint: "Ball ends up touching the flagstick" },
+  { key: "pinny", label: "Pinny", hint: "Closest-to-the-pin variant of greenie" }
+];
+
+function JunkSubsection({
   enabled,
   flatDollars,
+  categories,
+  customCategories,
   setEnabled,
-  setFlatDollars
+  setFlatDollars,
+  setCategories,
+  setCustomCategories,
+  rowMode
 }: {
   enabled: boolean;
   flatDollars: number;
+  categories: string[];
+  customCategories: string[];
   setEnabled: (next: boolean) => void;
   setFlatDollars: (next: number) => void;
+  setCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  setCustomCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  rowMode: boolean;
 }) {
+  const [customDraft, setCustomDraft] = useState("");
+  const toggle = (key: string) => {
+    setCategories((cur) =>
+      cur.includes(key) ? cur.filter((c) => c !== key) : [...cur, key]
+    );
+  };
+  const addCustom = () => {
+    const v = customDraft.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!v) return;
+    setCustomCategories((cur) => (cur.includes(v) ? cur : [...cur, v]));
+    setCategories((cur) => (cur.includes(v) ? cur : [...cur, v]));
+    setCustomDraft("");
+  };
+  const removeCustom = (key: string) => {
+    setCustomCategories((cur) => cur.filter((c) => c !== key));
+    setCategories((cur) => cur.filter((c) => c !== key));
+  };
+
   return (
-    <div className="border-t border-cream-100/8 first:border-t-0 py-2">
+    <div
+      className={
+        rowMode
+          ? "border-t border-cream-100/8 first:border-t-0 py-2"
+          : "mt-3 pt-3 border-t border-cream-100/8"
+      }
+    >
       <label className="flex items-center gap-3 cursor-pointer">
         <input
           type="checkbox"
@@ -1627,14 +1769,14 @@ function JunkPickerRow({
         <span className="flex-1">
           <span className="font-medium text-cream-50">Junk side-bets</span>
           <span className="block text-[11px] text-cream-100/55 mt-0.5">
-            Birdies, greenies, sandies, chip-ins. Tap-the-extras tracking
-            that runs alongside the main game.
+            Birdies, greenies, sandies, chip-ins. Runs alongside this game
+            — same setup applies to every game in the round.
           </span>
         </span>
       </label>
 
       {enabled && (
-        <div className="mt-2 pl-6 space-y-2">
+        <div className="mt-2 pl-6 space-y-3">
           <div>
             <label className="label text-xs">Amount per item ($)</label>
             <input
@@ -1654,17 +1796,92 @@ function JunkPickerRow({
               Games &amp; bets page after start if you want a growing pot.
             </p>
           </div>
-          <p className="text-[11px] text-cream-100/55 leading-snug">
-            <span className="text-cream-100/85">Default categories:</span>{" "}
-            Birdie, Eagle,{" "}
-            <span title="Greenie — closest to the pin on a par-3 (also called Pinny)">Greenie</span>,{" "}
-            <span title="Sandy — par or better after hitting a bunker">Sandy</span>,{" "}
-            Chip-in,{" "}
-            <span title="Poley — ball ends up touching the flagstick on the green">Poley</span>,{" "}
-            <span title="Pinny — closest-to-the-pin on a par-3 (variant of Greenie)">Pinny</span>.
-            {" "}Tap <span className="text-cream-100/85">+ Other</span> during
-            live entry to record one-offs like &ldquo;Woodie&rdquo;.
-          </p>
+
+          {/* Standard categories — all default-checked. Uncheck any the
+              group doesn't play. */}
+          <div>
+            <p className="label text-xs mb-1">Track these</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {ALL_JUNK_CATEGORIES.map((c) => {
+                const on = categories.includes(c.key);
+                return (
+                  <label
+                    key={c.key}
+                    className={`flex items-center gap-2 rounded-md border px-2 py-1.5 cursor-pointer text-xs ${
+                      on
+                        ? "border-gold-500/40 bg-gold-500/5 text-cream-50"
+                        : "border-cream-100/10 text-cream-100/65"
+                    }`}
+                    title={c.hint}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(c.key)}
+                    />
+                    <span>{c.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom categories the commissioner typed in (e.g. "Woodie",
+              "Polly", "Snake"). Each one renders as a chip with an x. */}
+          {customCategories.length > 0 && (
+            <div>
+              <p className="label text-xs mb-1">Custom</p>
+              <div className="flex flex-wrap gap-1.5">
+                {customCategories.map((key) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1 text-xs rounded-full border border-gold-500/40 bg-gold-500/5 text-cream-50 px-2 py-1"
+                  >
+                    {key.replace(/_/g, " ")}
+                    <button
+                      type="button"
+                      onClick={() => removeCustom(key)}
+                      className="text-cream-100/55 hover:text-cream-50"
+                      aria-label={`Remove ${key}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add-custom input. Enter or the + button commits. */}
+          <div>
+            <p className="label text-xs mb-1">Add a custom item</p>
+            <div className="flex gap-2">
+              <input
+                className="input text-sm flex-1"
+                placeholder="e.g. Woodie, Snake, Polly"
+                value={customDraft}
+                onChange={(e) => setCustomDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustom();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={addCustom}
+                disabled={!customDraft.trim()}
+                className="btn-secondary text-xs disabled:opacity-50"
+              >
+                + Add
+              </button>
+            </div>
+            <p className="text-[10px] text-cream-100/45 mt-0.5">
+              Custom items are tracked the same way during scoring —
+              tap to mark a player credited.
+            </p>
+          </div>
         </div>
       )}
     </div>

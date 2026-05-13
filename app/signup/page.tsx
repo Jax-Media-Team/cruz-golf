@@ -72,7 +72,7 @@ export default function SignupPage() {
 
   if (confirmedEmail) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-6 py-10">
+      <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-10">
         <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
         <div className="card p-7 w-full max-w-md space-y-4">
           <div className="text-center">
