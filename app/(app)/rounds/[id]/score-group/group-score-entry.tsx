@@ -9,6 +9,7 @@ import { useScoreSaver } from "@/lib/useScoreSaver";
 import { SaveStatusBanner } from "@/components/SaveStatusBanner";
 import { JunkControls } from "../junk-controls";
 import { PressControls } from "../press-controls";
+import { PartnersBanner } from "@/components/PartnersBanner";
 
 type RP = {
   id: string;
@@ -177,6 +178,28 @@ export function GroupScoreEntry({
           </p>
         )}
       </div>
+
+      {/* Current partners banner — Patrick 2026-05-13 #9. Surfaces for
+          6-6-6 (with segment + rotation), best ball, scramble, etc. Renders
+          nothing for solo formats. The `currentHole` derives from the
+          next-unscored hole so the banner tracks scoring progress
+          (esp. 6-6-6 segment changes mid-round). */}
+      <PartnersBanner
+        games={games as any}
+        rps={rps.map((r: any) => ({
+          id: r.id,
+          display_name: r.players?.display_name ?? "Player",
+          team_id: r.team_id ?? null
+        }))}
+        currentHole={(() => {
+          const maxScored = Object.entries(scores)
+            .filter(([_, v]) => v != null)
+            .map(([k]) => Number(k.split(":")[1]) || 0)
+            .reduce((max, h) => Math.max(max, h), 0);
+          return Math.min(Math.max(1, maxScored + 1), totalHoles);
+        })()}
+        totalHoles={totalHoles}
+      />
 
       {/* Who's playing? */}
       <div className="card p-3">

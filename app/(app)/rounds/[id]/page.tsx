@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { RoundView } from "./round-view";
 import { RoundHeaderActions } from "./header-actions";
+import { PartnersBanner } from "@/components/PartnersBanner";
 import { ClaimBanner } from "./claim-banner";
 import { UnfinalizeButton } from "./unfinalize-button";
 import { MarkPendingButton, ResumeRoundButton } from "./pending-controls";
@@ -516,6 +517,31 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
           came to see; controls live below so they don't bury it. The
           #leaderboard anchor still resolves because it lives right
           before the RoundView. */}
+      {/* Partners banner — Patrick 2026-05-13 #9. Shows current
+          segment + partners for 6-6-6 + team-format games. Surfaces
+          right above the leaderboard so a viewer immediately sees
+          "who is on whose team" before reading any scores. Derives
+          current hole from the max-scored hole + 1, falling back to
+          hole 1 when no scores yet. Renders nothing for solo formats
+          (Skins-only rounds, etc.). */}
+      <PartnersBanner
+        games={(games ?? []) as any}
+        rps={(rps ?? []).map((r: any) => ({
+          id: r.id,
+          display_name: r.players?.display_name ?? "Player",
+          team_id: r.team_id ?? null
+        }))}
+        currentHole={(() => {
+          const maxScored = (scores ?? [])
+            .filter((s: any) => s.gross != null)
+            .reduce(
+              (max: number, s: any) => Math.max(max, Number(s.hole_number) || 0),
+              0
+            );
+          return Math.min(Math.max(1, maxScored + 1), round.holes ?? 18);
+        })()}
+        totalHoles={(round.holes as 9 | 18) ?? 18}
+      />
       <div id="leaderboard" />
       {(rps?.length ?? 0) === 0 ? (
         // Explicit empty-state card. Pre-fix the leaderboard would
