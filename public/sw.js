@@ -13,15 +13,11 @@
 // The 'offline' fallback is the dashboard shell — they at least see the
 // app frame instead of a Chrome dinosaur.
 
-// Bumped to v3 on 2026-05-12 (second time today). The v2 cruz-icon-*
-// assets were generated via a naive center-crop of the rectangular
-// brand lockup, which kept the transparent top/bottom padding inside
-// the square — iOS rendered the artwork compressed-looking with empty
-// space above + below the crossed-clubs design. v3 swaps in a proper
-// center-square crop that includes ONLY the medallion artwork, so it
-// fills the entire icon. Cache bump forces every client to re-fetch
-// the new bytes at the same /cruz-icon-* URLs.
-const CACHE_VERSION = "cruz-golf-v3";
+// Bumped to v4 on 2026-05-12 (third time today). Patrick preferred
+// the earlier wider crop over the close-crop medallion version, so
+// the cruz-icon-* files revert to the original center-square crop of
+// the full brand lockup. Cache bump forces re-fetch of the new bytes.
+const CACHE_VERSION = "cruz-golf-v4";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 

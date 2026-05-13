@@ -6,9 +6,9 @@ type Props = {
   title: string;
   /** The page URL to share (spectator link, public record book, etc.). */
   url: string;
-  /** Optional path to a generated PNG (for "Download image" + "Share image"). */
+  /** Optional path to a generated PNG (for "Download image" + native file share). */
   imageUrl?: string;
-  /** Filename used for the Download Image option. */
+  /** Filename used for the Download Image option + native file share. */
   imageFilename?: string;
   /** Custom button label/look. */
   triggerLabel?: string;
@@ -18,12 +18,26 @@ type Props = {
 /**
  * Plain-language share sheet. Replaces "Open share image" buttons.
  *
- * Behaviour:
- *  - "Share leaderboard" — opens the OS share sheet (iOS/Android/Edge) via
- *    navigator.share(). On desktop browsers without it, falls back to copy.
- *  - "Copy link" — copies the URL.
- *  - "Download image" — downloads the PNG (only if imageUrl is set).
- *  - "Open image" — opens the image in a new tab (handy for screenshotting).
+ * Targets in order:
+ *  - Native share sheet (iOS + Android): opens the OS share sheet via
+ *    navigator.share(). On iPhone this surfaces Facebook, Instagram,
+ *    Messages, Mail, X, etc. — every installed app shows up. When the
+ *    browser supports Web Share Level 2 (`canShare({files})`) we ALSO
+ *    attach the leaderboard PNG so receiving apps don't have to scrape
+ *    OG tags — Instagram in particular only accepts files, not URLs.
+ *  - "Share on Facebook" — direct facebook.com/sharer/sharer.php link.
+ *    Works on every browser including desktop. Facebook scrapes the
+ *    OG image meta tag from the spectator URL so the leaderboard image
+ *    auto-attaches to the post.
+ *  - "Share on X" — direct twitter.com/intent/tweet link. Same OG image
+ *    scraping. Works on every browser.
+ *  - Copy link — for group chats / Messages / anywhere else.
+ *  - Download image — saves the PNG so the user can attach it manually
+ *    to Instagram stories or any other app that doesn't appear in the
+ *    native sheet.
+ *  - "Post to Instagram" — instructions card, because Meta does NOT
+ *    expose a web URL for IG posting. iOS native share sheet works
+ *    directly; desktop users have to save the image + post manually.
  *
  * The dialog is a bottom sheet on mobile and a centered card on desktop.
  */
@@ -37,6 +51,7 @@ export function ShareSheet({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [busyShare, setBusyShare] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -51,16 +66,58 @@ export function ShareSheet({
     };
   }, [open]);
 
+  /**
+   * Try to share the leaderboard image as a FILE via the native share
+   * sheet. iOS Safari + Android Chrome support this (Web Share Level 2).
+   * When the file share works, every social app gets the image directly
+   * — Instagram in particular only accepts files (not URLs). When the
+   * browser doesn't support files, fall back to URL-only share which
+   * relies on the receiving app scraping the OG image meta tag.
+   */
   async function shareNative() {
     if (typeof navigator === "undefined" || !("share" in navigator)) {
-      // Fallback: copy
       return copy();
     }
+    setBusyShare(true);
     try {
+      // Try file share first when imageUrl is available + browser
+      // supports it. Fetch the PNG, wrap in a File, call canShare to
+      // confirm the runtime accepts it.
+      if (imageUrl && typeof (navigator as any).canShare === "function") {
+        try {
+          const absoluteImageUrl = imageUrl.startsWith("http")
+            ? imageUrl
+            : `${window.location.origin}${imageUrl}`;
+          const res = await fetch(absoluteImageUrl);
+          if (res.ok) {
+            const blob = await res.blob();
+            const file = new File(
+              [blob],
+              imageFilename ?? "cruz-golf-leaderboard.png",
+              { type: blob.type || "image/png" }
+            );
+            const payload = { title, url, files: [file] } as any;
+            if ((navigator as any).canShare(payload)) {
+              await (navigator as any).share(payload);
+              setBusyShare(false);
+              setOpen(false);
+              return;
+            }
+          }
+        } catch {
+          // File fetch / share failed — fall through to URL-only share.
+        }
+      }
+      // URL-only fallback. iOS still surfaces every social app in the
+      // share sheet; they each scrape the spectator URL's OG image
+      // when previewing. Works fine for FB, X, Messages, Mail — not
+      // for Instagram (which only accepts files).
       await (navigator as any).share({ title, url });
+      setBusyShare(false);
       setOpen(false);
     } catch {
       // User cancelled or share failed — silent.
+      setBusyShare(false);
     }
   }
 
@@ -77,6 +134,25 @@ export function ShareSheet({
   function openImage() {
     if (!imageUrl) return;
     window.open(imageUrl, "_blank", "noopener");
+  }
+
+  function shareToFacebook() {
+    const encoded = encodeURIComponent(url);
+    window.open(
+      `https://www.facebook.com/sharer/sharer.php?u=${encoded}`,
+      "_blank",
+      "noopener,width=600,height=600"
+    );
+  }
+
+  function shareToX() {
+    const encoded = encodeURIComponent(url);
+    const text = encodeURIComponent(title);
+    window.open(
+      `https://twitter.com/intent/tweet?url=${encoded}&text=${text}`,
+      "_blank",
+      "noopener,width=600,height=600"
+    );
   }
 
   const hasNativeShare =
@@ -99,7 +175,7 @@ export function ShareSheet({
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setOpen(false)}
           />
-          <div className="relative w-full sm:max-w-md bg-brand-950 border-t border-cream-100/15 sm:border sm:rounded-2xl rounded-t-2xl p-5 pb-8 shadow-2xl">
+          <div className="relative w-full sm:max-w-md bg-brand-950 border-t border-cream-100/15 sm:border sm:rounded-2xl rounded-t-2xl p-5 pb-8 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <p className="h-eyebrow text-gold-400">Share</p>
               <button
@@ -116,20 +192,98 @@ export function ShareSheet({
               {hasNativeShare && (
                 <button
                   type="button"
-                  className="card w-full p-3 flex items-center gap-3 hover:bg-brand-900/80 transition-colors"
+                  className="card w-full p-3 flex items-center gap-3 hover:bg-brand-900/80 transition-colors disabled:opacity-50"
                   onClick={shareNative}
+                  disabled={busyShare}
                 >
                   <span className="text-2xl">📤</span>
                   <div className="text-left">
                     <div className="font-serif text-cream-50 text-sm">
-                      Share leaderboard
+                      {busyShare ? "Opening share sheet…" : "Share"}
                     </div>
                     <p className="text-[11px] text-cream-100/55">
-                      Open your phone&apos;s share menu (text, group, social).
+                      Open your phone&apos;s share menu — Messages, Instagram, FB, X, anywhere.
                     </p>
                   </div>
                 </button>
               )}
+
+              {/* Direct Facebook share — works on desktop and as a fallback
+                  on mobile. Facebook scrapes the spectator URL's OG image
+                  so the leaderboard preview attaches automatically. */}
+              <button
+                type="button"
+                className="card w-full p-3 flex items-center gap-3 hover:bg-brand-900/80 transition-colors"
+                onClick={shareToFacebook}
+              >
+                <span
+                  className="text-2xl inline-flex items-center justify-center w-7 h-7 rounded-md"
+                  style={{ background: "#1877F2", color: "white" }}
+                  aria-hidden="true"
+                >
+                  f
+                </span>
+                <div className="text-left flex-1 min-w-0">
+                  <div className="font-serif text-cream-50 text-sm">
+                    Share on Facebook
+                  </div>
+                  <p className="text-[11px] text-cream-100/55">
+                    Opens a Facebook share window with the leaderboard preview attached.
+                  </p>
+                </div>
+              </button>
+
+              {/* Direct X share — text + URL prefilled. */}
+              <button
+                type="button"
+                className="card w-full p-3 flex items-center gap-3 hover:bg-brand-900/80 transition-colors"
+                onClick={shareToX}
+              >
+                <span
+                  className="text-2xl inline-flex items-center justify-center w-7 h-7 rounded-md text-white font-bold text-sm"
+                  style={{ background: "#000" }}
+                  aria-hidden="true"
+                >
+                  𝕏
+                </span>
+                <div className="text-left flex-1 min-w-0">
+                  <div className="font-serif text-cream-50 text-sm">
+                    Share on X
+                  </div>
+                  <p className="text-[11px] text-cream-100/55">
+                    Tweet the leaderboard link — image preview attaches automatically.
+                  </p>
+                </div>
+              </button>
+
+              {/* Instagram instructions — no web URL exists for IG posting.
+                  iPhone users get IG in the native share sheet above
+                  (Web Share Level 2 sends the file directly). Desktop +
+                  fallback path: download the image, then post manually. */}
+              {imageUrl && (
+                <div className="card w-full p-3 flex items-start gap-3 border border-cream-100/15">
+                  <span
+                    className="text-2xl inline-flex items-center justify-center w-7 h-7 rounded-md text-white font-bold flex-shrink-0"
+                    style={{
+                      background:
+                        "linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)"
+                    }}
+                    aria-hidden="true"
+                  >
+                    ◉
+                  </span>
+                  <div className="text-left flex-1 min-w-0">
+                    <div className="font-serif text-cream-50 text-sm">
+                      Post to Instagram
+                    </div>
+                    <p className="text-[11px] text-cream-100/55 leading-snug">
+                      On iPhone: tap <span className="text-cream-50">Share</span> above → pick Instagram from the system sheet.
+                      On desktop: tap <span className="text-cream-50">Download image</span> below, then attach manually in Instagram (Meta doesn&apos;t support direct web posting).
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 className="card w-full p-3 flex items-center gap-3 hover:bg-brand-900/80 transition-colors"
@@ -143,6 +297,7 @@ export function ShareSheet({
                   <p className="text-[11px] text-cream-100/55 truncate">{url}</p>
                 </div>
               </button>
+
               {imageUrl && (
                 <>
                   <a
@@ -157,7 +312,7 @@ export function ShareSheet({
                         Download image
                       </div>
                       <p className="text-[11px] text-cream-100/55">
-                        Save the PNG so you can post it anywhere.
+                        Save the PNG to post manually in Instagram or anywhere else.
                       </p>
                     </div>
                   </a>

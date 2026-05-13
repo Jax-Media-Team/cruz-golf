@@ -26,8 +26,22 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (error || !isAdmin) notFound();
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-10 bg-brand-950/95 backdrop-blur border-b border-cream-100/10">
+    // min-h uses both 100vh + 100dvh so the container fills the
+    // viewport reliably on iOS Safari.
+    // pb adds safe-area-inset-bottom so action buttons near the bottom
+    // of admin pages don't fall under the iPhone home indicator —
+    // Patrick 2026-05-12: "the admin console still has buttons that
+    // are unclickable out of frame." Admin doesn't have the user-
+    // facing mobile bottom nav so no 5rem clearance needed, just the
+    // safe-area inset.
+    <div
+      className="min-h-screen min-h-[100dvh] flex flex-col"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <header
+        className="sticky top-0 z-10 bg-brand-950/95 backdrop-blur border-b border-cream-100/10"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
         <div className="max-w-7xl mx-auto px-5 sm:px-8 py-4 flex items-center gap-6">
           <Link href="/admin" className="font-serif text-lg text-cream-50">
             Cruz Golf <span className="text-gold-400">/</span> Platform Admin
