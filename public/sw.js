@@ -13,11 +13,15 @@
 // The 'offline' fallback is the dashboard shell — they at least see the
 // app frame instead of a Chrome dinosaur.
 
-// Bumped to v4 on 2026-05-12 (third time today). Patrick preferred
-// the earlier wider crop over the close-crop medallion version, so
-// the cruz-icon-* files revert to the original center-square crop of
-// the full brand lockup. Cache bump forces re-fetch of the new bytes.
-const CACHE_VERSION = "cruz-golf-v4";
+// Bumped to v5 on 2026-05-12 (fourth time today). Patrick reported
+// finalized rounds rendering as blank — the most defensible
+// explanation is the SW caching a now-stale HTML response from the
+// pre-fix era. Bumping the version forces `caches.delete(...)` on
+// every old PAGES_CACHE entry so the next page nav re-fetches from
+// the network. If the blank state survives the bump, it's a data
+// issue, not a cache one — but the SW invalidation is the cheaper
+// hypothesis to rule out first.
+const CACHE_VERSION = "cruz-golf-v5";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
