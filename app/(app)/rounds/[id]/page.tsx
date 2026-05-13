@@ -83,12 +83,33 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
     if (!invite) redirect(`/rounds/${id}/join`);
   }
 
+  // ROOT-CAUSE FIX 2026-05-12 (Patrick reported 3× "all my past rounds
+  // are empty"): the previous query selected `players(id, display_name,
+  // profile_id, venmo_handle)` in a single nested join. PostgREST fails
+  // the ENTIRE parent query (returning rps.data = null) if any selected
+  // column on the embedded table fails its existence/access check —
+  // and silently in a way that doesn't surface a typical error code.
+  // The fix is the same pattern the score-group page uses (which has
+  // worked the whole time): keep the nested SELECT minimal, fetch
+  // anything optional in separate defensive queries.
+  //
+  // Per-round_player columns: stripped down to what's actually used by
+  // the leaderboard + game engines (id, player_id, tee_id, course/
+  // playing handicap, team_id, display_order).
+  // Nested players: display_name + profile_id only (needed for the
+  // "claim your spot" check). id is derivable from player_id.
+  // Nested course_tees: id + name + rating + slope + par + nested
+  // course_holes for the par grid (used by the scoring engine).
+  // Venmo handles fetched in a separate query below; if it fails the
+  // page still renders without the Venmo deep-link.
   const rpsResult = await sb
     .from("round_players")
-    .select("id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(id, display_name, profile_id, venmo_handle), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))")
+    .select(
+      "id, player_id, tee_id, course_handicap, playing_handicap, team_id, display_order, players(display_name, profile_id), course_tees(id, name, rating, slope, par, course_holes(hole_number, par, stroke_index))"
+    )
     .eq("round_id", id)
     .order("display_order");
-  const rps = rpsResult.data;
+  let rps = rpsResult.data;
   if (rpsResult.error) {
     // eslint-disable-next-line no-console
     console.error("[rounds/[id]] round_players query failed", {
@@ -99,11 +120,6 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       hint: rpsResult.error.hint
     });
   }
-  // Patrick 2026-05-12: "All my past rounds are empty. I open them
-  // and there is no players, no game, no settlements, nothing."
-  // The rps fetch silently returning empty (or null) is the most
-  // likely cause; this log surfaces the actual reason next time it
-  // happens.
   if (!rpsResult.error && (rps?.length ?? 0) === 0) {
     // eslint-disable-next-line no-console
     console.warn("[rounds/[id]] round_players returned zero rows", {
@@ -111,6 +127,44 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       status: round.status,
       group_id: round.group_id
     });
+  }
+
+  // Venmo handles — fetched in a separate, defensive query so a missing
+  // `venmo_handle` column / restrictive RLS / typo here never wipes
+  // out the rps data the leaderboard needs. If this query fails the
+  // page still renders perfectly; only the Venmo deep-link on
+  // SettlementSummary degrades to a manual handoff.
+  const venmoByPlayerId = new Map<string, string | null>();
+  if ((rps?.length ?? 0) > 0) {
+    try {
+      const playerIds = (rps ?? []).map((r: any) => r.player_id).filter(Boolean);
+      if (playerIds.length > 0) {
+        const { data: venmoRows } = await sb
+          .from("players")
+          .select("id, venmo_handle")
+          .in("id", playerIds);
+        for (const p of (venmoRows ?? []) as any[]) {
+          venmoByPlayerId.set(p.id, p.venmo_handle ?? null);
+        }
+      }
+    } catch {
+      /* venmo column missing or RLS denied — leaderboard still renders */
+    }
+  }
+  // Mutate rps to add a `players.id` and `players.venmo_handle` field so
+  // downstream code that reads `r.players?.id` / `r.players?.venmo_handle`
+  // (SettlementSummary, etc.) continues to work unchanged.
+  if (rps) {
+    rps = rps.map((r: any) => ({
+      ...r,
+      players: r.players
+        ? {
+            ...r.players,
+            id: r.player_id,
+            venmo_handle: venmoByPlayerId.get(r.player_id) ?? null
+          }
+        : null
+    })) as any;
   }
 
   // "Claim your spot" — show banner to invitees who don't yet have a linked player.
