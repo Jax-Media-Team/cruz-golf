@@ -63,11 +63,19 @@ export default async function AdminOverview() {
 
   // Live rounds right now — the highest-leverage admin observability
   // surface. Includes spectator_token so we can deep-link straight to the
-  // read-only leaderboard with the admin banner.
+  // read-only leaderboard with the admin banner. `.is("deleted_at", null)`
+  // EXCLUDES archived rounds — Patrick 2026-05-12: "the admin console
+  // still shows the live rounds that were archived (and deleted from
+  // the front-end for my normal user account)." fn_archive_round only
+  // stamps deleted_at; it doesn't change status. So an archived "live"
+  // round still has status="live" and would render here forever
+  // without the deleted_at filter. Same bug the dashboard had, now
+  // closed on the admin side too.
   const { data: liveRoundsList } = await sb
     .from("rounds")
     .select("id, date, spectator_token, group_id, course_id, courses(name), groups(name)")
     .eq("status", "live")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(20);
 
