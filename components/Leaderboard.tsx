@@ -19,22 +19,64 @@ type Props = {
    *  the gross/net leaderboard tabs internally; consumers render skins/team/bets. */
   alternateContent?: React.ReactNode;
   onPlayerClick?: (rpId: string) => void;
+  /** Game types actually enabled on this round. When provided, the
+   *  "Skins" + "Game" tabs only show if a matching game is enabled.
+   *  Patrick 2026-05-13 #8: "If I did not select Skins, I should not
+   *  see Skins."
+   *  When omitted (legacy callers, demo pages), all tabs show — same
+   *  behavior as before. */
+  enabledGameTypes?: string[];
 };
 
-const TABS: Array<{ key: LeaderboardTab; label: string }> = [
+const ALL_TABS: Array<{ key: LeaderboardTab; label: string }> = [
+  // Always-visible tabs — the leaderboard answers "who's winning the
+  // round" and "who owes who" regardless of which games are enabled.
   { key: "gross", label: "Gross" },
   { key: "net", label: "Net" },
+  // Conditional: only when at least one skins_* game is enabled.
   { key: "skins", label: "Skins" },
-  // "Game" covers Nassau (front/back/overall), 6-6-6 (3 segments),
-  // Best Ball / Aggregate / Scramble (team vs team match state).
-  // Renamed from "Match" → "Game" (audit P1 #12) — first-time users
-  // saw "Match" and didn't connect it to their Nassau / 6-6-6.
+  // Conditional: "Game" covers Nassau / 6-6-6 / Best Ball / Scramble /
+  // Aggregate / team_match / match_play. Renamed from "Match" → "Game"
+  // (audit P1 #12) so first-time users connect it to their Nassau.
   { key: "match", label: "Game" },
-  // Renamed from "Bets" → "Money" (audit P1 #12) — "Bets" sounded
-  // like a config surface; "Money" makes it obvious this is the
-  // running $-flow.
+  // Always-visible: Money is the running $-flow across whatever
+  // games ARE enabled — useful even on a Skins-only round.
   { key: "bets", label: "Money" }
 ];
+
+/** Predicate: should this tab be visible given the round's enabled games? */
+function tabIsVisible(
+  key: LeaderboardTab,
+  enabledGameTypes: string[] | undefined
+): boolean {
+  // Always-visible: gross / net / bets.
+  if (key === "gross" || key === "net" || key === "bets") return true;
+  // No filter provided → show everything (legacy demo callers).
+  if (!enabledGameTypes) return true;
+  if (key === "skins") {
+    return enabledGameTypes.some((t) => t.startsWith("skins"));
+  }
+  if (key === "match") {
+    return enabledGameTypes.some((t) =>
+      [
+        "nassau",
+        "match_play",
+        "team_match",
+        "best_ball",
+        "best_ball_gross",
+        "best_ball_net",
+        "six_six_six",
+        "scramble",
+        "scramble_gross",
+        "scramble_net",
+        "aggregate",
+        "aggregate_gross",
+        "aggregate_net"
+      ].includes(t)
+    );
+  }
+  return true;
+}
 
 function fmtPar(vsPar: number, played: number): string {
   if (played === 0) return "—";
@@ -50,10 +92,29 @@ export function Leaderboard({
   tab,
   onTabChange,
   alternateContent,
-  onPlayerClick
+  onPlayerClick,
+  enabledGameTypes
 }: Props) {
-  const isLeaderboardTab = tab === "gross" || tab === "net";
-  const mode = tab === "gross" ? "gross" : "net";
+  // Filter the tab list to whatever's actually playable on this round.
+  // Patrick 2026-05-13 #8: "If I did not select Skins, I should not see
+  // Skins." The "Money" tab stays visible because money flows on every
+  // round with stakes regardless of game family.
+  const visibleTabs = useMemo(
+    () => ALL_TABS.filter((t) => tabIsVisible(t.key, enabledGameTypes)),
+    [enabledGameTypes]
+  );
+
+  // If the active tab was filtered out (e.g. user was on Skins, then
+  // the round had skins disabled by an edit), fall back to Net silently.
+  // This effect was the inline call-site's job before — now it's the
+  // component's responsibility since it owns the filter logic.
+  const activeTab: LeaderboardTab = useMemo(() => {
+    if (visibleTabs.some((t) => t.key === tab)) return tab;
+    return "net";
+  }, [tab, visibleTabs]);
+
+  const isLeaderboardTab = activeTab === "gross" || activeTab === "net";
+  const mode = activeTab === "gross" ? "gross" : "net";
 
   return (
     <section className="rounded-2xl overflow-hidden shadow-soft border border-brand-900/15 bg-white">
@@ -92,11 +153,12 @@ export function Leaderboard({
         )}
       </div>
 
-      {/* Tab strip — gold underline accent on active tab */}
+      {/* Tab strip — gold underline accent on active tab. Tabs filtered
+          to enabled games (#8); see `tabIsVisible` above. */}
       <div className="bg-brand-900 border-t border-gold-500/30 sticky top-0 z-20 sm:static">
         <div role="tablist" className="flex overflow-x-auto px-2 sm:px-4">
-          {TABS.map((t) => {
-            const active = t.key === tab;
+          {visibleTabs.map((t) => {
+            const active = t.key === activeTab;
             return (
               <button
                 key={t.key}

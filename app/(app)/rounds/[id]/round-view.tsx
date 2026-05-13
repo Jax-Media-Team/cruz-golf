@@ -144,6 +144,9 @@ export function RoundView({
       rows={board}
       tab={tab}
       onTabChange={setTab}
+      // Patrick 2026-05-13 #8: hide Skins / Game tabs when the
+      // corresponding game isn't enabled on this round.
+      enabledGameTypes={games.map((g: any) => g.game_type)}
       onPlayerClick={(rpId) => router.push(`/rounds/${roundId}/score?rp=${rpId}`)}
       alternateContent={
         tab === "skins" ? (
