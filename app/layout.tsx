@@ -94,7 +94,17 @@ gtag('config', '${GA_ID}', { send_page_view: true });`}
           </>
         )}
       </head>
-      <body className="font-sans antialiased min-h-screen">{children}</body>
+      {/* min-h-[100dvh] paired with vh fallback. Without dvh the body
+          tracks 100vh (which on iOS Chrome includes the URL-bar
+          area), so on first paint the body is taller than the
+          visible viewport. When the URL bar collapses the content
+          shifts and the first tap lands on a moving target — the
+          exact "feels locked, have to click away first" symptom
+          Patrick reported twice on /login. globals.css ALSO sets
+          min-height: 100dvh on body, but Tailwind utilities take
+          precedence over component-layer CSS, so the utility had
+          to mention dvh too. */}
+      <body className="font-sans antialiased min-h-screen min-h-[100dvh]">{children}</body>
     </html>
   );
 }

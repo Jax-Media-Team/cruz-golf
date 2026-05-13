@@ -119,9 +119,20 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-10">
+    // min-h-[100dvh] mirrors the login fix — dvh tracks the visible
+    // viewport on iOS Chrome so the form doesn't sit below the URL
+    // bar's collapse zone on first paint.
+    <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-10">
       <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
-      <form onSubmit={submit} className="card p-7 w-full max-w-sm space-y-5">
+      <form
+        onSubmit={submit}
+        className="card p-7 w-full max-w-sm space-y-5"
+        // touch-action: manipulation skips iOS's 300ms double-tap-
+        // zoom delay so the first tap on the form lands immediately
+        // — Patrick 2026-05-12 (twice): "feels locked, have to click
+        // away first." Same fix as /login.
+        style={{ touchAction: "manipulation" }}
+      >
         <div>
           <p className="h-eyebrow">Sign up</p>
           <h1 className="h-display text-3xl text-cream-50 mt-1">Create your account</h1>

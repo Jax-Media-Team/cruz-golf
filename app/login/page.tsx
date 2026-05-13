@@ -8,40 +8,58 @@ import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 import { FacebookAuthButton } from "@/components/FacebookAuthButton";
 import { friendlyAuthError } from "@/lib/auth-errors";
 
+/**
+ * Login page.
+ *
+ * Patrick 2026-05-12 (reported twice): "When I first land on login
+ * screen I have to click away before I click to enter my info as
+ * it seems locked. It's very awkward."
+ *
+ * Root cause (after the first attempted fix didn't take): a Suspense
+ * boundary wrapped the ENTIRE form, so on first paint the page
+ * rendered LoginShell (logo only), then swapped to LoginInner (full
+ * form) during hydration. On iOS Chrome the first tap during that
+ * swap doesn't register because React hasn't bound event handlers
+ * to the new DOM yet. Combined with the body min-h-screen=100vh
+ * (which extends past the visible viewport on iOS Chrome), the
+ * first tap felt like it "did nothing" and a subsequent tap worked.
+ *
+ * Fix:
+ *   1. Render the form OUTSIDE Suspense so its event handlers are
+ *      bound during the initial hydration.
+ *   2. Wrap ONLY the `useSearchParams()`-dependent banners
+ *      (?signedOut=1 / ?confirmed=1) in their own tiny Suspense
+ *      boundary. Those are cosmetic toast notices; if they paint
+ *      slightly later the form is still fully interactive.
+ *   3. Body min-h-screen → min-h-[100dvh] in app/layout.tsx so the
+ *      viewport stops shifting when iOS Chrome's URL bar collapses.
+ */
 export default function LoginPage() {
   return (
-    <Suspense fallback={<LoginShell />}>
-      <LoginInner />
-    </Suspense>
-  );
-}
-
-function LoginShell() {
-  // min-h-[100dvh] (dynamic viewport units) tracks the visible viewport
-  // — vh on iOS Chrome includes the URL bar area so a vh-centered form
-  // sits below the visible center on first paint. Patrick 2026-05-12
-  // ("When I first land on login screen I have to click away before I
-  // click to enter my info as it seems locked") — root cause was the
-  // form being partially below the URL bar; the first tap was being
-  // consumed by the URL bar dismissal, not the input. dvh fixes that.
-  return (
+    // min-h-[100dvh] tracks the VISIBLE viewport — paired with the
+    // vh fallback for non-dvh browsers. The form needs to be
+    // reachable without the URL-bar-collapse layout shift.
     <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-8">
-      <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
+      <Link href="/" className="mb-8">
+        <BrandLockup iconHeight={120} />
+      </Link>
+      <Suspense fallback={null}>
+        <LoginBanners />
+      </Suspense>
+      <LoginForm />
     </main>
   );
 }
 
-function LoginInner() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const router = useRouter();
+/** Reads `?signedOut=1` + `?confirmed=1` flags + the sign-out
+ *  belt-and-suspenders effect. Isolated in its own Suspense child
+ *  so reading useSearchParams() never blocks form hydration. */
+function LoginBanners() {
   const searchParams = useSearchParams();
   const justSignedOut = searchParams?.get("signedOut") === "1";
   const justConfirmed = searchParams?.get("confirmed") === "1";
 
-  // Belt-and-suspenders: when arriving with ?signedOut=1, also clear any
+  // Belt-and-suspenders: when arriving with ?signedOut=1, clear any
   // lingering client-side session in case the SSR cookie clear missed.
   useEffect(() => {
     if (justSignedOut) {
@@ -49,6 +67,31 @@ function LoginInner() {
       sb.auth.signOut().catch(() => {});
     }
   }, [justSignedOut]);
+
+  return (
+    <>
+      {justSignedOut && (
+        <div className="mb-4 w-full max-w-sm rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-200">
+          Signed out. See you next round.
+        </div>
+      )}
+      {justConfirmed && (
+        <div className="mb-4 w-full max-w-sm rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2.5 text-sm text-gold-200">
+          Email confirmed. Sign in to finish setup.
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Form is rendered OUTSIDE any Suspense boundary so it's
+ *  interactive on first paint — no fallback-to-real swap. */
+function LoginForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [resending, setResending] = useState(false);
@@ -100,85 +143,97 @@ function LoginInner() {
   }
 
   return (
-    // min-h-[100dvh] paired with vh fallback. Patrick reported the
-    // form "feels locked" until you click away — root cause was the
-    // form centered on a 100vh canvas that included the iOS Chrome
-    // URL-bar area, so the first tap was consumed by the URL bar
-    // dismissal instead of the input. py-8 also stops the form from
-    // sitting flush against the safe-area at the top of an installed
-    // iPhone PWA.
-    <main className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center px-6 py-8">
-      <Link href="/" className="mb-8"><BrandLockup iconHeight={120} /></Link>
-      {justSignedOut && (
-        <div className="mb-4 w-full max-w-sm rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-200">
-          Signed out. See you next round.
-        </div>
-      )}
-      {justConfirmed && (
-        <div className="mb-4 w-full max-w-sm rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2.5 text-sm text-gold-200">
-          Email confirmed. Sign in to finish setup.
-        </div>
-      )}
-      <form onSubmit={submit} className="card p-7 w-full max-w-sm space-y-4">
-        <div>
-          <p className="h-eyebrow">Sign in</p>
-          <h1 className="h-display text-3xl text-cream-50 mt-1">Welcome back.</h1>
-        </div>
-        {/* OAuth buttons render only when the corresponding provider
-            env flag is set AND the provider is actually configured in
-            Supabase. When neither is enabled, the buttons + the
-            "or sign in with email" divider all hide and the email
-            form is the only option (which is the current state —
-            Patrick 2026-05-12 hadn't configured either provider). */}
-        <GoogleAuthButton next="/dashboard" />
-        <FacebookAuthButton next="/dashboard" />
-        {(process.env.NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED === "true" ||
-          process.env.NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED === "true") && (
-          <div className="relative my-1">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-cream-100/10" /></div>
-            <div className="relative flex justify-center"><span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">or sign in with email</span></div>
+    <form
+      onSubmit={submit}
+      className="card p-7 w-full max-w-sm space-y-4"
+      // touch-action: manipulation tells iOS Chrome to skip the
+      // 300ms tap-to-double-tap-zoom delay on this form. Without
+      // this, the first tap after page load can feel slow enough
+      // that a quick second tap arrives before the first one's
+      // handler binds.
+      style={{ touchAction: "manipulation" }}
+    >
+      <div>
+        <p className="h-eyebrow">Sign in</p>
+        <h1 className="h-display text-3xl text-cream-50 mt-1">Welcome back.</h1>
+      </div>
+      {/* OAuth buttons render only when the corresponding provider
+          env flag is set AND the provider is actually configured in
+          Supabase. When neither is enabled, the buttons + the
+          "or sign in with email" divider all hide and the email
+          form is the only option. */}
+      <GoogleAuthButton next="/dashboard" />
+      <FacebookAuthButton next="/dashboard" />
+      {(process.env.NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED === "true" ||
+        process.env.NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED === "true") && (
+        <div className="relative my-1">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-cream-100/10" />
           </div>
-        )}
-        <div>
-          <label className="label">Email</label>
-          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+          <div className="relative flex justify-center">
+            <span className="px-2 text-xs uppercase tracking-wide text-cream-100/40 bg-brand-900">
+              or sign in with email
+            </span>
+          </div>
         </div>
-        <div>
-          <label className="label">Password</label>
-          <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} type="password" required />
-        </div>
-        {err && <p className="text-sm text-red-300">{err}</p>}
-        {needsConfirm && (
-          <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs space-y-2">
-            <p className="text-amber-100/90">
-              Your email address hasn&apos;t been confirmed yet. Look for an
-              email from <span className="font-medium">Cruz Golf</span>{" "}
-              (the sender may show as a noreply@ address) and click the
-              confirmation link. Check your spam / Promotions folder if
-              you don&apos;t see it within a minute or two.
+      )}
+      <div>
+        <label className="label">Email</label>
+        <input
+          className="input"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          type="email"
+          autoComplete="email"
+          inputMode="email"
+          required
+        />
+      </div>
+      <div>
+        <label className="label">Password</label>
+        <input
+          className="input"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          autoComplete="current-password"
+          required
+        />
+      </div>
+      {err && <p className="text-sm text-red-300">{err}</p>}
+      {needsConfirm && (
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs space-y-2">
+          <p className="text-amber-100/90">
+            Your email address hasn&apos;t been confirmed yet. Look for an
+            email from <span className="font-medium">Cruz Golf</span>{" "}
+            (the sender may show as a noreply@ address) and click the
+            confirmation link. Check your spam / Promotions folder if
+            you don&apos;t see it within a minute or two.
+          </p>
+          <button
+            type="button"
+            onClick={resendConfirm}
+            disabled={resending || !email.trim()}
+            className="pill bg-amber-200 text-amber-900 text-xs font-medium px-3 py-1.5 disabled:opacity-50"
+          >
+            {resending ? "Sending…" : "Resend confirmation email"}
+          </button>
+          {resentTo && (
+            <p className="text-emerald-300 text-[11px]">
+              ✓ Sent another confirmation to {resentTo}.
             </p>
-            <button
-              type="button"
-              onClick={resendConfirm}
-              disabled={resending || !email.trim()}
-              className="pill bg-amber-200 text-amber-900 text-xs font-medium px-3 py-1.5 disabled:opacity-50"
-            >
-              {resending ? "Sending…" : "Resend confirmation email"}
-            </button>
-            {resentTo && (
-              <p className="text-emerald-300 text-[11px]">
-                ✓ Sent another confirmation to {resentTo}.
-              </p>
-            )}
-          </div>
-        )}
-        <button className="btn-primary w-full" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-        <p className="text-sm text-cream-100/60 text-center">
-          New here? <Link href="/signup" className="text-cream-50 underline">Create an account</Link>
-        </p>
-      </form>
-    </main>
+          )}
+        </div>
+      )}
+      <button className="btn-primary w-full" disabled={busy}>
+        {busy ? "Signing in…" : "Sign in"}
+      </button>
+      <p className="text-sm text-cream-100/60 text-center">
+        New here?{" "}
+        <Link href="/signup" className="text-cream-50 underline">
+          Create an account
+        </Link>
+      </p>
+    </form>
   );
 }
