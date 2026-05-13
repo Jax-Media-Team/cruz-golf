@@ -176,8 +176,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen min-h-[100dvh] flex flex-col pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
       {/* Sticky header — pt accounts for iOS notched safe area when the
           app runs in installed-PWA mode (Safari status bar overlaps the
-          chrome otherwise). */}
-      <header className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10 pt-[env(safe-area-inset-top)]">
+          chrome otherwise). Patrick 2026-05-12: "things hidden behind
+          my time and battery life." Chrome iOS doesn't always honor
+          `viewport-fit: cover` for safe-area-inset reporting, so the
+          env value can be 0 even on a notched device — `max()` adds a
+          12px floor so the title/icons never sit under the status bar
+          regardless of how the browser reports the inset. */}
+      <header
+        className="sticky top-0 z-10 bg-brand-950/90 backdrop-blur border-b border-cream-100/10"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+      >
         {/* Tightened header — was min-h-[140px] sm:min-h-[200px] which left
             visible breathing room above and below the icon. Now py-2 with
             slightly trimmed icons reclaims ~40px on mobile, ~80px on

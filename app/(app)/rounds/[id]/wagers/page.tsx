@@ -38,6 +38,53 @@ export default async function WagerAckPage({ params }: { params: Promise<{ id: s
     .select("profile_id, acknowledged_at")
     .eq("round_id", id);
 
+  // Junk side-bet config — fetched here so the wagers card can surface
+  // the full bet terms (categories + amount + escalation mode). Patrick
+  // 2026-05-12 chaos-QA pass: "View wagers shows 6-6-6 but nothing
+  // about the 2-down auto-press, the junk, etc."
+  // Pre-0041 environments don't have these tables; defensive fetch.
+  let junkConfig: any = null;
+  try {
+    const { data: cfgRow } = await sb
+      .from("round_junk_config")
+      .select(
+        "active_categories, mode, flat_amount_cents, base_amount_cents, escalation_step_cents, escalation_scope, custom_categories"
+      )
+      .eq("round_id", id)
+      .maybeSingle();
+    const hasActiveCats =
+      (Array.isArray((cfgRow as any)?.active_categories) &&
+        ((cfgRow as any).active_categories as string[]).length > 0) ||
+      (Array.isArray((cfgRow as any)?.custom_categories) &&
+        ((cfgRow as any).custom_categories as any[]).length > 0);
+    junkConfig = hasActiveCats ? cfgRow : null;
+  } catch {
+    /* junk tables missing — pre-0041 env */
+  }
+
+  // Round_players → for surfacing the team/partner composition on
+  // 6-6-6 / Best Ball wagers. Without this the wagers card can't show
+  // "Pat + Ben vs Mitch + Kyle" or the 6-6-6 rotation segments.
+  let teamLineups: Array<{
+    id: string;
+    display_name: string;
+    team_id: string | null;
+  }> = [];
+  try {
+    const { data: rps } = await sb
+      .from("round_players")
+      .select("id, team_id, players(display_name)")
+      .eq("round_id", id)
+      .order("display_order");
+    teamLineups = (rps ?? []).map((r: any) => ({
+      id: r.id,
+      display_name: r.players?.display_name ?? "Player",
+      team_id: r.team_id ?? null
+    }));
+  } catch {
+    /* fall back to no team display */
+  }
+
   const ackMap = new Map((acks ?? []).map((a: any) => [a.profile_id, a.acknowledged_at]));
   const peopleStatus = (invitees ?? []).map((i: any) => ({
     profile_id: i.profile_id,
@@ -75,6 +122,8 @@ export default async function WagerAckPage({ params }: { params: Promise<{ id: s
         games={games ?? []}
         myAck={myAck}
         peopleStatus={peopleStatus}
+        junkConfig={junkConfig}
+        teamLineups={teamLineups}
       />
     </div>
   );

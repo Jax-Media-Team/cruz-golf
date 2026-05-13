@@ -40,7 +40,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     >
       <header
         className="sticky top-0 z-10 bg-brand-950/95 backdrop-blur border-b border-cream-100/10"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        // max() floor: Chrome iOS sometimes returns 0 for safe-area-
+        // inset-top even with viewport-fit: cover, leaving admin
+        // titles under the status bar. Same fix as the user-facing
+        // (app)/layout.tsx (Patrick 2026-05-12).
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
         <div className="max-w-7xl mx-auto px-5 sm:px-8 py-4 flex items-center gap-6">
           <Link href="/admin" className="font-serif text-lg text-cream-50">

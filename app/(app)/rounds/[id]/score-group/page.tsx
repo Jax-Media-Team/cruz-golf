@@ -104,9 +104,9 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
     /* tables missing — pre-0041 env, page renders without junk panel */
   }
 
-  // Commissioner check — JunkControls surfaces edit/delete affordances
-  // only for the commissioner. Other players see a read-only chip list.
-  const isCommissioner = !!gm && gm.role === "commissioner";
+  // (Reuses the `isCommissioner` declared above for the access-mode
+  // check — JunkControls surfaces edit/delete affordances only for
+  // the commissioner; other players see a read-only chip list.)
 
   const courseName = (round as any).courses?.name ?? "Round";
 
