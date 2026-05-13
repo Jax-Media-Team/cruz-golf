@@ -255,15 +255,47 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
       const { data: jItems } = await sb
         .from("round_junk_items")
         .select(
+          // is_team_award + recipients embed added 2026-05-13 to
+          // support team junk (Patrick #4). Defensive on pre-0048
+          // envs: the column / relation may not exist yet; we read
+          // them via try-fallback to a flat select below.
+          "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note, is_team_award, round_junk_item_recipients(round_player_id)"
+        )
+        .eq("round_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true });
+      // Normalize: flatten the recipients array into a string[] per
+      // item. Legacy items (pre-0048) have undefined recipients —
+      // settleJunk treats those as solo via its backwards-compat path.
+      junkItems = (jItems ?? []).map((i: any) => ({
+        ...i,
+        recipient_ids: Array.isArray(i.round_junk_item_recipients)
+          ? i.round_junk_item_recipients
+              .map((r: any) => r?.round_player_id)
+              .filter((x: any) => typeof x === "string")
+          : null
+      }));
+    }
+  } catch {
+    /* tables missing — pre-0041 env */
+  }
+  // Defensive fallback for envs that haven't applied 0048 yet — if
+  // the embed above 400'd because the relation doesn't exist, retry
+  // with the legacy select shape. Same behavior as pre-team-junk.
+  if (junkConfig && junkItems.length === 0) {
+    try {
+      const { data: legacy } = await sb
+        .from("round_junk_items")
+        .select(
           "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note"
         )
         .eq("round_id", id)
         .is("deleted_at", null)
         .order("created_at", { ascending: true });
-      junkItems = jItems ?? [];
+      if (legacy && legacy.length > 0) junkItems = legacy;
+    } catch {
+      /* keep junkItems = [] */
     }
-  } catch {
-    /* tables missing — pre-0041 env */
   }
 
   // Manual presses — pending + accepted, hide expired/declined/withdrawn
@@ -616,11 +648,18 @@ export default async function RoundPage({ params }: { params: Promise<{ id: stri
             })()}
             rps={(rps ?? []).map((r: any) => ({
               id: r.id,
-              display_name: r.players?.display_name ?? "Player"
+              display_name: r.players?.display_name ?? "Player",
+              team_id: r.team_id ?? null
             }))}
             config={junkConfig as any}
             initialItems={junkItems as any}
             isCommissioner={isCommissioner}
+            // games enables team-junk auto-resolution. The JunkControls
+            // component reads partner formats (6-6-6 / best ball /
+            // scramble / team_match) from this list and pairs the
+            // selected player with the correct partner for the current
+            // segment. Patrick 2026-05-13 #4.
+            games={(games ?? []) as any}
           />
         )}
 

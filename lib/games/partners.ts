@@ -39,6 +39,11 @@ export type PartnerSide = {
   side_label: string;
   /** Display names in stable order. */
   player_names: string[];
+  /** round_player_ids in the same order as `player_names`. Consumers
+   *  that need to act on the partner set (junk team-mode auto-assign,
+   *  press side-A/B construction) should use this — name-based reverse
+   *  lookup breaks when two players share a display_name. */
+  player_ids: string[];
 };
 
 export type PartnerDescriptor = {
@@ -161,11 +166,13 @@ function resolveSixSixSix(
     sides: [
       {
         side_label: "Side A",
-        player_names: seg.team_a.map((id) => nameById.get(id) ?? "Player")
+        player_names: seg.team_a.map((id) => nameById.get(id) ?? "Player"),
+        player_ids: [...seg.team_a]
       },
       {
         side_label: "Side B",
-        player_names: seg.team_b.map((id) => nameById.get(id) ?? "Player")
+        player_names: seg.team_b.map((id) => nameById.get(id) ?? "Player"),
+        player_ids: [...seg.team_b]
       }
     ]
   };
@@ -181,12 +188,16 @@ function resolveFixedTeams(
   game: AnyGame,
   rps: AnyRP[]
 ): PartnerDescriptor | null {
-  const byTeam = new Map<string, string[]>();
+  const namesByTeam = new Map<string, string[]>();
+  const idsByTeam = new Map<string, string[]>();
   for (const r of rps) {
     if (!r.team_id) continue;
-    const arr = byTeam.get(r.team_id) ?? [];
-    arr.push(r.display_name);
-    byTeam.set(r.team_id, arr);
+    const names = namesByTeam.get(r.team_id) ?? [];
+    names.push(r.display_name);
+    namesByTeam.set(r.team_id, names);
+    const ids = idsByTeam.get(r.team_id) ?? [];
+    ids.push(r.id);
+    idsByTeam.set(r.team_id, ids);
   }
   // Stable team ordering: keep teams in the order they first appear
   // in rps (which is `display_order` on the server side).
@@ -211,7 +222,8 @@ function resolveFixedTeams(
         : "Teams",
     sides: teamIdsInOrder.map((tid, i) => ({
       side_label: `Team ${String.fromCharCode(65 + i)}`,
-      player_names: byTeam.get(tid) ?? []
+      player_names: namesByTeam.get(tid) ?? [],
+      player_ids: idsByTeam.get(tid) ?? []
     }))
   };
 }

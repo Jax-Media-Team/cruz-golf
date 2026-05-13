@@ -236,7 +236,7 @@ export function FinalizeView({
   // Pure-function engine in lib/games/junk.ts. The frozen amount on
   // each item is what settles; this code never re-prices history.
   if (junkItems.length > 0) {
-    const junkAsEngine: JunkItem[] = junkItems.map((i) => ({
+    const junkAsEngine: JunkItem[] = junkItems.map((i: any) => ({
       id: i.id,
       player_id: i.round_player_id,
       hole_number: i.hole_number,
@@ -244,7 +244,14 @@ export function FinalizeView({
       custom_label: i.custom_label ?? undefined,
       amount_cents: i.amount_cents,
       created_at: i.created_at,
-      note: i.note ?? undefined
+      note: i.note ?? undefined,
+      // Team-junk recipients (Patrick 2026-05-13 #4). When the server
+      // fetched recipients via the JOIN, this propagates to settleJunk
+      // which splits the pot evenly across the partners. Legacy items
+      // (pre-0048) have undefined recipients — settleJunk falls back
+      // to solo via its backwards-compat path.
+      recipient_ids: i.recipient_ids ?? undefined,
+      is_team_award: i.is_team_award ?? undefined
     }));
     const junkResult = settleJunk(
       junkAsEngine,

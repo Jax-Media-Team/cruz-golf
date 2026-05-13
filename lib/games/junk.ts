@@ -55,7 +55,10 @@ export type JunkCategory =
 
 export type JunkItem = {
   id: string;
-  /** Winner — gets paid by everyone else. */
+  /** Primary recipient / displayed-author of the item. Used as the
+   *  escalation-scope key ("Pat got the birdie"). For TEAM awards
+   *  this is one of the partners — the rest are listed in
+   *  `recipient_ids`. */
   player_id: UUID;
   hole_number: number;
   category: JunkCategory;
@@ -71,6 +74,19 @@ export type JunkItem = {
   created_at: string;
   /** Optional note from the scorer ("from greenside bunker, 8ft"). */
   note?: string;
+  /** TEAM JUNK (Patrick 2026-05-13 #4): the full list of round_player
+   *  ids that share this award. For backwards compat with single-
+   *  recipient items, this MAY be undefined or empty — settleJunk
+   *  falls back to `[player_id]` in that case so legacy data settles
+   *  identically to today. For new team awards the array contains
+   *  every partner on the winning side (typically 2 in 6-6-6 / best
+   *  ball; could be more for scramble / future event formats).
+   *  Pre-migration-0048 items always have this undefined. */
+  recipient_ids?: UUID[];
+  /** Denormalized flag — `recipient_ids.length > 1`. Cached on the
+   *  row so list-rendering UIs (chip strip, live totals) can show
+   *  the "team junk" label without joining the recipients table. */
+  is_team_award?: boolean;
 };
 
 export type JunkConfig = {
@@ -190,9 +206,19 @@ export type JunkSettlement = {
    *  finalize UI uses this for the "By game" breakdown line. */
   perItem: Array<{
     item: JunkItem;
-    /** Each loser's payment to the winner (negative). */
+    /** Each loser's payment to the winning side (negative). For team
+     *  junk this is `-amount_cents` per loser (NOT multiplied by the
+     *  partner count — the displayed amount stays the displayed amount). */
     loser_deltas: Array<{ player_id: UUID; delta_cents: number }>;
-    /** Total amount the winner gained on this item. */
+    /** Per-recipient gain on this item. Team junk splits the pot
+     *  (sum of loser payments) evenly across recipients with
+     *  odd-cent remainder going to the lowest-id-by-sort recipient
+     *  for predictability. Single-recipient items have one entry.
+     *  Patrick 2026-05-13 #4: "should show as team junk and affect
+     *  both partners appropriately." */
+    recipient_deltas: Array<{ player_id: UUID; delta_cents: number }>;
+    /** Sum of `recipient_deltas` — the total amount the winning side
+     *  gained. Equals abs(sum(loser_deltas)) by zero-sum invariant. */
     winner_gain_cents: number;
   }>;
   /** Total cash that moved through the junk pot — useful for "Junk
@@ -230,33 +256,69 @@ export function settleJunk(
   const perItem: JunkSettlement["perItem"] = [];
   let total = 0;
   for (const item of items) {
-    // Defensive: if the winner isn't in the player set (stale data,
-    // foursome filter, etc.), skip the whole item. We don't quietly
-    // debit the rest of the players to a winner that won't appear in
-    // the output map — that breaks zero-sum from the consumer's POV.
-    if (!playerIds.has(item.player_id)) {
-      perItem.push({ item, loser_deltas: [], winner_gain_cents: 0 });
+    // Resolve the recipient set. Backwards-compat fallback: a legacy
+    // item without `recipient_ids` settles as solo (just the primary
+    // player_id). Filter to recipients actually present in `players`
+    // so foursome / RLS filters can't pay a stranger.
+    const rawRecipients =
+      item.recipient_ids && item.recipient_ids.length > 0
+        ? item.recipient_ids
+        : [item.player_id];
+    const recipients = rawRecipients.filter((id) => playerIds.has(id));
+    if (recipients.length === 0) {
+      // No valid recipient in the player set — skip whole item.
+      perItem.push({
+        item,
+        loser_deltas: [],
+        recipient_deltas: [],
+        winner_gain_cents: 0
+      });
       continue;
     }
-    const losers = players.filter((p) => p.id !== item.player_id);
+    const losers = players.filter((p) => !recipients.includes(p.id));
     if (losers.length === 0 || item.amount_cents <= 0) {
-      perItem.push({ item, loser_deltas: [], winner_gain_cents: 0 });
+      perItem.push({
+        item,
+        loser_deltas: [],
+        recipient_deltas: [],
+        winner_gain_cents: 0
+      });
       continue;
     }
+
+    // Each loser pays `amount_cents` ONCE — the displayed amount stays
+    // the displayed amount regardless of how many partners share the
+    // win. Patrick's mental model: "$2 team junk" means each loser is
+    // out $2.
     const loser_deltas: Array<{ player_id: UUID; delta_cents: number }> = [];
-    let winnerGain = 0;
     for (const loser of losers) {
       const d = -item.amount_cents;
       deltaByPlayer.set(loser.id, (deltaByPlayer.get(loser.id) ?? 0) + d);
       loser_deltas.push({ player_id: loser.id, delta_cents: d });
-      winnerGain += item.amount_cents;
     }
-    deltaByPlayer.set(
-      item.player_id,
-      (deltaByPlayer.get(item.player_id) ?? 0) + winnerGain
-    );
-    perItem.push({ item, loser_deltas, winner_gain_cents: winnerGain });
-    total += winnerGain;
+    const pot = item.amount_cents * losers.length;
+
+    // Distribute pot evenly across recipients with the remainder going
+    // to the lowest-id recipient by sort. Matches the press-pot
+    // convention so settlement is deterministic across re-runs.
+    const sortedRecipients = [...recipients].sort();
+    const share = Math.floor(pot / sortedRecipients.length);
+    const remainder = pot - share * sortedRecipients.length;
+    const recipient_deltas: Array<{ player_id: UUID; delta_cents: number }> = [];
+    for (let i = 0; i < sortedRecipients.length; i++) {
+      const rid = sortedRecipients[i];
+      const delta = share + (i === 0 ? remainder : 0);
+      deltaByPlayer.set(rid, (deltaByPlayer.get(rid) ?? 0) + delta);
+      recipient_deltas.push({ player_id: rid, delta_cents: delta });
+    }
+
+    perItem.push({
+      item,
+      loser_deltas,
+      recipient_deltas,
+      winner_gain_cents: pot
+    });
+    total += pot;
   }
   return { deltaByPlayer, perItem, total_moved_cents: total };
 }

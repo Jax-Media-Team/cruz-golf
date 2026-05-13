@@ -27,7 +27,9 @@ describe("resolveActivePartners — 6-6-6 (default rotation)", () => {
     expect(d).not.toBeNull();
     expect(d!.segment_label).toBe("Holes 1–6 · Segment 1 of 3");
     expect(d!.sides[0].player_names).toEqual(["Pat", "Ben"]);
+    expect(d!.sides[0].player_ids).toEqual(["rp-a", "rp-b"]);
     expect(d!.sides[1].player_names).toEqual(["Mitch", "Kyle"]);
+    expect(d!.sides[1].player_ids).toEqual(["rp-c", "rp-d"]);
     expect(d!.next_segment_starts_at).toBe(7);
     expect(d!.next_segment_label).toBe("Partners change at hole 7");
   });
@@ -104,7 +106,9 @@ describe("resolveActivePartners — best ball / team_match (fixed teams)", () =>
     expect(d!.segment_label).toBe("Best-ball teams");
     expect(d!.sides).toHaveLength(2);
     expect(d!.sides[0].player_names).toEqual(["Pat", "Ben"]);
+    expect(d!.sides[0].player_ids).toEqual(["rp-a", "rp-b"]);
     expect(d!.sides[1].player_names).toEqual(["Mitch", "Kyle"]);
+    expect(d!.sides[1].player_ids).toEqual(["rp-c", "rp-d"]);
   });
 
   it("Scramble label", () => {

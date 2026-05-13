@@ -33,10 +33,17 @@ import {
   type JunkCategory,
   type JunkItem
 } from "@/lib/games/junk";
+import { resolveActivePartners } from "@/lib/games/partners";
 
 export type JunkRP = {
   id: string;
   display_name: string;
+  /** team_id from round_players. Used by partner-resolution to group
+   *  players into team-junk recipient sets when a partner game is
+   *  enabled (best ball, scramble, aggregate, team_match). For 6-6-6
+   *  the partner is derived from the game's rotation config instead.
+   *  Optional — solo formats don't need it. */
+  team_id?: string | null;
 };
 
 export type JunkConfigRow = {
@@ -67,6 +74,13 @@ export type JunkItemRow = {
   created_at: string;
   created_by: string | null;
   note: string | null;
+  /** TEAM JUNK (Patrick 2026-05-13 #4): the full recipient set for
+   *  team-awarded items. Populated by the JOIN to
+   *  round_junk_item_recipients in the server fetch. May be null /
+   *  empty for legacy items recorded before migration 0048 — those
+   *  settle as solo via the engine's backwards-compat fallback. */
+  recipient_ids?: string[] | null;
+  is_team_award?: boolean | null;
 };
 
 const fmt$ = (cents: number) =>
@@ -80,7 +94,8 @@ export function JunkControls({
   rps,
   config,
   initialItems,
-  isCommissioner
+  isCommissioner,
+  games = []
 }: {
   roundId: string;
   totalHoles: number;
@@ -91,6 +106,16 @@ export function JunkControls({
   config: JunkConfigRow;
   initialItems: JunkItemRow[];
   isCommissioner: boolean;
+  /** Active games on the round. Used to detect partner formats
+   *  (6-6-6 / best ball / scramble / team_match) and auto-assign
+   *  team-junk recipients. Empty array → solo-only mode (legacy
+   *  behavior). Patrick 2026-05-13 #4. */
+  games?: Array<{
+    id: string;
+    game_type: string;
+    name: string;
+    config?: any;
+  }>;
 }) {
   const sb = supabaseBrowser();
   const router = useRouter();
@@ -154,17 +179,34 @@ export function JunkControls({
           filter: `round_id=eq.${roundId}`
         },
         () => {
-          // Cheap refetch — junk lists are small.
+          // Cheap refetch — junk lists are small. Includes the recipients
+          // embed so realtime updates surface team-junk awards. The
+          // realtime channel listens on round_junk_items only (not the
+          // recipients table) — that's fine because every team-record
+          // pass inserts the items row + recipients in the same RPC
+          // transaction, so by the time we refetch the recipients are
+          // already there.
           (async () => {
             const { data } = await sb
               .from("round_junk_items")
               .select(
-                "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note, deleted_at"
+                "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note, deleted_at, is_team_award, round_junk_item_recipients(round_player_id)"
               )
               .eq("round_id", roundId)
               .is("deleted_at", null)
               .order("created_at", { ascending: true });
-            if (data) setItems(data as any);
+            if (data) {
+              setItems(
+                data.map((i: any) => ({
+                  ...i,
+                  recipient_ids: Array.isArray(i.round_junk_item_recipients)
+                    ? i.round_junk_item_recipients
+                        .map((r: any) => r?.round_player_id)
+                        .filter((x: any) => typeof x === "string")
+                    : null
+                })) as any
+              );
+            }
           })();
         }
       )
@@ -203,6 +245,8 @@ export function JunkControls({
   );
 
   // Build the JunkItem[] shape settleJunk wants so we can show totals.
+  // recipient_ids flows through so team-junk items split the pot
+  // correctly in the live totals (Patrick 2026-05-13 #4).
   const junkItems = useMemo<JunkItem[]>(
     () =>
       items.map((i) => ({
@@ -213,7 +257,9 @@ export function JunkControls({
         custom_label: i.custom_label ?? undefined,
         amount_cents: i.amount_cents,
         created_at: i.created_at,
-        note: i.note ?? undefined
+        note: i.note ?? undefined,
+        recipient_ids: i.recipient_ids ?? undefined,
+        is_team_award: i.is_team_award ?? undefined
       })),
     [items]
   );
@@ -222,6 +268,58 @@ export function JunkControls({
     [junkItems, rps]
   );
 
+  // ===========================================================
+  // TEAM JUNK auto-resolution (Patrick 2026-05-13 #4)
+  // ===========================================================
+  // Re-resolve partners every time the hole changes (6-6-6 rotates
+  // partners by segment, so hole 1 vs hole 7 may pair the selected
+  // player with someone different). The descriptor is null on
+  // solo-only rounds — that's what disables the team-mode toggle.
+  const partnerDescriptor = useMemo(
+    () =>
+      resolveActivePartners({
+        games,
+        rps: rps.map((r) => ({
+          id: r.id,
+          display_name: r.display_name,
+          team_id: r.team_id ?? null
+        })),
+        currentHole: hole,
+        totalHoles: totalHoles as 9 | 18
+      }),
+    [games, rps, hole, totalHoles]
+  );
+  // Default to team mode when a partner game is active. User can
+  // override per-recording via the toggle below.
+  const [teamMode, setTeamMode] = useState<boolean>(true);
+  // Resolve the partners for the currently-selected player from the
+  // partner descriptor. Returns [] when there's no partner game or
+  // the selected player isn't in any side.
+  const selectedPartners = useMemo<string[]>(() => {
+    if (!selectedRp || !partnerDescriptor) return [];
+    for (const side of partnerDescriptor.sides) {
+      if (side.player_ids.includes(selectedRp)) {
+        return side.player_ids.filter((id) => id !== selectedRp);
+      }
+    }
+    return [];
+  }, [selectedRp, partnerDescriptor]);
+
+  /**
+   * Compute the recipient list for a recording. When team-mode is on
+   * AND the selected player has resolved partners, returns the full
+   * team. Otherwise solo. Returns null (signaling "use solo default")
+   * when the array would be just the primary player — saves on round-
+   * trip arg size and keeps the audit log clean.
+   */
+  function resolveRecipients(): string[] | null {
+    if (!selectedRp) return null;
+    if (teamMode && selectedPartners.length > 0) {
+      return [selectedRp, ...selectedPartners];
+    }
+    return null; // Solo — RPC will default to [p_round_player_id]
+  }
+
   async function recordJunk(category: JunkCategory, customLabel?: string) {
     if (!selectedRp) {
       setErr("Pick the player who got it first.");
@@ -229,13 +327,15 @@ export function JunkControls({
     }
     setPending(category);
     setErr(null);
+    const recipients = resolveRecipients();
     const { error } = await sb.rpc("fn_record_junk", {
       p_round_id: roundId,
       p_round_player_id: selectedRp,
       p_hole_number: hole,
       p_category: category,
       p_custom_label: customLabel ?? null,
-      p_note: null
+      p_note: null,
+      p_recipient_ids: recipients
     });
     setPending(null);
     if (error) {
@@ -247,7 +347,14 @@ export function JunkControls({
       category === "custom" && customLabel
         ? customLabel
         : categoryLabel(category);
-    setToast(`${name} · ${label} · hole ${hole}`);
+    const teamSuffix =
+      recipients && recipients.length > 1
+        ? ` + ${recipients
+            .filter((id) => id !== selectedRp)
+            .map((id) => nameById.get(id) ?? "Player")
+            .join(" + ")}`
+        : "";
+    setToast(`${name}${teamSuffix} · ${label} · hole ${hole}`);
     setTimeout(() => setToast(null), 2200);
     router.refresh();
   }
@@ -277,13 +384,15 @@ export function JunkControls({
     }
     setPending(`custom:${key}`);
     setErr(null);
+    const recipients = resolveRecipients();
     const { error } = await sb.rpc("fn_record_junk", {
       p_round_id: roundId,
       p_round_player_id: selectedRp,
       p_hole_number: hole,
       p_category: "custom",
       p_custom_label: label,
-      p_note: null
+      p_note: null,
+      p_recipient_ids: recipients
     });
     setPending(null);
     if (error) {
@@ -291,7 +400,14 @@ export function JunkControls({
       return;
     }
     const name = nameById.get(selectedRp) ?? "Player";
-    setToast(`${name} · ${label} · hole ${hole}`);
+    const teamSuffix =
+      recipients && recipients.length > 1
+        ? ` + ${recipients
+            .filter((id) => id !== selectedRp)
+            .map((id) => nameById.get(id) ?? "Player")
+            .join(" + ")}`
+        : "";
+    setToast(`${name}${teamSuffix} · ${label} · hole ${hole}`);
     setTimeout(() => setToast(null), 2200);
     router.refresh();
   }
@@ -424,6 +540,36 @@ export function JunkControls({
         </select>
       </div>
 
+      {/* Team-mode toggle — only renders when a partner game is
+          active on this round. Default ON so team junk just works
+          out of the box; user can flip to solo for one-offs like
+          a player picking up a custom birdie pot alone. Patrick
+          2026-05-13 #4. */}
+      {partnerDescriptor && (
+        <div className="flex items-center justify-between gap-3 flex-wrap text-xs bg-gold-500/5 border border-gold-500/30 rounded-lg px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-cream-50 font-medium">
+              {teamMode ? "Team junk" : "Solo junk"}
+            </p>
+            <p className="text-[11px] text-cream-100/65 leading-snug">
+              {teamMode
+                ? `Awards split with partner${
+                    selectedPartners.length > 1 ? "s" : ""
+                  }. ${partnerDescriptor.segment_label}`
+                : "Awards go to the picked player only."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTeamMode((m) => !m)}
+            className="pill text-[11px] px-3 py-1.5 bg-cream-100/15 border border-cream-100/25 text-cream-50 hover:bg-cream-100/25 shrink-0"
+            aria-pressed={teamMode}
+          >
+            {teamMode ? "Switch to solo →" : "Switch to team →"}
+          </button>
+        </div>
+      )}
+
       {/* Player chip row — hidden when junk recording is closed
           (both built-in + saved-custom lists are empty) so the panel
           collapses to "items still settle" + live totals only. */}
@@ -436,7 +582,9 @@ export function JunkControls({
         }`}
       >
         <p className="text-[10px] uppercase tracking-wider text-cream-100/55">
-          Who got it?
+          {teamMode && partnerDescriptor
+            ? "Who got it? (partner auto-credits)"
+            : "Who got it?"}
         </p>
         <div className="flex flex-wrap gap-1.5">
           {rps.map((p) => {

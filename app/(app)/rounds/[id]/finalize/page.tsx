@@ -77,12 +77,23 @@ export default async function FinalizePage({ params }: { params: Promise<{ id: s
     const { data } = await sb
       .from("round_junk_items")
       .select(
-        "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, note"
+        // is_team_award + recipients embed surface so the settlement
+        // engine splits the pot correctly for team junk on finalize
+        // (Patrick 2026-05-13 #4). Falls through to legacy shape on
+        // pre-0048 envs via the catch below.
+        "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, note, is_team_award, round_junk_item_recipients(round_player_id)"
       )
       .eq("round_id", id)
       .is("deleted_at", null)
       .order("created_at", { ascending: true });
-    junkItems = data ?? [];
+    junkItems = (data ?? []).map((i: any) => ({
+      ...i,
+      recipient_ids: Array.isArray(i.round_junk_item_recipients)
+        ? i.round_junk_item_recipients
+            .map((r: any) => r?.round_player_id)
+            .filter((x: any) => typeof x === "string")
+        : null
+    }));
   } catch {
     /* table missing — pre-0041 env */
   }

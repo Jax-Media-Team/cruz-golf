@@ -293,13 +293,19 @@ export function GroupScoreEntry({
                   .reduce((max, h) => Math.max(max, h), 0);
                 return Math.min(Math.max(1, maxScored + 1), totalHoles);
               })()}
-              rps={rps.map((r) => ({
+              rps={rps.map((r: any) => ({
                 id: r.id,
-                display_name: r.players?.display_name ?? "Player"
+                display_name: r.players?.display_name ?? "Player",
+                team_id: r.team_id ?? null
               }))}
               config={junkConfig as any}
               initialItems={junkItems as any}
               isCommissioner={isCommissioner}
+              // games enables team-junk auto-resolution inside
+              // JunkControls (Patrick 2026-05-13 #4). The component
+              // reads 6-6-6 / best ball / scramble configs from this
+              // and pairs the selected player with the right partner.
+              games={games as any}
             />
           )}
 

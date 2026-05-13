@@ -120,12 +120,23 @@ export default async function GroupScorePage({ params }: { params: Promise<{ id:
       const { data: jItems } = await sb
         .from("round_junk_items")
         .select(
-          "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note"
+          // 0048 added is_team_award + round_junk_item_recipients;
+          // surface them here too so the inline JunkControls on the
+          // scoring screen knows about team awards. Pre-0048 envs
+          // fall through the catch + render without team support.
+          "id, round_player_id, hole_number, category, custom_label, amount_cents, created_at, created_by, note, is_team_award, round_junk_item_recipients(round_player_id)"
         )
         .eq("round_id", id)
         .is("deleted_at", null)
         .order("created_at", { ascending: true });
-      junkItems = jItems ?? [];
+      junkItems = (jItems ?? []).map((i: any) => ({
+        ...i,
+        recipient_ids: Array.isArray(i.round_junk_item_recipients)
+          ? i.round_junk_item_recipients
+              .map((r: any) => r?.round_player_id)
+              .filter((x: any) => typeof x === "string")
+          : null
+      }));
     }
   } catch {
     /* tables missing — pre-0041 env, page renders without junk panel */
