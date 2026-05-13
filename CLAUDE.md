@@ -11,9 +11,34 @@
 - **Latest commit on main:** `64c2f52` — *refactor: extract profile-format lib + 22 regression tests + 4 real bugs caught* (+ a follow-up consolidation commit covering format-date + settlement-format helpers)
 - **Branch:** `main` (working tree clean, in sync with origin)
 - **Production URL:** https://cruz-golf.vercel.app (responds HTTP 200)
-- **Test suite:** **602/602 passing across 39 test files.** Run with `npm test -- --run` from project root.
+- **Test suite:** **612/612 passing across 40 test files.** Run with `npm test -- --run` from project root.
 - **Typecheck:** clean (`npx tsc --noEmit`)
-- **Migrations applied through:** `0046` (player social fields — ig_handle / x_handle / website_url / bio_line + the trim/normalize trigger). Patrick applied 2026-05-12. Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking.
+- **Migrations applied through:** `0046` (player social fields — ig_handle / x_handle / website_url / bio_line + the trim/normalize trigger). Patrick applied 2026-05-12. Migration 0040 (event lifecycle RPCs) still awaiting apply — non-blocking. Migration 0047 (junk id-disambiguation) shipped 2026-05-13 — awaiting apply.
+
+### ⚠️ PRE-PUSH GATE — DO NOT SKIP (added 2026-05-13)
+
+`tsc --noEmit` + `vitest run` is NOT enough. Vercel uses SWC's module
+loader which is stricter about duplicate identifiers + module-level
+shape than tsc. A duplicate `const isCommissioner = ...` declaration
+shipped to main on 2026-05-12 (commit `81098d8`), passed both tsc and
+vitest, and broke Vercel's `next build` for ~10 hours of failed
+production deploys before being caught.
+
+**The pre-push gate is now:**
+
+1. `npx tsc --noEmit` — must be clean
+2. `npx vitest run` — must be green
+3. `npm run build` — must say **"✓ Compiled successfully"**
+   - The build will then FAIL at prerender locally because `.env.local`
+     doesn't have Supabase keys. Ignore the prerender error — Vercel
+     has the keys, so production will complete. Only the COMPILE PHASE
+     output matters as a gate.
+   - If you see "Failed to compile" — STOP. DO NOT PUSH. Fix the
+     compile error first.
+
+I (Claude) do NOT receive Vercel build-failure notifications. Patrick
+gets emails. He should not have to read those emails to find out my
+last push broke prod.
 
 ### Product framing (the why behind everything below)
 
